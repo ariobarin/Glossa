@@ -27,9 +27,16 @@ assert.equal(version.stdout.trim(), packageJson.version);
 const help = run(["--help"]);
 assert.equal(help.status, 0, help.stderr);
 assert.match(help.stdout, /Usage:/);
-for (const command of ["status", "devices", "update", "login", "logout"]) {
+for (const command of [
+  "status",
+  "doctor",
+  "devices",
+  "update",
+  "login",
+  "logout",
+]) {
   assert.match(help.stdout, new RegExp(`glossa ${command}`));
 }
-assert.doesNotMatch(help.stdout, /glossa (?:ui|doctor|completions)\b/);
+assert.doesNotMatch(help.stdout, /glossa (?:ui|completions)\b/);
 
 console.log(`Standalone smoke passed for ${executable}.`);
