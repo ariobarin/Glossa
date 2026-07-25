@@ -27,6 +27,14 @@ test("keeps useful direct CLI actions", () => {
     command: "status",
     json: true,
   });
+  assert.deepEqual(parseInvocation(["doctor"]), {
+    command: "doctor",
+    json: false,
+  });
+  assert.deepEqual(parseInvocation(["doctor", "--json"]), {
+    command: "doctor",
+    json: true,
+  });
   assert.deepEqual(parseInvocation(["devices"]), {
     command: "devices",
     action: "list",
@@ -58,6 +66,7 @@ test("keeps standard metadata options", () => {
 test("rejects malformed direct commands", () => {
   assert.throws(() => parseInvocation(["one", "two"]), UsageError);
   assert.throws(() => parseInvocation(["status", "--yaml"]), UsageError);
+  assert.throws(() => parseInvocation(["doctor", "--yaml"]), UsageError);
   assert.throws(() => parseInvocation(["devices", "revoke"]), UsageError);
   assert.throws(() => parseInvocation(["logout", "--browser"]), UsageError);
 });

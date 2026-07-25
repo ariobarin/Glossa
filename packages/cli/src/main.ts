@@ -6,6 +6,7 @@ import {
   type SignedInSession,
 } from "./auth-login.js";
 import { parseInvocation, UsageError } from "./cli-options.js";
+import { runDoctor } from "./doctor.js";
 import type { StoredCredentials } from "./config-store.js";
 import {
   deviceStatus,
@@ -40,6 +41,7 @@ const HELP = `Glossa ${VERSION}
 Usage:
   glossa [directory]
   glossa status [--json]
+  glossa doctor [--json]
   glossa devices [--json]
   glossa devices revoke <id>
   glossa update
@@ -239,6 +241,8 @@ async function main(): Promise<void> {
     await runWorkspace(invocation.path);
   } else if (invocation.command === "status") {
     await showStatus(invocation.json);
+  } else if (invocation.command === "doctor") {
+    if (!await runDoctor(invocation.json)) process.exitCode = 1;
   } else if (invocation.command === "login") {
     const session = await authenticatedSession();
     if (!session.loginPerformed) console.log("Signed in to Glossa.");
