@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
+  checkGitWorktree,
   formatDoctorResult,
   nodeVersionSatisfies,
   runDoctor,
@@ -31,44 +36,65 @@ const healthy: DoctorDependencies = {
   },
   checkGit: async () => true,
   checkWorkspace: async () => true,
-  fetchHealthz: async () => true,
-  probeCredentials: async () => "present" as const,
+  fetchHealthz: async () => "healthy",
+  probeCredentials: async () => "stored",
 };
 
-test("reports a ready machine with every check passing", async () => {
+test("reports a configured machine while keeping stored credentials qualified", async () => {
   const checks = await runDoctorChecks(healthy);
-  assert.equal(checks.every((c) => c.status === "pass"), true);
   assert.deepEqual(
-    checks.map((c) => c.name),
+    checks.map((check) => check.name),
     ["Node.js", "Git", "Workspace", "Relay", "Sign-in"],
+  );
+  assert.equal(checks.find((check) => check.name === "Sign-in")?.status, "warn");
+  assert.match(
+    checks.find((check) => check.name === "Sign-in")?.detail ?? "",
+    /expiry and refresh viability were not checked/,
   );
 });
 
-test("fails on missing git and unreachable relay", async () => {
+test("warns about missing Git and offers the explicit-path alternative", async () => {
   const checks = await runDoctorChecks({
     ...healthy,
     checkGit: async () => false,
-    fetchHealthz: async () => false,
   });
-  const git = checks.find((c) => c.name === "Git");
-  const relay = checks.find((c) => c.name === "Relay");
-  assert.equal(git?.status, "fail");
-  assert.ok(git?.nextStep);
-  assert.equal(relay?.status, "fail");
-  assert.ok(relay?.detail.includes("not reachable"));
-});
-
-test("warns when the current directory is not a Git workspace", async () => {
-  const checks = await runDoctorChecks({
-    ...healthy,
-    checkWorkspace: async () => false,
-  });
-  const workspace = checks.find((c) => c.name === "Workspace");
+  const git = checks.find((check) => check.name === "Git");
+  const workspace = checks.find((check) => check.name === "Workspace");
+  assert.equal(git?.status, "warn");
+  assert.match(git?.nextStep ?? "", /glossa <path>/);
   assert.equal(workspace?.status, "warn");
-  assert.match(workspace?.nextStep ?? "", /workspace/);
+  assert.match(workspace?.detail ?? "", /without Git/);
 });
 
-test("fails when a separate worker endpoint is unreachable", async () => {
+test("does not treat a bare Git repository as a worktree", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "glossa-doctor-bare-"));
+  const bare = path.join(root, "repository.git");
+  try {
+    execFileSync("git", ["init", "--bare", bare], { windowsHide: true });
+    assert.equal(await checkGitWorktree(bare), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("distinguishes unreachable and unhealthy relay health endpoints", async () => {
+  const unreachable = await runDoctorChecks({
+    ...healthy,
+    fetchHealthz: async () => "unreachable",
+  });
+  const unhealthy = await runDoctorChecks({
+    ...healthy,
+    fetchHealthz: async () => "unhealthy",
+  });
+  const unreachableRelay = unreachable.find((check) => check.name === "Relay");
+  const unhealthyRelay = unhealthy.find((check) => check.name === "Relay");
+  assert.match(unreachableRelay?.detail ?? "", /Could not reach/);
+  assert.match(unreachableRelay?.nextStep ?? "", /connection and DNS/);
+  assert.match(unhealthyRelay?.detail ?? "", /responded/);
+  assert.match(unhealthyRelay?.nextStep ?? "", /healthz/);
+});
+
+test("reports a separate worker endpoint with its own health failure", async () => {
   const checkedOrigins: string[] = [];
   const checks = await runDoctorChecks({
     ...healthy,
@@ -78,50 +104,57 @@ test("fails when a separate worker endpoint is unreachable", async () => {
     },
     fetchHealthz: async (origin) => {
       checkedOrigins.push(origin);
-      return origin !== "https://worker.glossa.test";
+      return origin === "https://worker.glossa.test" ? "unhealthy" : "healthy";
     },
   });
   assert.deepEqual(checkedOrigins, [
     "https://relay.glossa.test",
     "https://worker.glossa.test",
   ]);
-  const worker = checks.find((c) => c.name === "Worker");
+  const worker = checks.find((check) => check.name === "Worker");
   assert.equal(worker?.status, "fail");
+  assert.match(worker?.detail ?? "", /responded/);
   assert.match(worker?.nextStep ?? "", /GLOSSA_WORKER_ORIGIN/);
 });
 
-test("reports malformed endpoint configuration as a structured failure", async () => {
-  const checks = await runDoctorChecks({
+test("attributes malformed relay and worker origins to their owning endpoints", async () => {
+  const relayChecks = await runDoctorChecks({
     nodeVersion: "24.13.0",
     checkGit: async () => true,
-    loadEndpoints: () => {
+    checkWorkspace: async () => true,
+    loadRelayOrigin: () => {
       throw new Error("GLOSSA_RELAY_ORIGIN must contain only an origin.");
     },
-    probeCredentials: async () => "present" as const,
+    probeCredentials: async () => "stored",
   });
-  const relay = checks.find((c) => c.name === "Relay");
-  assert.equal(relay?.status, "fail");
-  assert.match(relay?.detail ?? "", /GLOSSA_RELAY_ORIGIN/);
-  assert.match(relay?.nextStep ?? "", /without paths/);
+  assert.equal(relayChecks.find((check) => check.name === "Relay")?.status, "fail");
+  assert.equal(relayChecks.some((check) => check.name === "Worker"), false);
 
-  const json = JSON.parse(formatDoctorResult(checks, true));
-  assert.equal(json.checks.find((check: { name: string }) => check.name === "Relay").status, "fail");
-  assert.equal(await runDoctor(true, {
+  const workerChecks = await runDoctorChecks({
     nodeVersion: "24.13.0",
     checkGit: async () => true,
-    loadEndpoints: () => {
-      throw new Error("bad origin");
+    checkWorkspace: async () => true,
+    loadRelayOrigin: () => "https://relay.glossa.test",
+    loadWorkerOrigin: () => {
+      throw new Error("GLOSSA_WORKER_ORIGIN must contain only an origin.");
     },
-    probeCredentials: async () => "present" as const,
-  }, () => undefined), false);
+    fetchHealthz: async () => "healthy",
+    probeCredentials: async () => "stored",
+  });
+  const worker = workerChecks.find((check) => check.name === "Worker");
+  const relay = workerChecks.find((check) => check.name === "Relay");
+  assert.equal(relay?.status, "pass");
+  assert.equal(worker?.status, "fail");
+  assert.match(worker?.detail ?? "", /GLOSSA_WORKER_ORIGIN/);
+  assert.match(worker?.nextStep ?? "", /GLOSSA_WORKER_ORIGIN/);
 });
 
 test("warns instead of failing when not signed in yet", async () => {
   const checks = await runDoctorChecks({
     ...healthy,
-    probeCredentials: async () => "absent" as const,
+    probeCredentials: async () => "absent",
   });
-  const signIn = checks.find((c) => c.name === "Sign-in");
+  const signIn = checks.find((check) => check.name === "Sign-in");
   assert.equal(signIn?.status, "warn");
   assert.ok(signIn?.nextStep);
 });
@@ -129,37 +162,44 @@ test("warns instead of failing when not signed in yet", async () => {
 test("fails the sign-in check when stored credentials are unreadable", async () => {
   const deps = { ...healthy, probeCredentials: async () => "error" as const };
   const checks = await runDoctorChecks(deps);
-  const signIn = checks.find((c) => c.name === "Sign-in");
+  const signIn = checks.find((check) => check.name === "Sign-in");
   assert.equal(signIn?.status, "fail");
   assert.match(signIn?.nextStep ?? "", /glossa logout/);
-  const ok = await runDoctor(false, deps, () => undefined);
-  assert.equal(ok, false);
+  assert.equal(await runDoctor(false, deps, () => undefined), false);
 });
 
-test("fails the node check below the supported version", async () => {
-  const checks = await runDoctorChecks({ ...healthy, nodeVersion: "22.8.0" });
-  const node = checks.find((c) => c.name === "Node.js");
-  assert.equal(node?.status, "fail");
+test("skips the Node.js prerequisite for standalone executables", async () => {
+  const checks = await runDoctorChecks({
+    ...healthy,
+    standalone: true,
+    nodeVersion: "0.0.0",
+  });
+  const runtime = checks.find((check) => check.name === "Runtime");
+  assert.equal(checks.some((check) => check.name === "Node.js"), false);
+  assert.equal(runtime?.status, "pass");
+  assert.match(runtime?.detail ?? "", /Node\.js is not required/);
 });
 
-test("text output summarizes readiness and json output is structured", () => {
-  const checks = [
-    { name: "Node.js", status: "pass" as const, detail: "Node.js v24.13.0" },
-    {
-      name: "Sign-in",
-      status: "warn" as const,
-      detail: "Not signed in yet.",
-      nextStep: "Run glossa.",
-    },
-  ];
+test("text and JSON output keep readiness false when warnings remain", async () => {
+  const checks = await runDoctorChecks(healthy);
   const text = formatDoctorResult(checks, false);
-  assert.match(text, /PASS.*Node\.js v24\.13\.0/);
-  assert.match(text, /WARN.*Not signed in yet\./);
-  assert.match(text, /Run glossa\./);
-  assert.match(text, /Glossa is ready to start\./);
+  assert.match(text, /not fully ready/);
+  assert.doesNotMatch(text, /Glossa is ready to start/);
 
   const json = JSON.parse(formatDoctorResult(checks, true));
+  assert.equal(json.ready, false);
   assert.deepEqual(json.checks, checks);
+  assert.equal(await runDoctor(true, healthy, () => undefined), true);
+});
+
+test("reports ready only when every check passes", () => {
+  const checks = [
+    { name: "Runtime", status: "pass" as const, detail: "Standalone executable includes its Bun runtime." },
+  ];
+  const text = formatDoctorResult(checks, false);
+  assert.match(text, /Glossa is ready to start/);
+  const json = JSON.parse(formatDoctorResult(checks, true));
+  assert.equal(json.ready, true);
 });
 
 test("text output counts failures", () => {

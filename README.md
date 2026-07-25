@@ -48,7 +48,7 @@ Open a terminal in the repository you want to expose, then run:
 glossa
 ```
 
-Glossa signs in automatically and uses the current Git worktree. Pass a directory only when you want to expose a different workspace.
+Glossa signs in automatically and uses the current Git worktree. Pass a directory only when you want to expose a different workspace. Run `glossa doctor` for non-destructive local readiness checks before starting, or `glossa doctor --json` for scriptable output.
 
 On the first successful managed-relay connection on a computer, Glossa prints the ChatGPT quickstart link once. It records a `connect-hint-shown` marker in the local Glossa config directory so later starts stay quiet.
 

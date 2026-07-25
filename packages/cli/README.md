@@ -42,7 +42,7 @@ Glossa signs in automatically and exposes the current Git worktree. Pass a direc
 
 The live display contains the full interactive workflow. Press `s` for account and device status, `r` to revoke a device, `l` to sign out, `u` to update, `d` for recent activity, or `q` or Ctrl+C to disconnect. Press `?` to see the keys at any time.
 
-The same core actions remain available directly with `glossa status`, `glossa devices`, `glossa devices revoke <id>`, `glossa login`, `glossa logout`, and `glossa update`. Status and device listings accept `--json` for scripts.
+The same core actions remain available directly with `glossa status`, `glossa doctor`, `glossa devices`, `glossa devices revoke <id>`, `glossa login`, `glossa logout`, and `glossa update`. `glossa doctor` performs non-destructive readiness checks and accepts `--json` for scripts. Status and device listings also accept `--json`.
 
 The managed endpoint defaults to `https://mcp.glossa.sh`. Development deployments may override `GLOSSA_RELAY_ORIGIN` and `GLOSSA_WORKER_ORIGIN`. Plain HTTP is accepted only for loopback relay origins and loopback or private IPv4 worker origins.
 

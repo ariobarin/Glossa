@@ -39,4 +39,19 @@ for (const command of [
 }
 assert.doesNotMatch(help.stdout, /glossa (?:ui|completions)\b/);
 
+const doctor = run(["doctor", "--json"]);
+assert.equal(doctor.status, 1, doctor.stderr);
+const doctorResult = JSON.parse(doctor.stdout);
+assert.equal(doctorResult.ready, false);
+assert.equal(
+  doctorResult.checks.some((check) => check.name === "Node.js"),
+  false,
+);
+assert.equal(
+  doctorResult.checks.some(
+    (check) => check.name === "Runtime" && check.status === "pass",
+  ),
+  true,
+);
+
 console.log(`Standalone smoke passed for ${executable}.`);

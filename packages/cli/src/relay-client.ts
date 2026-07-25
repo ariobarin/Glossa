@@ -46,17 +46,30 @@ function normalizedOrigin(value: string, kind: "relay" | "worker"): string {
   return url.origin;
 }
 
-export function loadRelayEndpoints(
+export function loadRelayOrigin(
   environment: NodeJS.ProcessEnv = process.env,
-): RelayEndpoints {
-  const relayOrigin = normalizedOrigin(
+): string {
+  return normalizedOrigin(
     environment.GLOSSA_RELAY_ORIGIN?.trim() || DEFAULT_RELAY_ORIGIN,
     "relay",
   );
-  const workerOrigin = normalizedOrigin(
+}
+
+export function loadWorkerOrigin(
+  relayOrigin: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  return normalizedOrigin(
     environment.GLOSSA_WORKER_ORIGIN?.trim() || relayOrigin,
     "worker",
   );
+}
+
+export function loadRelayEndpoints(
+  environment: NodeJS.ProcessEnv = process.env,
+): RelayEndpoints {
+  const relayOrigin = loadRelayOrigin(environment);
+  const workerOrigin = loadWorkerOrigin(relayOrigin, environment);
   return { relayOrigin, workerOrigin };
 }
 
