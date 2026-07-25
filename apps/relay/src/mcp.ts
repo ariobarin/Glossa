@@ -51,6 +51,12 @@ const listDevicesOutputSchema = z
           .strict(),
       )
       .describe("Online Windows workers available to the authenticated account."),
+    availability: z
+      .enum(["online", "offline"])
+      .describe("Whether one or more Glossa workspaces are online."),
+    message: z
+      .string()
+      .describe("User-safe availability guidance without local workspace details."),
   })
   .strict();
 const logoutOutputSchema = z
@@ -268,7 +274,22 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async () => structuredResult({ devices: state.listDevices(accountId) }),
+    async () => {
+      const devices = state.listDevices(accountId);
+      return structuredResult(
+        devices.length > 0
+          ? {
+              devices,
+              availability: "online",
+              message: "Glossa workspaces are available.",
+            }
+          : {
+              devices,
+              availability: "offline",
+              message: "No Glossa workspaces are online. Start Glossa in the workspace you want to expose, then try again.",
+            },
+      );
+    },
   );
 
   server.registerTool(

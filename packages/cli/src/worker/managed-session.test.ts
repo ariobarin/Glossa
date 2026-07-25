@@ -5,6 +5,7 @@ import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
   deviceForSession,
+  localStatus,
   reenrollRejectedDevice,
   shouldRecoverRejectedDevice,
 } from "./managed-session.js";
@@ -241,5 +242,19 @@ test("only recovers a rejected device before its worker connects", () => {
   assert.equal(
     shouldRecoverRejectedDevice(new Error("offline"), false, false),
     false,
+  );
+});
+
+test("keeps retry details local and gives the current workspace retry timing", () => {
+  const status = localStatus({
+    state: "retrying",
+    error: new Error("network diagnostic that must not reach the display"),
+    retryInMs: 1_500,
+  });
+  assert.equal(status.state, "retrying");
+  if (status.state !== "retrying") throw new Error("expected retry status");
+  assert.equal(
+    status.error.message,
+    "The current workspace is reconnecting. Retrying in 2 seconds.",
   );
 });

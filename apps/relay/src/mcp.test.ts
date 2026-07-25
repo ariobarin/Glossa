@@ -122,9 +122,20 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     arguments: {},
   });
   assert.equal(result.isError, undefined);
-  assert.deepEqual(result.structuredContent, { devices: [] });
+  assert.deepEqual(result.structuredContent, {
+    devices: [],
+    availability: "offline",
+    message: "No Glossa workspaces are online. Start Glossa in the workspace you want to expose, then try again.",
+  });
   assert.deepEqual(result.content, [
-    { type: "text", text: JSON.stringify({ devices: [] }) },
+    {
+      type: "text",
+      text: JSON.stringify({
+        devices: [],
+        availability: "offline",
+        message: "No Glossa workspaces are online. Start Glossa in the workspace you want to expose, then try again.",
+      }),
+    },
   ]);
 
   const logout = await client.callTool({
