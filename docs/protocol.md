@@ -100,7 +100,7 @@ Tools:
 - `get_command`
 - `cancel_command`
 
-`list_devices` returns one entry for every active worker. Its `deviceId` is the ephemeral worker identifier accepted by file and command tools, and `name` is the enrolled computer name. Each entry reports `path: "."`. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
+`list_devices` returns an object with `devices`, `availability`, and `message`. It returns one device entry for every active worker. Its `deviceId` is the ephemeral worker identifier accepted by file and command tools, and `name` is the enrolled computer name. Each entry reports `path: "."`. When no workers are active, `devices` is empty, `availability` is `"offline"`, and `message` tells the user to start Glossa in the workspace they want to expose and try again. When one or more workers are active, `availability` is `"online"` and `message` confirms that workspaces are available. The offline result is a successful, user-safe response rather than a tool error. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
 
 `logout` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
 
