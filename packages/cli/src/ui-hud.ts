@@ -39,6 +39,7 @@ export interface HudState {
   workspace: string;
   deviceName?: string;
   connection: "starting" | "connecting" | "connected" | "retrying" | "disconnected" | "error";
+  connectedOnce: boolean;
   message: string | undefined;
   activities: HudActivity[];
   view: HudView;
@@ -62,6 +63,7 @@ export function initialHudState(workspace: string): HudState {
   return {
     workspace,
     connection: "starting",
+    connectedOnce: false,
     message: undefined,
     activities: [],
     view: "session",
@@ -93,18 +95,18 @@ export function applyHudEvent(state: HudState, event: ManagedSessionEvent): HudS
   }
   if (event.type === "status") {
     if (event.status.state === "retrying") {
-      const previous = state.connection === "starting"
-        ? "connecting"
-        : state.connection === "error"
-          ? undefined
-          : state.connection;
       return {
         ...state,
         connection: "retrying",
-        message: statusMessage(event.status, previous),
+        message: statusMessage(event.status, state.connectedOnce ? "connected" : "connecting"),
       };
     }
-    return { ...state, connection: event.status.state, message: undefined };
+    return {
+      ...state,
+      connection: event.status.state,
+      connectedOnce: state.connectedOnce || event.status.state === "connected",
+      message: undefined,
+    };
   }
   if (event.type === "notice") return { ...state, message: event.message };
   const activity: HudActivity = event.phase === "finished"
