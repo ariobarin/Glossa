@@ -23,6 +23,7 @@ import {
   WorkspaceStatusService,
   type StatusDetails,
 } from "./status-service.js";
+import { formatStatus } from "./status-display.js";
 import {
   runSessionHud,
   type HudExitAction,
@@ -122,18 +123,7 @@ async function showStatus(json: boolean): Promise<void> {
     console.log(JSON.stringify({ ...status, connected: true }, null, 2));
     return;
   }
-  console.log(`Signed in as ${status.account}.`);
-  console.log(`Relay connected: ${status.relay}`);
-  console.log(
-    status.activeWorkers === null
-      ? "Active workspaces: unavailable"
-      : `Active workspaces: ${status.activeWorkers}`,
-  );
-  if (status.devices.length === 0) {
-    console.log("No devices enrolled.");
-  } else {
-    for (const device of status.devices) console.log(formatDeviceRow(device));
-  }
+  for (const line of formatStatus(status)) console.log(line);
 }
 
 async function showDevices(json: boolean): Promise<void> {

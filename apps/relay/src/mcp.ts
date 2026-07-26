@@ -51,6 +51,12 @@ const listDevicesOutputSchema = z
           .strict(),
       )
       .describe("Online Windows workers available to the authenticated account."),
+    availability: z
+      .enum(["online", "offline"])
+      .describe("Whether one or more Glossa workspaces are online."),
+    message: z
+      .string()
+      .describe("Agent-facing availability guidance with a safe reconnect next step and no local workspace details."),
   })
   .strict();
 const logoutOutputSchema = z
@@ -141,6 +147,16 @@ const commandOutputSchema = z
 
 export const MCP_SERVER_VERSION = "0.1.0-beta.5";
 
+const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
+const MANAGED_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
+const SELF_HOSTING_DOCS_URL = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
+
+function recoveryDocumentationUrl(publicOrigin: string): string {
+  return new URL(publicOrigin).origin === MANAGED_RELAY_ORIGIN
+    ? MANAGED_QUICKSTART_URL
+    : SELF_HOSTING_DOCS_URL;
+}
+
 const safeWorkerMessages: Record<string, string> = {
   path_not_found: "The requested path does not exist.",
   path_escape: "The requested path escapes the exposed root.",
@@ -166,6 +182,11 @@ function structuredResult(value: Record<string, unknown>) {
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
     structuredContent: value,
   };
+}
+
+function offlineWorkspaceMessage(config: RelayConfig): string {
+  const guidance = "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry.";
+  return `${guidance} See ${recoveryDocumentationUrl(config.GLOSSA_PUBLIC_ORIGIN)} for the official setup and reconnect steps.`;
 }
 
 function browserLogoutUrl(issuer: string): string {
@@ -257,7 +278,7 @@ function registerTools(
     "list_devices",
     {
       title: "List Devices",
-      description: "Call this first to obtain the deviceId for every online Glossa workspace. One computer may expose several workspaces at once.",
+      description: "Call this first to obtain the deviceId for every online Glossa workspace. If none are online, use availability and message to explain Glossa and guide the user to start or reconnect the local worker before retrying. One computer may expose several workspaces at once.",
       inputSchema: z.object({}).strict(),
       outputSchema: listDevicesOutputSchema,
       _meta: toolMetadata,
@@ -268,7 +289,22 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async () => structuredResult({ devices: state.listDevices(accountId) }),
+    async () => {
+      const devices = state.listDevices(accountId);
+      return structuredResult(
+        devices.length > 0
+          ? {
+              devices,
+              availability: "online",
+              message: "Glossa workspaces are available.",
+            }
+          : {
+              devices,
+              availability: "offline",
+              message: offlineWorkspaceMessage(config),
+            },
+      );
+    },
   );
 
   server.registerTool(
