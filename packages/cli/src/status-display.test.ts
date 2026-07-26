@@ -23,3 +23,19 @@ test("status keeps an unavailable worker count distinct", () => {
     /Active workspaces: unavailable/,
   );
 });
+
+test("status formats device recency against the current time", () => {
+  const lines = formatStatus({
+    ...status,
+    activeWorkers: 0,
+    devices: [{
+      id: "device-1",
+      name: "Laptop",
+      platform: "Windows",
+      lastSeenAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      revokedAt: null,
+      activeWorkers: 0,
+    }],
+  });
+  assert.match(lines.join("\n"), /last seen 10m ago/);
+});
