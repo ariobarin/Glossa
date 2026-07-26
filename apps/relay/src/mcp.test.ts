@@ -172,7 +172,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     selfHostedMessage,
-    /Follow this relay's setup and reconnect instructions/,
+    /https:\/\/github\.com\/ariobarin\/glossa\/blob\/main\/docs\/self-hosting\.md/,
   );
   assert.doesNotMatch(
     selfHostedMessage,

@@ -147,8 +147,15 @@ const commandOutputSchema = z
 
 export const MCP_SERVER_VERSION = "0.1.0-beta.5";
 
-const GLOSSA_MANAGED_PUBLIC_ORIGIN = "https://mcp.glossa.sh";
-const GLOSSA_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
+const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
+const MANAGED_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
+const SELF_HOSTING_DOCS_URL = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
+
+function recoveryDocumentationUrl(publicOrigin: string): string {
+  return new URL(publicOrigin).origin === MANAGED_RELAY_ORIGIN
+    ? MANAGED_QUICKSTART_URL
+    : SELF_HOSTING_DOCS_URL;
+}
 
 const safeWorkerMessages: Record<string, string> = {
   path_not_found: "The requested path does not exist.",
@@ -179,10 +186,7 @@ function structuredResult(value: Record<string, unknown>) {
 
 function offlineWorkspaceMessage(config: RelayConfig): string {
   const guidance = "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry.";
-  if (new URL(config.GLOSSA_PUBLIC_ORIGIN).origin === GLOSSA_MANAGED_PUBLIC_ORIGIN) {
-    return `${guidance} See ${GLOSSA_QUICKSTART_URL} for the official setup and reconnect steps.`;
-  }
-  return `${guidance} Follow this relay's setup and reconnect instructions before retrying.`;
+  return `${guidance} See ${recoveryDocumentationUrl(config.GLOSSA_PUBLIC_ORIGIN)} for the official setup and reconnect steps.`;
 }
 
 function browserLogoutUrl(issuer: string): string {
