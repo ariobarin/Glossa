@@ -147,6 +147,7 @@ const commandOutputSchema = z
 
 export const MCP_SERVER_VERSION = "0.1.0-beta.5";
 
+const GLOSSA_MANAGED_PUBLIC_ORIGIN = "https://mcp.glossa.sh";
 const GLOSSA_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
 
 const safeWorkerMessages: Record<string, string> = {
@@ -174,6 +175,14 @@ function structuredResult(value: Record<string, unknown>) {
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
     structuredContent: value,
   };
+}
+
+function offlineWorkspaceMessage(config: RelayConfig): string {
+  const guidance = "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry.";
+  if (new URL(config.GLOSSA_PUBLIC_ORIGIN).origin === GLOSSA_MANAGED_PUBLIC_ORIGIN) {
+    return `${guidance} See ${GLOSSA_QUICKSTART_URL} for the official setup and reconnect steps.`;
+  }
+  return `${guidance} Follow this relay's setup and reconnect instructions before retrying.`;
 }
 
 function browserLogoutUrl(issuer: string): string {
@@ -288,7 +297,7 @@ function registerTools(
           : {
               devices,
               availability: "offline",
-              message: `No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry. See ${GLOSSA_QUICKSTART_URL} for the official setup and reconnect steps.`,
+              message: offlineWorkspaceMessage(config),
             },
       );
     },

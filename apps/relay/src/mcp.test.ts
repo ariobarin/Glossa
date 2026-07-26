@@ -37,11 +37,11 @@ function assertFieldDescriptions(schema: JsonSchemaNode, label: string): void {
   }
 }
 
-function testConfig() {
+function testConfig(publicOrigin = "https://mcp.glossa.sh") {
   return loadConfig({
     NODE_ENV: "test",
     DATABASE_URL: "postgres://test:test@localhost:5432/test",
-    GLOSSA_PUBLIC_ORIGIN: "https://mcp.glossa.test",
+    GLOSSA_PUBLIC_ORIGIN: publicOrigin,
     GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
     GLOSSA_AUTH0_AUDIENCE: "https://mcp.glossa.test/",
   });
@@ -149,6 +149,35 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       }),
     },
   ]);
+
+  const selfHostedServer = createMcpServer(
+    testConfig("https://mcp.example.com"),
+    new RouterState(),
+    "00000000-0000-4000-8000-000000000001",
+  );
+  const selfHostedClient = new Client({ name: "glossa-self-hosted-test", version: "1.0.0" });
+  const [selfHostedClientTransport, selfHostedServerTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([selfHostedClient.close(), selfHostedServer.close()]);
+  });
+  await selfHostedServer.connect(selfHostedServerTransport);
+  await selfHostedClient.connect(selfHostedClientTransport);
+  const selfHostedResult = await selfHostedClient.callTool({
+    name: "list_devices",
+    arguments: {},
+  });
+  assert.equal(selfHostedResult.isError, undefined);
+  const selfHostedMessage = String(
+    (selfHostedResult.structuredContent as { message?: unknown }).message,
+  );
+  assert.match(
+    selfHostedMessage,
+    /Follow this relay's setup and reconnect instructions/,
+  );
+  assert.doesNotMatch(
+    selfHostedMessage,
+    /glossa\.sh\/docs\/quickstart/,
+  );
 
   const logout = await client.callTool({
     name: "logout",
