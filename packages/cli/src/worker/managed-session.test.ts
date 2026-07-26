@@ -5,8 +5,8 @@ import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
   deviceForSession,
-  localStatus,
   reenrollRejectedDevice,
+  statusMessage,
   shouldRecoverRejectedDevice,
 } from "./managed-session.js";
 import { DeviceRejectedError } from "./remote-worker.js";
@@ -56,7 +56,6 @@ test("aborts device enrollment when the UI session stops", async () => {
   controller.abort();
   await assert.rejects(pending, { name: "AbortError" });
 });
-
 
 const enrollmentEndpoints: RelayEndpoints = {
   relayOrigin: "https://mcp.glossa.test",
@@ -245,16 +244,16 @@ test("only recovers a rejected device before its worker connects", () => {
   );
 });
 
-test("keeps retry details local and gives the current workspace retry timing", () => {
-  const status = localStatus({
-    state: "retrying",
-    error: new Error("network diagnostic that must not reach the display"),
-    retryInMs: 1_500,
-  });
-  assert.equal(status.state, "retrying");
-  if (status.state !== "retrying") throw new Error("expected retry status");
+test("keeps retry diagnostics local and adds the current workspace timing", () => {
   assert.equal(
-    status.error.message,
-    "The current workspace is reconnecting. Retrying in 2 seconds.",
+    statusMessage(
+      {
+        state: "retrying",
+        error: new Error("TLS handshake failed"),
+        retryInMs: 1_500,
+      },
+      "connecting",
+    ),
+    "Could not connect: TLS handshake failed Retrying in 2 seconds.",
   );
 });

@@ -202,21 +202,17 @@ export async function reenrollRejectedDevice(
 
 function retryMessage(retryInMs: number): string {
   const seconds = Math.max(1, Math.ceil(retryInMs / 1_000));
-  return `The current workspace is reconnecting. Retrying in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
+  return `Retrying in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
 }
 
-export function localStatus(status: RemoteWorkerStatus): RemoteWorkerStatus {
-  if (status.state !== "retrying") return status;
-  return { ...status, error: new Error(retryMessage(status.retryInMs)) };
-}
-
-function statusMessage(status: RemoteWorkerStatus, previous: RemoteWorkerStatus["state"] | undefined): string {
+export function statusMessage(status: RemoteWorkerStatus, previous: RemoteWorkerStatus["state"] | undefined): string {
   if (status.state === "connecting") return "Connecting to Glossa...";
   if (status.state === "connected") {
     return status.reconnected ? "Reconnected to Glossa." : "Connected to Glossa. ChatGPT can now use this workspace.";
   }
   if (status.state === "retrying") {
-    return status.error.message;
+    const prefix = previous === "connecting" ? "Could not connect" : "Connection lost";
+    return `${prefix}: ${status.error.message} ${retryMessage(status.retryInMs)}`;
   }
   return "Disconnected from Glossa.";
 }
@@ -236,12 +232,11 @@ async function connectRemoteWorker(
     worker: visibleWorker(worker, options),
     signal,
     onStatus(status) {
-      const visibleStatus = localStatus(status);
       if (status.state === "connected") onConnected();
       if (status.state !== "retrying" || connectionState !== "retrying") {
-        report(options, { type: "status", status: visibleStatus }, statusMessage(visibleStatus, connectionState));
+        report(options, { type: "status", status }, statusMessage(status, connectionState));
       } else {
-        options.onEvent?.({ type: "status", status: visibleStatus });
+        options.onEvent?.({ type: "status", status });
       }
       if (status.state === "connected" && status.legacyRelay) {
         report(
