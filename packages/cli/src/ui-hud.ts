@@ -1,6 +1,9 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
-import type { ManagedSessionEvent } from "./worker/managed-session.js";
+import {
+  statusMessage,
+  type ManagedSessionEvent,
+} from "./worker/managed-session.js";
 
 export interface HudActivity {
   label: string;
@@ -90,7 +93,16 @@ export function applyHudEvent(state: HudState, event: ManagedSessionEvent): HudS
   }
   if (event.type === "status") {
     if (event.status.state === "retrying") {
-      return { ...state, connection: "retrying", message: event.status.error.message };
+      const previous = state.connection === "starting"
+        ? "connecting"
+        : state.connection === "error"
+          ? undefined
+          : state.connection;
+      return {
+        ...state,
+        connection: "retrying",
+        message: statusMessage(event.status, previous),
+      };
     }
     return { ...state, connection: event.status.state, message: undefined };
   }

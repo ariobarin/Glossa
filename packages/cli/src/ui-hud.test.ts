@@ -37,6 +37,24 @@ test("hud reduces session events into a compact current state", () => {
   assert.equal(state.activities.at(-1)?.label, "File edit requested");
 });
 
+test("hud shows retry diagnostics and the next retry timing", () => {
+  let state = initialHudState("/work/glossa");
+  state = applyHudEvent(state, { type: "status", status: { state: "connecting" } });
+  state = applyHudEvent(state, {
+    type: "status",
+    status: {
+      state: "retrying",
+      error: new Error("TLS handshake failed"),
+      retryInMs: 1_500,
+    },
+  });
+  assert.equal(
+    state.message,
+    "Could not connect: TLS handshake failed Retrying in 2 seconds.",
+  );
+  assert.match(renderHud(state, 100, false), /Retrying in 2 seconds\./);
+});
+
 test("hud defaults to one calm status surface", () => {
   const view = renderHud({ ...initialHudState("/a/very/long/workspace/path"), connection: "connected" }, 42, false);
   assert.match(view, /^  Glossa +SESSION$/m);
