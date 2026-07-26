@@ -6,6 +6,7 @@ import type { RelayEndpoints } from "../relay-client.js";
 import {
   deviceForSession,
   reenrollRejectedDevice,
+  statusMessage,
   shouldRecoverRejectedDevice,
 } from "./managed-session.js";
 import { DeviceRejectedError } from "./remote-worker.js";
@@ -55,7 +56,6 @@ test("aborts device enrollment when the UI session stops", async () => {
   controller.abort();
   await assert.rejects(pending, { name: "AbortError" });
 });
-
 
 const enrollmentEndpoints: RelayEndpoints = {
   relayOrigin: "https://mcp.glossa.test",
@@ -241,5 +241,30 @@ test("only recovers a rejected device before its worker connects", () => {
   assert.equal(
     shouldRecoverRejectedDevice(new Error("offline"), false, false),
     false,
+  );
+});
+
+test("keeps retry diagnostics local and adds the current workspace timing", () => {
+  assert.equal(
+    statusMessage(
+      {
+        state: "retrying",
+        error: new Error("TLS handshake failed"),
+        retryInMs: 1_500,
+      },
+      false,
+    ),
+    "Could not connect: TLS handshake failed Retrying in 2 seconds.",
+  );
+  assert.equal(
+    statusMessage(
+      {
+        state: "retrying",
+        error: new Error("TLS handshake failed"),
+        retryInMs: 1_500,
+      },
+      true,
+    ),
+    "Connection lost: TLS handshake failed Retrying in 2 seconds.",
   );
 });
