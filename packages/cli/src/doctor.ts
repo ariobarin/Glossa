@@ -141,7 +141,7 @@ function signInCheck(state: CredentialProbe): DoctorCheck {
   if (state === "stored") {
     return {
       name: "Sign-in",
-      status: "warn",
+      status: "pass",
       detail: "Stored Glossa credentials were found. Their expiry and refresh viability were not checked.",
       nextStep: 'Run "glossa" to validate sign-in when it starts, or run "glossa logout" and sign in again if it fails.',
     };

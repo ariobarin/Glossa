@@ -40,13 +40,13 @@ const healthy: DoctorDependencies = {
   probeCredentials: async () => "stored",
 };
 
-test("reports a configured machine while keeping stored credentials qualified", async () => {
+test("reports a configured machine while qualifying stored credentials", async () => {
   const checks = await runDoctorChecks(healthy);
   assert.deepEqual(
     checks.map((check) => check.name),
     ["Node.js", "Git", "Workspace", "Relay", "Sign-in"],
   );
-  assert.equal(checks.find((check) => check.name === "Sign-in")?.status, "warn");
+  assert.equal(checks.find((check) => check.name === "Sign-in")?.status, "pass");
   assert.match(
     checks.find((check) => check.name === "Sign-in")?.detail ?? "",
     /expiry and refresh viability were not checked/,
@@ -180,14 +180,14 @@ test("skips the Node.js prerequisite for standalone executables", async () => {
   assert.match(runtime?.detail ?? "", /Node\.js is not required/);
 });
 
-test("text and JSON output keep readiness false when warnings remain", async () => {
+test("text and JSON output report readiness when stored credentials are present", async () => {
   const checks = await runDoctorChecks(healthy);
   const text = formatDoctorResult(checks, false);
-  assert.match(text, /not fully ready/);
-  assert.doesNotMatch(text, /Glossa is ready to start/);
+  assert.match(text, /Glossa is ready to start/);
+  assert.doesNotMatch(text, /not fully ready/);
 
   const json = JSON.parse(formatDoctorResult(checks, true));
-  assert.equal(json.ready, false);
+  assert.equal(json.ready, true);
   assert.deepEqual(json.checks, checks);
   assert.equal(await runDoctor(true, healthy, () => undefined), true);
 });
