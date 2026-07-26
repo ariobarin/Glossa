@@ -14,8 +14,8 @@ function run(args) {
     encoding: "utf8",
     env: {
       ...process.env,
-      GLOSSA_RELAY_ORIGIN: "http://127.0.0.1:9",
-      GLOSSA_WORKER_ORIGIN: "http://127.0.0.1:9",
+      GLOSSA_RELAY_ORIGIN: "not-an-origin",
+      GLOSSA_WORKER_ORIGIN: "not-an-origin",
     },
   });
 }
@@ -43,6 +43,12 @@ const doctor = run(["doctor", "--json"]);
 assert.equal(doctor.status, 1, doctor.stderr);
 const doctorResult = JSON.parse(doctor.stdout);
 assert.equal(doctorResult.ready, false);
+assert.equal(
+  doctorResult.checks.some(
+    (check) => check.name === "Relay" && check.status === "fail",
+  ),
+  true,
+);
 assert.equal(
   doctorResult.checks.some((check) => check.name === "Node.js"),
   false,

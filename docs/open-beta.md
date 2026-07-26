@@ -83,7 +83,7 @@ Only test writes and commands inside a folder you are comfortable modifying.
 
 ## Troubleshooting
 
-- Run `glossa doctor` for non-destructive local checks of the runtime, Git worktree, endpoints, and stored credentials. Use `glossa doctor --json` in scripts. A stored credential is not a live sign-in check, so start Glossa to validate it when needed.
+- Run `glossa doctor` for non-destructive local checks of the runtime, Git worktree, endpoints, and stored credentials. Use `glossa doctor --json` in scripts. JSON `ready` is false when warnings or failures remain, while the process exits nonzero only when a check fails. A stored credential is not a live sign-in check, so start Glossa to validate it when needed.
 - Press `s` in Glossa or run `glossa status` to check the account, relay, enrolled devices, and active workers.
 - No Create option: confirm Developer Mode is enabled and your workspace role has access.
 - No online devices: confirm the `glossa` terminal is still running.
