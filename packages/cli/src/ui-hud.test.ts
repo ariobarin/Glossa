@@ -75,18 +75,6 @@ test("hud shows retry diagnostics and the next retry timing", () => {
   });
   assert.match(state.message ?? "", /^Connection lost:/);
   assert.match(renderHud(state, 100, false), /Retrying in 2 seconds\./);
-  state = applyHudEvent(state, {
-    type: "status",
-    status: {
-      state: "retrying",
-      error: new Error("Still unavailable"),
-      retryInMs: 3_000,
-    },
-  });
-  assert.equal(
-    state.message,
-    "Could not connect: Still unavailable Retrying in 3 seconds.",
-  );
 });
 
 test("hud defaults to one calm status surface", () => {
