@@ -14,8 +14,8 @@ function run(args) {
     encoding: "utf8",
     env: {
       ...process.env,
-      GLOSSA_RELAY_ORIGIN: "http://127.0.0.1:9",
-      GLOSSA_WORKER_ORIGIN: "http://127.0.0.1:9",
+      GLOSSA_RELAY_ORIGIN: "not-an-origin",
+      GLOSSA_WORKER_ORIGIN: "not-an-origin",
     },
   });
 }
@@ -27,9 +27,37 @@ assert.equal(version.stdout.trim(), packageJson.version);
 const help = run(["--help"]);
 assert.equal(help.status, 0, help.stderr);
 assert.match(help.stdout, /Usage:/);
-for (const command of ["status", "devices", "update", "login", "logout"]) {
+for (const command of [
+  "status",
+  "doctor",
+  "devices",
+  "update",
+  "login",
+  "logout",
+]) {
   assert.match(help.stdout, new RegExp(`glossa ${command}`));
 }
-assert.doesNotMatch(help.stdout, /glossa (?:ui|doctor|completions)\b/);
+assert.doesNotMatch(help.stdout, /glossa (?:ui|completions)\b/);
+
+const doctor = run(["doctor", "--json"]);
+assert.equal(doctor.status, 1, doctor.stderr);
+const doctorResult = JSON.parse(doctor.stdout);
+assert.equal(doctorResult.ready, false);
+assert.equal(
+  doctorResult.checks.some(
+    (check) => check.name === "Relay" && check.status === "fail",
+  ),
+  true,
+);
+assert.equal(
+  doctorResult.checks.some((check) => check.name === "Node.js"),
+  false,
+);
+assert.equal(
+  doctorResult.checks.some(
+    (check) => check.name === "Runtime" && check.status === "pass",
+  ),
+  true,
+);
 
 console.log(`Standalone smoke passed for ${executable}.`);

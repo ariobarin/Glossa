@@ -3,6 +3,7 @@ export class UsageError extends Error {}
 export type CliInvocation =
   | { command: "workspace"; path?: string }
   | { command: "status"; json: boolean }
+  | { command: "doctor"; json: boolean }
   | { command: "devices"; action: "list"; json: boolean }
   | { command: "devices"; action: "revoke"; deviceId: string }
   | { command: "update" }
@@ -74,6 +75,9 @@ export function parseInvocation(args: string[]): CliInvocation {
   }
   if (command === "status") {
     return { command, json: parseJsonOption("Status", options) };
+  }
+  if (command === "doctor") {
+    return { command, json: parseJsonOption("Doctor", options) };
   }
   if (command === "devices") return parseDevices(options);
   if (command === "update" || command === "login" || command === "logout") {
