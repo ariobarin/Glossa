@@ -205,13 +205,13 @@ function retryMessage(retryInMs: number): string {
   return `Retrying in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
 }
 
-export function statusMessage(status: RemoteWorkerStatus, previous: RemoteWorkerStatus["state"] | undefined): string {
+export function statusMessage(status: RemoteWorkerStatus, connectedBefore: boolean): string {
   if (status.state === "connecting") return "Connecting to Glossa...";
   if (status.state === "connected") {
     return status.reconnected ? "Reconnected to Glossa." : "Connected to Glossa. ChatGPT can now use this workspace.";
   }
   if (status.state === "retrying") {
-    const prefix = previous === "connecting" ? "Could not connect" : "Connection lost";
+    const prefix = connectedBefore ? "Connection lost" : "Could not connect";
     return `${prefix}: ${status.error.message} ${retryMessage(status.retryInMs)}`;
   }
   return "Disconnected from Glossa.";
@@ -226,15 +226,19 @@ async function connectRemoteWorker(
   onConnected: () => void,
 ): Promise<void> {
   let connectionState: RemoteWorkerStatus["state"] | undefined;
+  let connectedBefore = false;
   await new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
     worker: visibleWorker(worker, options),
     signal,
     onStatus(status) {
-      if (status.state === "connected") onConnected();
+      if (status.state === "connected") {
+        connectedBefore = true;
+        onConnected();
+      }
       if (status.state !== "retrying" || connectionState !== "retrying") {
-        report(options, { type: "status", status }, statusMessage(status, connectionState));
+        report(options, { type: "status", status }, statusMessage(status, connectedBefore));
       } else {
         options.onEvent?.({ type: "status", status });
       }

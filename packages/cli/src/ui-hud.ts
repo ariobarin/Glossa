@@ -39,7 +39,7 @@ export interface HudState {
   workspace: string;
   deviceName?: string;
   connection: "starting" | "connecting" | "connected" | "retrying" | "disconnected" | "error";
-  connectedOnce: boolean;
+  connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
   view: HudView;
@@ -63,7 +63,7 @@ export function initialHudState(workspace: string): HudState {
   return {
     workspace,
     connection: "starting",
-    connectedOnce: false,
+    connectedBefore: false,
     message: undefined,
     activities: [],
     view: "session",
@@ -98,13 +98,13 @@ export function applyHudEvent(state: HudState, event: ManagedSessionEvent): HudS
       return {
         ...state,
         connection: "retrying",
-        message: statusMessage(event.status, state.connectedOnce ? "connected" : "connecting"),
+        message: statusMessage(event.status, state.connectedBefore),
       };
     }
     return {
       ...state,
       connection: event.status.state,
-      connectedOnce: state.connectedOnce || event.status.state === "connected",
+      connectedBefore: state.connectedBefore || event.status.state === "connected",
       message: undefined,
     };
   }

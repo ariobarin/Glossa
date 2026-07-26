@@ -52,6 +52,28 @@ test("hud shows retry diagnostics and the next retry timing", () => {
     state.message,
     "Could not connect: TLS handshake failed Retrying in 2 seconds.",
   );
+  state = applyHudEvent(state, {
+    type: "status",
+    status: {
+      state: "retrying",
+      error: new Error("TLS handshake failed"),
+      retryInMs: 2_500,
+    },
+  });
+  assert.match(state.message ?? "", /^Could not connect:/);
+  state = applyHudEvent(state, {
+    type: "status",
+    status: { state: "connected", reconnected: false, legacyRelay: false },
+  });
+  state = applyHudEvent(state, {
+    type: "status",
+    status: {
+      state: "retrying",
+      error: new Error("TLS handshake failed"),
+      retryInMs: 1_500,
+    },
+  });
+  assert.match(state.message ?? "", /^Connection lost:/);
   assert.match(renderHud(state, 100, false), /Retrying in 2 seconds\./);
   state = applyHudEvent(state, {
     type: "status",
