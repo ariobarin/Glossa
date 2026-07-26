@@ -77,6 +77,10 @@ test("does not treat a bare Git repository as a worktree", async () => {
   }
 });
 
+test("accepts a Git worktree that Glossa can expose", async () => {
+  assert.equal(await checkGitWorktree(process.cwd()), true);
+});
+
 test("distinguishes unreachable and unhealthy relay health endpoints", async () => {
   const unreachable = await runDoctorChecks({
     ...healthy,

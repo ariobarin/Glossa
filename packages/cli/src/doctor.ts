@@ -12,6 +12,7 @@ import {
   type RelayEndpoints,
 } from "./relay-client.js";
 import { isStandaloneExecutable } from "./runtime.js";
+import { selectExposureRoot } from "./worker/root-selection.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,7 +86,7 @@ export async function runDoctorChecks(
     detail: workspaceOk
       ? "Current directory is a Git worktree."
       : gitOk
-        ? "Current directory is not a Git worktree."
+        ? "Current directory is not a usable Git worktree."
         : "Current directory cannot be checked without Git.",
     ...(workspaceOk
       ? {}
@@ -212,12 +213,8 @@ async function defaultCheckWorkspace(): Promise<boolean> {
 
 export async function checkGitWorktree(cwd = process.cwd()): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
-      cwd,
-      encoding: "utf8",
-      windowsHide: true,
-    });
-    return stdout.trim() === "true";
+    await selectExposureRoot(undefined, cwd);
+    return true;
   } catch {
     return false;
   }
