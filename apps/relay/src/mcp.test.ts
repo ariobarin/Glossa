@@ -100,6 +100,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
   assert.match(byName.get("run_command")?.description ?? "", /network access/);
+  assert.match(
+    byName.get("list_devices")?.description ?? "",
+    /start or reconnect the local worker before retrying/,
+  );
 
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;
@@ -125,15 +129,23 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.deepEqual(result.structuredContent, {
     devices: [],
     availability: "offline",
-    message: "No Glossa workspaces are online. Start Glossa in the workspace you want to expose, then try again.",
+    message: "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry. See https://glossa.sh/docs/quickstart for the official setup and reconnect steps.",
   });
+  assert.match(
+    String(result.structuredContent?.message),
+    /Ask the user to start or reconnect the local Glossa worker.*then retry\./,
+  );
+  assert.match(
+    String(result.structuredContent?.message),
+    /https:\/\/glossa\.sh\/docs\/quickstart/,
+  );
   assert.deepEqual(result.content, [
     {
       type: "text",
       text: JSON.stringify({
         devices: [],
         availability: "offline",
-        message: "No Glossa workspaces are online. Start Glossa in the workspace you want to expose, then try again.",
+        message: "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry. See https://glossa.sh/docs/quickstart for the official setup and reconnect steps.",
       }),
     },
   ]);

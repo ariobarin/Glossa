@@ -56,7 +56,7 @@ const listDevicesOutputSchema = z
       .describe("Whether one or more Glossa workspaces are online."),
     message: z
       .string()
-      .describe("User-safe availability guidance without local workspace details."),
+      .describe("Agent-facing availability guidance with a safe reconnect next step and no local workspace details."),
   })
   .strict();
 const logoutOutputSchema = z
@@ -146,6 +146,8 @@ const commandOutputSchema = z
   .strip();
 
 export const MCP_SERVER_VERSION = "0.1.0-beta.5";
+
+const GLOSSA_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
 
 const safeWorkerMessages: Record<string, string> = {
   path_not_found: "The requested path does not exist.",
@@ -263,7 +265,7 @@ function registerTools(
     "list_devices",
     {
       title: "List Devices",
-      description: "Call this first to obtain the deviceId for every online Glossa workspace. One computer may expose several workspaces at once.",
+      description: "Call this first to obtain the deviceId for every online Glossa workspace. If none are online, use availability and message to explain Glossa and guide the user to start or reconnect the local worker before retrying. One computer may expose several workspaces at once.",
       inputSchema: z.object({}).strict(),
       outputSchema: listDevicesOutputSchema,
       _meta: toolMetadata,
@@ -286,7 +288,7 @@ function registerTools(
           : {
               devices,
               availability: "offline",
-              message: "No Glossa workspaces are online. Start Glossa in the workspace you want to expose, then try again.",
+              message: `No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry. See ${GLOSSA_QUICKSTART_URL} for the official setup and reconnect steps.`,
             },
       );
     },
