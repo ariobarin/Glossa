@@ -59,3 +59,19 @@ export function databaseOptions(
           },
   };
 }
+
+export function relayPoolOptions(
+  databaseUrl: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): PoolConfig {
+  return {
+    ...databaseOptions(databaseUrl, environment),
+    max: 5,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 60_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 5_000,
+    query_timeout: 5_000,
+    statement_timeout: 5_000,
+  };
+}

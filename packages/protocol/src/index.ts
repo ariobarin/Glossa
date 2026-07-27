@@ -3,6 +3,7 @@ import { z } from "zod";
 export const MAX_TEXT_BYTES = 1024 * 1024;
 export const MAX_EDIT_DIFF_BYTES = 128 * 1024;
 export const MAX_EDIT_OPERATIONS = 100;
+export const MAX_COMMAND_OUTPUT_BYTES = 12 * 1024;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 export const MAX_COMMAND_TIMEOUT_MS = 60 * 60 * 1000;
 export const DEFAULT_COMMAND_FAST_WAIT_MS = 750;

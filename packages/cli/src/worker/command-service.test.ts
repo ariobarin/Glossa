@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { MAX_TEXT_BYTES } from "@glossa/protocol";
+import { MAX_COMMAND_OUTPUT_BYTES } from "@glossa/protocol";
 import { CommandService } from "./command-service.js";
 import { PathPolicy } from "./path-policy.js";
 
@@ -92,14 +92,35 @@ test("truncates command output at a complete UTF-8 character", async (context) =
     argv: [
       process.execPath,
       "-e",
-      `process.stdout.write("a".repeat(${MAX_TEXT_BYTES - 1}) + "\\u20ac")`,
+      `process.stdout.write("a".repeat(${MAX_COMMAND_OUTPUT_BYTES - 1}) + "\\u20ac")`,
     ],
     timeoutMs: 10_000,
   });
   const completed = await commands.get(started.commandId, 15_000);
 
   assert.equal(completed.status, "succeeded");
-  assert.equal(completed.stdout, "a".repeat(MAX_TEXT_BYTES - 1));
+  assert.equal(completed.stdout, "a".repeat(MAX_COMMAND_OUTPUT_BYTES - 1));
   assert.equal(completed.stdoutTruncated, true);
-  assert.ok(Buffer.byteLength(completed.stdout) <= MAX_TEXT_BYTES);
+  assert.ok(Buffer.byteLength(completed.stdout) <= MAX_COMMAND_OUTPUT_BYTES);
+});
+
+test("shares one capture budget across standard output and error", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      `process.stdout.write("a".repeat(${MAX_COMMAND_OUTPUT_BYTES})); process.stderr.write("b")`,
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+
+  assert.equal(completed.status, "succeeded");
+  assert.ok(
+    Buffer.byteLength(completed.stdout ?? "") +
+      Buffer.byteLength(completed.stderr ?? "") <=
+      MAX_COMMAND_OUTPUT_BYTES,
+  );
+  assert.ok(completed.stdoutTruncated || completed.stderrTruncated);
 });

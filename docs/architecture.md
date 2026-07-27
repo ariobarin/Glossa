@@ -95,6 +95,7 @@ One enrolled device may run any number of concurrent workers. Each worker receiv
 The hosting layer imposes a bounded request window. Therefore:
 
 - worker long polls return within 20 seconds;
+- relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - worker poll wait time is reduced by authentication time so the complete request remains bounded;
 - `run_command` returns after the worker accepts the command and supplies a command ID;
 - command execution continues locally beyond the initiating request;

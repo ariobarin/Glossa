@@ -137,11 +137,11 @@ const commandOutputSchema = z
     stdoutTruncated: z
       .boolean()
       .optional()
-      .describe("Whether standard output exceeded its capture limit."),
+      .describe("Whether standard output exceeded the shared command-output capture limit. Use a narrower command to retrieve omitted output."),
     stderrTruncated: z
       .boolean()
       .optional()
-      .describe("Whether standard error exceeded its capture limit."),
+      .describe("Whether standard error exceeded the shared command-output capture limit. Use a narrower command to retrieve omitted output."),
   })
   .strip();
 
