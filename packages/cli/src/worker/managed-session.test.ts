@@ -8,6 +8,7 @@ import {
   reenrollRejectedDevice,
   statusMessage,
   shouldRecoverRejectedDevice,
+  workspaceLabelNotice,
 } from "./managed-session.js";
 import { DeviceRejectedError } from "./remote-worker.js";
 
@@ -266,5 +267,32 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
       true,
     ),
     "Connection lost: TLS handshake failed Retrying in 2 seconds.",
+  );
+});
+
+test("reports when an older relay drops a requested workspace label", () => {
+  assert.equal(
+    workspaceLabelNotice(
+      {
+        state: "connected",
+        reconnected: false,
+        legacyRelay: false,
+        workspaceLabelAccepted: false,
+      },
+      "frontend",
+    ),
+    "The relay needs an update before workspace labels are available. This workspace is online without the requested label.",
+  );
+  assert.equal(
+    workspaceLabelNotice(
+      {
+        state: "connected",
+        reconnected: false,
+        legacyRelay: false,
+        workspaceLabelAccepted: true,
+      },
+      "frontend",
+    ),
+    undefined,
   );
 });

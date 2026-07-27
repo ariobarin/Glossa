@@ -6,6 +6,7 @@ import {
   MAX_WORKER_POLL_MS,
   deviceNameSchema,
   workerResultSchema,
+  workspaceLabelSchema,
 } from "@glossa/protocol";
 import type { RelayConfig } from "./config.js";
 import { requireAuth, type AuthenticatedRequest } from "./auth.js";
@@ -38,6 +39,7 @@ const workerJobTypeSchema = z.enum([
 const registerSchema = z.union([
   z.object({
     workerId: workerIdSchema,
+    workspaceLabel: workspaceLabelSchema.optional(),
     capabilities: z
       .object({
         commandProgress: z.literal(true).optional(),
@@ -459,6 +461,9 @@ export function buildRoutes(
         concurrentJobs:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.concurrentJobs === true,
+        ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+          ? { workspaceLabel: parsed.data.workspaceLabel }
+          : {}),
       },
     );
     response.json({
@@ -470,6 +475,9 @@ export function buildRoutes(
         commandProgress: state.supportsCommandProgress(device.accountId, workerId),
         concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
       },
+      ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+        ? { workspaceLabel: parsed.data.workspaceLabel }
+        : {}),
     });
   });
 

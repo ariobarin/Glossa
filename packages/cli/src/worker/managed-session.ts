@@ -75,6 +75,7 @@ export interface ManagedSessionOptions {
   quiet?: boolean;
   handleProcessSignals?: boolean;
   credentials?: StoredCredentials;
+  workspaceLabel?: string;
 }
 
 function report(
@@ -205,6 +206,20 @@ function retryMessage(retryInMs: number): string {
   return `Retrying in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
 }
 
+export function workspaceLabelNotice(
+  status: RemoteWorkerStatus,
+  requestedLabel: string | undefined,
+): string | undefined {
+  if (
+    status.state !== "connected" ||
+    !requestedLabel ||
+    status.workspaceLabelAccepted !== false
+  ) {
+    return undefined;
+  }
+  return "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
+}
+
 export function statusMessage(status: RemoteWorkerStatus, connectedBefore: boolean): string {
   if (status.state === "connecting") return "Connecting to Glossa...";
   if (status.state === "connected") {
@@ -227,9 +242,13 @@ async function connectRemoteWorker(
 ): Promise<void> {
   let connectionState: RemoteWorkerStatus["state"] | undefined;
   let connectedBefore = false;
+  let labelNoticeShown = false;
   await new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
+    ...(options.workspaceLabel
+      ? { workspaceLabel: options.workspaceLabel }
+      : {}),
     worker: visibleWorker(worker, options),
     signal,
     onStatus(status) {
@@ -241,6 +260,15 @@ async function connectRemoteWorker(
         report(options, { type: "status", status }, statusMessage(status, connectedBefore));
       } else {
         options.onEvent?.({ type: "status", status });
+      }
+      const labelNotice = workspaceLabelNotice(status, options.workspaceLabel);
+      if (labelNotice && !labelNoticeShown) {
+        labelNoticeShown = true;
+        report(
+          options,
+          { type: "notice", message: labelNotice },
+          labelNotice,
+        );
       }
       if (status.state === "connected" && status.legacyRelay) {
         report(

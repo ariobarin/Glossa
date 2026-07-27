@@ -16,6 +16,16 @@ test("uses the TUI as the default workspace entrypoint", () => {
     command: "workspace",
     path: "--help",
   });
+  assert.deepEqual(parseInvocation(["--label", "frontend", "."]), {
+    command: "workspace",
+    path: ".",
+    label: "frontend",
+  });
+  assert.deepEqual(parseInvocation([".", "--label", "  API  "]), {
+    command: "workspace",
+    path: ".",
+    label: "API",
+  });
 });
 
 test("keeps useful direct CLI actions", () => {
@@ -69,4 +79,17 @@ test("rejects malformed direct commands", () => {
   assert.throws(() => parseInvocation(["doctor", "--yaml"]), UsageError);
   assert.throws(() => parseInvocation(["devices", "revoke"]), UsageError);
   assert.throws(() => parseInvocation(["logout", "--browser"]), UsageError);
+  assert.throws(() => parseInvocation(["--label"]), UsageError);
+  assert.throws(
+    () => parseInvocation(["--label", "one", "--label", "two"]),
+    UsageError,
+  );
+  assert.throws(
+    () => parseInvocation(["--label", "x".repeat(81)]),
+    UsageError,
+  );
+  assert.throws(
+    () => parseInvocation(["--label", "bad\nlabel"]),
+    UsageError,
+  );
 });

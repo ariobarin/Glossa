@@ -172,6 +172,7 @@ test("uses worker credentials without repeating device authentication", async (c
   const legacy = await register({});
   const current = await register({
     workerId,
+    workspaceLabel: "frontend",
     capabilities: { commandProgress: true, concurrentJobs: true },
   });
   assert.equal(legacy.workerId, deviceId);
@@ -181,9 +182,15 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
   assert.equal(state.supportsCommandProgress(accountId, workerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
+  assert.equal(
+    state.listDevices(accountId).find((entry) => entry.deviceId === workerId)
+      ?.workspaceLabel,
+    "frontend",
+  );
   assert.equal(deviceAuthentications, 2);
   assert.equal(typeof current.workerToken, "string");
   assert.equal(typeof current.generation, "string");
+  assert.equal(current.workspaceLabel, "frontend");
   assert.deepEqual(current.capabilities, {
     commandProgress: true,
     concurrentJobs: true,

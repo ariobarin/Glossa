@@ -19,6 +19,16 @@ export const deviceNameSchema = z
   .max(80)
   .regex(/^[^\u0000-\u001f\u007f]+$/, "Device name contains control characters");
 
+export const workspaceLabelSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(
+    /^[^\u0000-\u001f\u007f]+$/,
+    "Workspace label contains control characters",
+  );
+
 export const relativePathSchema = z
   .string()
   .max(4096)

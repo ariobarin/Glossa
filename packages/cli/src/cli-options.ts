@@ -1,7 +1,9 @@
+import { workspaceLabelSchema } from "@glossa/protocol";
+
 export class UsageError extends Error {}
 
 export type CliInvocation =
-  | { command: "workspace"; path?: string }
+  | { command: "workspace"; path?: string; label?: string }
   | { command: "status"; json: boolean }
   | { command: "doctor"; json: boolean }
   | { command: "devices"; action: "list"; json: boolean }
@@ -14,11 +16,27 @@ export type CliInvocation =
 
 function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
+  let label: string | undefined;
   let optionsEnded = false;
 
-  for (const argument of args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
     if (!optionsEnded && argument === "--") {
       optionsEnded = true;
+    } else if (!optionsEnded && argument === "--label") {
+      if (label !== undefined) {
+        throw new UsageError("Glossa accepts at most one workspace label.");
+      }
+      const value = args[index + 1];
+      if (value === undefined || value === "--") {
+        throw new UsageError("Use --label <name>.");
+      }
+      const parsed = workspaceLabelSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new UsageError("Workspace labels must be 1-80 printable characters.");
+      }
+      label = parsed.data;
+      index += 1;
     } else if (!optionsEnded && argument.startsWith("-")) {
       throw new UsageError(`Unknown option: ${argument}`);
     } else if (selectedPath) {
@@ -31,6 +49,7 @@ function parseWorkspace(args: string[]): CliInvocation {
   return {
     command: "workspace",
     ...(selectedPath ? { path: selectedPath } : {}),
+    ...(label ? { label } : {}),
   };
 }
 
