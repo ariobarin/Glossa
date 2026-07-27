@@ -18,7 +18,7 @@ Glossa executes commands with the permissions and environment of the local accou
 
 - Local source code.
 - Local developer credentials and environment.
-- Device credentials.
+- Device credentials and ephemeral worker credentials.
 - OAuth refresh/access tokens.
 - Account/device ownership relationships.
 - Command results and file contents in transit.
@@ -53,6 +53,19 @@ Glossa executes commands with the permissions and environment of the local accou
 - device-specific revocation;
 - failed-authentication rate limiting and constant-time comparison;
 - never log Authorization headers.
+
+### Stolen worker token
+
+**Threat:** an active worker credential is replayed against relay worker endpoints.
+
+**Controls:**
+
+- independent 256-bit random secret for each worker generation;
+- bind the credential to one account, device, worker ID, and generation;
+- store only its SHA-256 digest in relay process memory;
+- invalidate it on reconnect, unregister, device revocation, or liveness expiry;
+- reject mismatched worker IDs and generations;
+- transmit only over HTTPS and never log Authorization headers.
 
 ### Malicious or compromised MCP client
 
@@ -138,6 +151,6 @@ Do not durably retain:
 - environment variables;
 - full local paths;
 - repository names unless explicitly chosen by the user;
-- OAuth or device bearer secrets.
+- OAuth, device, or worker bearer secrets.
 
 Additional defenses must extend these controls rather than replace them.

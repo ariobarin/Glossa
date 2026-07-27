@@ -133,6 +133,10 @@ async function activeAccountId(
   return null;
 }
 
+type WorkerRequestIdentity =
+  | { mode: "worker"; accountId: string; deviceId: string; workerId: string; generation: string }
+  | { mode: "device"; device: DeviceRecord };
+
 async function authenticatedDevice(
   request: Request,
   response: Response,
@@ -179,6 +183,88 @@ async function authenticatedDevice(
     response.status(401).json({ error: "invalid_device" });
   }
   return device;
+}
+
+async function refreshWorkerDevicePresence(
+  identity: { accountId: string; deviceId: string },
+  response: Response,
+  store: RelayStore,
+  state: RouterState,
+  deadlineAt: number,
+): Promise<boolean> {
+  const claimedAt = state.claimDeviceSeenPersistence(
+    identity.accountId,
+    identity.deviceId,
+  );
+  if (claimedAt === null) return true;
+  try {
+    if (
+      await beforeDeadline(
+        store.touchDevice(identity.accountId, identity.deviceId),
+        deadlineAt,
+      )
+    ) {
+      return true;
+    }
+  } catch {
+    // Presence metadata is best effort while an authenticated worker is active.
+    return true;
+  }
+  state.unregisterDevice(identity.deviceId);
+  response.status(401).json({ error: "invalid_worker" });
+  return false;
+}
+
+async function authenticatedWorkerRequest(
+  request: Request,
+  response: Response,
+  store: RelayStore,
+  state: RouterState,
+  limiter: FixedWindowRateLimiter,
+  deadlineAt: number,
+): Promise<WorkerRequestIdentity | null> {
+  const header = request.header("authorization");
+  const [scheme, token] = header?.split(/\s+/, 2) ?? [];
+  if (scheme?.toLowerCase() === "worker" && token) {
+    const identity = state.authenticateWorkerToken(token);
+    if (
+      identity &&
+      await refreshWorkerDevicePresence(
+        identity,
+        response,
+        store,
+        state,
+        deadlineAt,
+      )
+    ) {
+      return { mode: "worker", ...identity };
+    }
+    if (identity) return null;
+    const source = request.ip || request.socket.remoteAddress || "unknown";
+    if (!rejectRateLimit(response, limiter, source)) {
+      response.status(401).json({ error: "invalid_worker" });
+    }
+    return null;
+  }
+
+  const device = await authenticatedDevice(
+    request,
+    response,
+    store,
+    limiter,
+    deadlineAt,
+  );
+  return device ? { mode: "device", device } : null;
+}
+
+function workerIdentityMismatch(
+  identity: WorkerRequestIdentity,
+  workerId: string,
+  generation?: string,
+): boolean {
+  return identity.mode === "worker" &&
+    (identity.workerId !== workerId ||
+      (generation !== undefined && identity.generation !== generation));
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -347,7 +433,7 @@ export function buildRoutes(
       return;
     }
     const workerId = "workerId" in parsed.data ? parsed.data.workerId : device.id;
-    const generation = state.register(
+    const session = state.register(
       device.accountId,
       device.id,
       device.name,
@@ -361,23 +447,38 @@ export function buildRoutes(
     response.json({
       deviceId: device.id,
       workerId,
-      generation,
+      generation: session.generation,
+      workerToken: session.workerToken,
     });
   });
 
   router.post("/device/poll", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
-    const device = await authenticatedDevice(
+    const identity = await authenticatedWorkerRequest(
       request,
       response,
       store,
+      state,
       deviceRateLimiter,
       deadlineAt,
     );
-    if (!device) return;
+    if (!identity) return;
     const parsed = pollSchema.safeParse(request.body);
     if (!parsed.success) {
       rejectInvalidInput(response);
+      return;
+    }
+    const accountId = identity.mode === "worker"
+      ? identity.accountId
+      : identity.device.accountId;
+    const deviceId = identity.mode === "worker"
+      ? identity.deviceId
+      : identity.device.id;
+    const workerId = "workerId" in parsed.data
+      ? parsed.data.workerId
+      : deviceId;
+    if (workerIdentityMismatch(identity, workerId, parsed.data.generation)) {
+      response.status(409).json({ error: "unknown_worker_generation" });
       return;
     }
     try {
@@ -390,9 +491,9 @@ export function buildRoutes(
         return;
       }
       const job = await state.poll(
-        device.accountId,
-        device.id,
-        "workerId" in parsed.data ? parsed.data.workerId : device.id,
+        accountId,
+        deviceId,
+        workerId,
         parsed.data.generation,
         Math.min(config.GLOSSA_WORKER_POLL_MS, remainingRequestMs),
       );
@@ -408,47 +509,70 @@ export function buildRoutes(
 
   router.post("/device/result", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
-    const device = await authenticatedDevice(
+    const identity = await authenticatedWorkerRequest(
       request,
       response,
       store,
+      state,
       deviceRateLimiter,
       deadlineAt,
     );
-    if (!device) return;
+    if (!identity) return;
     const parsed = workerResultRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       rejectInvalidInput(response);
       return;
     }
-    const workerId = "workerId" in parsed.data ? parsed.data.workerId : device.id;
+    const accountId = identity.mode === "worker"
+      ? identity.accountId
+      : identity.device.accountId;
+    const deviceId = identity.mode === "worker"
+      ? identity.deviceId
+      : identity.device.id;
+    const requestedWorkerId = "workerId" in parsed.data
+      ? parsed.data.workerId
+      : deviceId;
+    if (workerIdentityMismatch(identity, requestedWorkerId)) {
+      response.status(409).json({ error: "unknown_worker_generation" });
+      return;
+    }
+    const workerId = identity.mode === "worker"
+      ? identity.workerId
+      : requestedWorkerId;
     const result = "result" in parsed.data ? parsed.data.result : parsed.data;
-    const accepted = state.complete(
-      device.accountId,
-      workerId,
-      result,
-    );
+    const accepted = state.complete(accountId, workerId, result);
     response.status(accepted ? 202 : 410).json({ accepted });
   });
 
   router.post("/device/heartbeat", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
-    const device = await authenticatedDevice(
+    const identity = await authenticatedWorkerRequest(
       request,
       response,
       store,
+      state,
       deviceRateLimiter,
       deadlineAt,
     );
-    if (!device) return;
+    if (!identity) return;
     const parsed = heartbeatSchema.safeParse(request.body);
     if (!parsed.success) {
       rejectInvalidInput(response);
       return;
     }
+    if (
+      workerIdentityMismatch(
+        identity,
+        parsed.data.workerId,
+        parsed.data.generation,
+      )
+    ) {
+      response.status(409).json({ error: "unknown_worker_generation" });
+      return;
+    }
     const accepted = state.heartbeat(
-      device.accountId,
-      device.id,
+      identity.mode === "worker" ? identity.accountId : identity.device.accountId,
+      identity.mode === "worker" ? identity.deviceId : identity.device.id,
       parsed.data.workerId,
       parsed.data.generation,
     );
@@ -461,20 +585,29 @@ export function buildRoutes(
 
   router.post("/device/unregister", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
-    const device = await authenticatedDevice(
+    const identity = await authenticatedWorkerRequest(
       request,
       response,
       store,
+      state,
       deviceRateLimiter,
       deadlineAt,
     );
-    if (!device) return;
+    if (!identity) return;
     const parsed = unregisterSchema.safeParse(request.body);
     if (!parsed.success) {
       rejectInvalidInput(response);
       return;
     }
-    state.unregisterWorker(device.accountId, device.id, parsed.data.workerId);
+    if (workerIdentityMismatch(identity, parsed.data.workerId)) {
+      response.status(409).json({ error: "unknown_worker_generation" });
+      return;
+    }
+    state.unregisterWorker(
+      identity.mode === "worker" ? identity.accountId : identity.device.accountId,
+      identity.mode === "worker" ? identity.deviceId : identity.device.id,
+      parsed.data.workerId,
+    );
     response.status(204).end();
   });
 

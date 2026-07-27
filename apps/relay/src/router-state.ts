@@ -1,7 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WorkerJob, WorkerResult } from "@glossa/protocol";
 
 const WORKER_STALE_MS = 45_000;
+const WORKER_PRUNE_INTERVAL_MS = 5_000;
+const DEVICE_SEEN_PERSIST_MS = 60_000;
+const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
+
+function workerTokenDigest(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function deviceKey(accountId: string, deviceId: string): string {
+  return `${accountId}:${deviceId}`;
+}
 
 interface ConnectedWorker {
   accountId: string;
@@ -10,9 +21,17 @@ interface ConnectedWorker {
   workerId: string;
   generation: string;
   commandProgress: boolean;
+  sessionDigest: string;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
   pollWaiter?: (job: WorkerJob | null) => void;
+}
+
+export interface WorkerSessionIdentity {
+  accountId: string;
+  deviceId: string;
+  workerId: string;
+  generation: string;
 }
 
 interface ResultWaiter {
@@ -40,7 +59,11 @@ function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
 
 export class RouterState {
   readonly #workers = new Map<string, ConnectedWorker>();
+  readonly #workerSessions = new Map<string, string>();
+  readonly #workerCountsByDevice = new Map<string, number>();
+  readonly #deviceSeenPersistedAt = new Map<string, number>();
   readonly #results = new Map<string, ResultWaiter>();
+  #lastPrunedAt = 0;
 
   register(
     accountId: string,
@@ -48,9 +71,11 @@ export class RouterState {
     deviceName: string,
     workerId: string,
     capabilities: { commandProgress: boolean } = { commandProgress: false },
-  ): string {
+  ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
+    const workerToken = `glw_${randomBytes(32).toString("base64url")}`;
+    const sessionDigest = workerTokenDigest(workerToken);
     const previous = this.#workers.get(workerId);
     if (
       previous &&
@@ -59,7 +84,15 @@ export class RouterState {
       throw new Error("worker_identity_conflict");
     }
     previous?.pollWaiter?.(null);
+    if (previous) this.#workerSessions.delete(previous.sessionDigest);
     this.#rejectWorkerWaiters(workerId);
+    if (!previous) {
+      const key = deviceKey(accountId, deviceId);
+      this.#workerCountsByDevice.set(
+        key,
+        (this.#workerCountsByDevice.get(key) ?? 0) + 1,
+      );
+    }
     this.#workers.set(workerId, {
       accountId,
       deviceId,
@@ -67,10 +100,54 @@ export class RouterState {
       workerId,
       generation,
       commandProgress: capabilities.commandProgress === true,
+      sessionDigest,
       lastSeenAt: Date.now(),
       pendingJobs: [],
     });
-    return generation;
+    this.#workerSessions.set(sessionDigest, workerId);
+    this.#deviceSeenPersistedAt.set(deviceKey(accountId, deviceId), Date.now());
+    return { generation, workerToken };
+  }
+
+  authenticateWorkerToken(token: string): WorkerSessionIdentity | null {
+    this.#pruneStaleWorkers();
+    if (!WORKER_TOKEN_PATTERN.test(token)) return null;
+    const sessionDigest = workerTokenDigest(token);
+    const workerId = this.#workerSessions.get(sessionDigest);
+    if (!workerId) return null;
+    const worker = this.#workers.get(workerId);
+    if (!worker || worker.sessionDigest !== sessionDigest) return null;
+    return {
+      accountId: worker.accountId,
+      deviceId: worker.deviceId,
+      workerId: worker.workerId,
+      generation: worker.generation,
+    };
+  }
+
+  claimDeviceSeenPersistence(
+    accountId: string,
+    deviceId: string,
+  ): number | null {
+    const key = deviceKey(accountId, deviceId);
+    const now = Date.now();
+    const persistedAt = this.#deviceSeenPersistedAt.get(key);
+    if (persistedAt !== undefined && now - persistedAt < DEVICE_SEEN_PERSIST_MS) {
+      return null;
+    }
+    this.#deviceSeenPersistedAt.set(key, now);
+    return now;
+  }
+
+  releaseDeviceSeenPersistence(
+    accountId: string,
+    deviceId: string,
+    claimedAt: number,
+  ): void {
+    const key = deviceKey(accountId, deviceId);
+    if (this.#deviceSeenPersistedAt.get(key) === claimedAt) {
+      this.#deviceSeenPersistedAt.delete(key);
+    }
   }
 
   unregisterWorker(accountId: string, deviceId: string, workerId: string): void {
@@ -225,10 +302,7 @@ export class RouterState {
 
   activeWorkerCount(accountId: string, deviceId: string): number {
     this.#pruneStaleWorkers();
-    return [...this.#workers.values()].filter(
-      (worker) =>
-        worker.accountId === accountId && worker.deviceId === deviceId,
-    ).length;
+    return this.#workerCountsByDevice.get(deviceKey(accountId, deviceId)) ?? 0;
   }
 
   supportsCommandProgress(accountId: string, workerId: string): boolean {
@@ -238,7 +312,11 @@ export class RouterState {
   }
 
   #pruneStaleWorkers(): void {
-    const staleBefore = Date.now() - WORKER_STALE_MS;
+    const now = Date.now();
+    const elapsed = now - this.#lastPrunedAt;
+    if (elapsed >= 0 && elapsed < WORKER_PRUNE_INTERVAL_MS) return;
+    this.#lastPrunedAt = now;
+    const staleBefore = now - WORKER_STALE_MS;
     for (const worker of [...this.#workers.values()]) {
       if (worker.lastSeenAt < staleBefore) {
         this.#removeWorker(worker);
@@ -249,6 +327,15 @@ export class RouterState {
   #removeWorker(worker: ConnectedWorker): void {
     worker.pollWaiter?.(null);
     this.#workers.delete(worker.workerId);
+    this.#workerSessions.delete(worker.sessionDigest);
+    const key = deviceKey(worker.accountId, worker.deviceId);
+    const remaining = (this.#workerCountsByDevice.get(key) ?? 1) - 1;
+    if (remaining > 0) {
+      this.#workerCountsByDevice.set(key, remaining);
+    } else {
+      this.#workerCountsByDevice.delete(key);
+      this.#deviceSeenPersistedAt.delete(key);
+    }
     this.#rejectWorkerWaiters(worker.workerId);
   }
 

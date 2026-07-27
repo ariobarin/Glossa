@@ -26,6 +26,7 @@ export interface RelayStore {
     name: string,
   ): Promise<DeviceRecord | null>;
   revokeDevice(accountId: string, deviceId: string): Promise<boolean>;
+  touchDevice(accountId: string, deviceId: string): Promise<boolean>;
   authenticateDevice(
     deviceId: string,
     secret: string,
@@ -186,6 +187,17 @@ export class Store implements RelayStore {
       );
       return true;
     });
+  }
+
+  async touchDevice(accountId: string, deviceId: string): Promise<boolean> {
+    const result = await this.#pool.query<{ id: string }>(
+      `UPDATE devices
+       SET last_seen_at = now()
+       WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL
+       RETURNING id`,
+      [accountId, deviceId],
+    );
+    return result.rows[0] !== undefined;
   }
 
   async authenticateDevice(
