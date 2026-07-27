@@ -26,7 +26,7 @@ jobs:
       - run: node packages/cli/dist/main.js --version
 
   relay-check:
-    needs: relay-matrix
+    needs: [relay-matrix, macos-matrix]
     runs-on: ubuntu-latest
     steps:
       - run: echo "relay matrix passed"

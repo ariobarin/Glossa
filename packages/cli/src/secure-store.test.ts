@@ -250,7 +250,7 @@ test(
         warn: (message) => warnings.push(message),
       });
       context.after(async () => {
-        await store.delete().catch(() => {});
+        await store.delete();
       });
 
       assert.equal(await store.save(value), "keyring");
