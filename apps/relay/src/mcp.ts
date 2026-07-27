@@ -50,7 +50,7 @@ const listDevicesOutputSchema = z
           })
           .strict(),
       )
-      .describe("Online Windows workers available to the authenticated account."),
+      .describe("Online workers available to the authenticated account."),
     availability: z
       .enum(["online", "offline"])
       .describe("Whether one or more Glossa workspaces are online."),

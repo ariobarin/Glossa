@@ -1,6 +1,6 @@
 # Self-hosting
 
-Glossa is a managed service. Self-hosting is the optional alternative for people who prefer to operate the infrastructure themselves. A private installation consists of one public relay process, one Postgres database, one OAuth tenant, and the Windows CLI built from this repository.
+Glossa is a managed service. Self-hosting is the optional alternative for people who prefer to operate the infrastructure themselves. A private installation consists of one public relay process, one Postgres database, one OAuth tenant, and the Glossa CLI on Windows, macOS, or Linux.
 
 ## Requirements
 
@@ -55,9 +55,11 @@ npm run start --workspace @glossa/relay
 
 Terminate TLS in front of the relay. Confirm `https://mcp.example.com/healthz` returns an object with `ok` set to `true`.
 
-## Windows CLI
+## CLI
 
 Use the same issuer, audience, and Native application when running the repository build:
+
+Windows PowerShell:
 
 ```powershell
 $env:GLOSSA_RELAY_ORIGIN = "https://mcp.example.com"
@@ -74,7 +76,24 @@ Set-Location C:\path\to\a\project
 node C:\path\to\glossa\packages\cli\dist\main.js
 ```
 
-Only the selected project is exposed. The command process still has the full authority and environment of the Windows account that launched it.
+macOS or Linux:
+
+```shell
+export GLOSSA_RELAY_ORIGIN="https://mcp.example.com"
+export GLOSSA_WORKER_ORIGIN="https://mcp.example.com"
+export GLOSSA_AUTH0_ISSUER="https://YOUR_TENANT.auth0.com/"
+export GLOSSA_AUTH0_AUDIENCE="https://mcp.example.com/"
+export GLOSSA_AUTH0_CLI_CLIENT_ID="YOUR_NATIVE_CLIENT_ID"
+
+cd /path/to/glossa
+npm ci
+npm run build
+
+cd /path/to/a/project
+node /path/to/glossa/packages/cli/dist/main.js
+```
+
+Only the selected project is exposed. The command process still has the full authority and environment of the operating-system account that launched it.
 
 ## ChatGPT
 
