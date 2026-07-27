@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -233,3 +234,31 @@ test("warns only once while reusing a file fallback", async () => {
     assert.deepEqual(warnings, ["file fallback"]);
   });
 });
+
+test(
+  "round-trips the native operating-system credential store",
+  { skip: process.env.GLOSSA_TEST_NATIVE_KEYRING !== "1" },
+  async (context) => {
+    await withTempFile(async (file) => {
+      const value = { token: `integration-${randomUUID()}` };
+      const warnings: string[] = [];
+      const store = new SecureStore<typeof value>({
+        account: `integration-${randomUUID()}`,
+        file,
+        warning: "file fallback",
+        parse: (serialized) => JSON.parse(serialized) as typeof value,
+        warn: (message) => warnings.push(message),
+      });
+      context.after(async () => {
+        await store.delete().catch(() => {});
+      });
+
+      assert.equal(await store.save(value), "keyring");
+      assert.deepEqual(await store.load(), { value, backend: "keyring" });
+      assert.deepEqual(warnings, []);
+
+      await store.delete();
+      assert.equal(await store.load(), null);
+    });
+  },
+);
