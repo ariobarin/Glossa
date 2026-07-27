@@ -43,10 +43,19 @@ export interface CommandSnapshot {
 }
 
 interface CapturedStream {
-  chunks: Buffer[];
-  bytes: number;
+  head: Buffer[];
+  headBytes: number;
+  tail: Buffer;
+  totalBytes: number;
+}
+
+interface RenderedStream {
+  content: string;
   truncated: boolean;
 }
+
+const STREAM_HEAD_BYTES = Math.floor(MAX_COMMAND_OUTPUT_BYTES / 3);
+const STREAM_TAIL_BYTES = MAX_COMMAND_OUTPUT_BYTES - STREAM_HEAD_BYTES;
 
 interface CommandRecord {
   id: string;
@@ -66,22 +75,37 @@ interface CommandRecord {
   timeout?: NodeJS.Timeout;
 }
 
-function capture(record: CommandRecord, stream: CapturedStream, chunk: Buffer): boolean {
-  const capturedBytes = record.stdout.bytes + record.stderr.bytes;
-  if (capturedBytes >= MAX_COMMAND_OUTPUT_BYTES) {
-    if (stream.truncated) return false;
-    stream.truncated = true;
-    return true;
+function appendTail(existing: Buffer, chunk: Buffer): Buffer {
+  if (chunk.byteLength >= STREAM_TAIL_BYTES) {
+    return Buffer.from(chunk.subarray(chunk.byteLength - STREAM_TAIL_BYTES));
   }
-  const remaining = MAX_COMMAND_OUTPUT_BYTES - capturedBytes;
-  const accepted = chunk.subarray(0, remaining);
-  if (accepted.byteLength > 0) {
-    stream.chunks.push(accepted);
-    stream.bytes += accepted.byteLength;
+  const combined = existing.byteLength === 0
+    ? chunk
+    : Buffer.concat([existing, chunk]);
+  return combined.byteLength <= STREAM_TAIL_BYTES
+    ? combined
+    : combined.subarray(combined.byteLength - STREAM_TAIL_BYTES);
+}
+
+function capture(_record: CommandRecord, stream: CapturedStream, chunk: Buffer): boolean {
+  if (chunk.byteLength === 0) return false;
+  stream.totalBytes += chunk.byteLength;
+  let offset = 0;
+  if (stream.headBytes < STREAM_HEAD_BYTES) {
+    const accepted = chunk.subarray(
+      0,
+      Math.min(chunk.byteLength, STREAM_HEAD_BYTES - stream.headBytes),
+    );
+    if (accepted.byteLength > 0) {
+      stream.head.push(Buffer.from(accepted));
+      stream.headBytes += accepted.byteLength;
+      offset = accepted.byteLength;
+    }
   }
-  const newlyTruncated = accepted.byteLength < chunk.byteLength && !stream.truncated;
-  if (newlyTruncated) stream.truncated = true;
-  return accepted.byteLength > 0 || newlyTruncated;
+  if (offset < chunk.byteLength) {
+    stream.tail = appendTail(stream.tail, chunk.subarray(offset));
+  }
+  return true;
 }
 
 function markChanged(record: CommandRecord): void {
@@ -117,14 +141,85 @@ async function waitForChange(
 }
 
 function emptyCapture(): CapturedStream {
-  return { chunks: [], bytes: 0, truncated: false };
+  return {
+    head: [],
+    headBytes: 0,
+    tail: Buffer.alloc(0),
+    totalBytes: 0,
+  };
 }
 
-function decodeCapture(stream: CapturedStream, complete: boolean): string {
-  const content = Buffer.concat(stream.chunks);
-  return complete && !stream.truncated
-    ? content.toString("utf8")
-    : new StringDecoder("utf8").write(content);
+function retainedBytes(stream: CapturedStream): number {
+  return Math.min(stream.totalBytes, MAX_COMMAND_OUTPUT_BYTES);
+}
+
+function safePrefix(buffer: Buffer): string {
+  return new StringDecoder("utf8").write(buffer);
+}
+
+function safeSuffix(buffer: Buffer): string {
+  let start = 0;
+  while (
+    start < buffer.byteLength &&
+    (buffer[start]! & 0b1100_0000) === 0b1000_0000
+  ) {
+    start += 1;
+  }
+  return new StringDecoder("utf8").write(buffer.subarray(start));
+}
+
+function renderStream(
+  stream: CapturedStream,
+  budget: number,
+  complete: boolean,
+): RenderedStream {
+  if (budget <= 0 || stream.totalBytes === 0) {
+    return { content: "", truncated: stream.totalBytes > 0 };
+  }
+  const head = Buffer.concat(stream.head, stream.headBytes);
+  const retained = Buffer.concat([head, stream.tail]);
+  if (stream.totalBytes <= budget) {
+    return {
+      content: complete
+        ? retained.toString("utf8")
+        : new StringDecoder("utf8").write(retained),
+      truncated: false,
+    };
+  }
+
+  const headBudget = Math.min(head.byteLength, Math.floor(budget / 3));
+  const tailBudget = Math.min(stream.tail.byteLength, budget - headBudget);
+  const remaining = budget - headBudget - tailBudget;
+  const extraHead = Math.min(remaining, head.byteLength - headBudget);
+  const prefix = head.subarray(0, headBudget + extraHead);
+  const suffix = stream.tail.subarray(stream.tail.byteLength - tailBudget);
+  return {
+    content: safePrefix(prefix) + safeSuffix(suffix),
+    truncated: true,
+  };
+}
+
+function renderOutput(
+  stdout: CapturedStream,
+  stderr: CapturedStream,
+  complete: boolean,
+): { stdout: RenderedStream; stderr: RenderedStream } {
+  const half = Math.floor(MAX_COMMAND_OUTPUT_BYTES / 2);
+  const stdoutAvailable = retainedBytes(stdout);
+  const stderrAvailable = retainedBytes(stderr);
+  let stdoutBudget = Math.min(stdoutAvailable, half);
+  let stderrBudget = Math.min(stderrAvailable, half);
+  let remaining = MAX_COMMAND_OUTPUT_BYTES - stdoutBudget - stderrBudget;
+
+  const stderrExtra = Math.min(remaining, stderrAvailable - stderrBudget);
+  stderrBudget += stderrExtra;
+  remaining -= stderrExtra;
+  stdoutBudget += Math.min(remaining, stdoutAvailable - stdoutBudget);
+
+  return {
+    stdout: renderStream(stdout, stdoutBudget, complete),
+    stderr: renderStream(stderr, stderrBudget, complete),
+  };
 }
 
 function shellInvocation(command: string): { file: string; args: string[] } {
@@ -353,15 +448,20 @@ export class CommandService {
   }
 
   private snapshot(record: CommandRecord): CommandSnapshot {
+    const output = renderOutput(
+      record.stdout,
+      record.stderr,
+      record.status !== "running",
+    );
     const base: CommandSnapshot = {
       commandId: record.id,
       status: record.status,
       sequence: record.sequence,
       startedAt: new Date(record.startedAt).toISOString(),
-      stdout: decodeCapture(record.stdout, record.status !== "running"),
-      stderr: decodeCapture(record.stderr, record.status !== "running"),
-      stdoutTruncated: record.stdout.truncated,
-      stderrTruncated: record.stderr.truncated,
+      stdout: output.stdout.content,
+      stderr: output.stderr.content,
+      stdoutTruncated: output.stdout.truncated,
+      stderrTruncated: output.stderr.truncated,
     };
     if (record.finishedAt !== undefined) {
       base.finishedAt = new Date(record.finishedAt).toISOString();

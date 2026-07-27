@@ -145,11 +145,11 @@ const workerCommandOutputSchema = z
     stdoutTruncated: z
       .boolean()
       .optional()
-      .describe("Whether standard output exceeded the shared command-output capture limit. Use a narrower command to retrieve omitted output."),
+      .describe("Whether standard output exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use a narrower command to retrieve omitted detail."),
     stderrTruncated: z
       .boolean()
       .optional()
-      .describe("Whether standard error exceeded the shared command-output capture limit. Use a narrower command to retrieve omitted output."),
+      .describe("Whether standard error exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use a narrower command to retrieve omitted detail."),
   })
   .strip();
 const commandOutputSchema = workerCommandOutputSchema.extend({

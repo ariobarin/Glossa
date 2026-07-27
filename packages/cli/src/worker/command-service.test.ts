@@ -140,9 +140,11 @@ test("truncates command output at a complete UTF-8 character", async (context) =
   const completed = await commands.get(started.commandId, 15_000);
 
   assert.equal(completed.status, "succeeded");
-  assert.equal(completed.stdout, "a".repeat(MAX_COMMAND_OUTPUT_BYTES - 1));
+  assert.equal(completed.stdout?.startsWith("a".repeat(256)), true);
+  assert.equal(completed.stdout?.endsWith("\u20ac"), true);
+  assert.equal(completed.stdout?.includes("\ufffd"), false);
   assert.equal(completed.stdoutTruncated, true);
-  assert.ok(Buffer.byteLength(completed.stdout) <= MAX_COMMAND_OUTPUT_BYTES);
+  assert.ok(Buffer.byteLength(completed.stdout ?? "") <= MAX_COMMAND_OUTPUT_BYTES);
 });
 
 test("shares one capture budget across standard output and error", async (context) => {
@@ -163,5 +165,50 @@ test("shares one capture budget across standard output and error", async (contex
       Buffer.byteLength(completed.stderr ?? "") <=
       MAX_COMMAND_OUTPUT_BYTES,
   );
-  assert.ok(completed.stdoutTruncated || completed.stderrTruncated);
+  assert.equal(completed.stderr, "b");
+  assert.equal(completed.stdoutTruncated, true);
+  assert.equal(completed.stderrTruncated, false);
+});
+
+test("preserves the beginning and end of long command output", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      `process.stdout.write("HEAD-" + "x".repeat(${2 * MAX_COMMAND_OUTPUT_BYTES}) + "-TAIL")`,
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stdout?.startsWith("HEAD-"), true);
+  assert.equal(completed.stdout?.endsWith("-TAIL"), true);
+  assert.equal(completed.stdoutTruncated, true);
+  assert.ok(Buffer.byteLength(completed.stdout ?? "") <= MAX_COMMAND_OUTPUT_BYTES);
+});
+
+test("reserves diagnostic output when both streams are noisy", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      `process.stdout.write("o".repeat(${2 * MAX_COMMAND_OUTPUT_BYTES})); process.stderr.write("ERROR-HEAD-" + "e".repeat(${MAX_COMMAND_OUTPUT_BYTES}) + "-ERROR-TAIL")`,
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stderr?.startsWith("ERROR-HEAD-"), true);
+  assert.equal(completed.stderr?.endsWith("-ERROR-TAIL"), true);
+  assert.equal(completed.stdoutTruncated, true);
+  assert.equal(completed.stderrTruncated, true);
+  assert.ok(
+    Buffer.byteLength(completed.stdout ?? "") +
+      Buffer.byteLength(completed.stderr ?? "") <=
+      MAX_COMMAND_OUTPUT_BYTES,
+  );
 });
