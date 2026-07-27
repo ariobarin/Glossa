@@ -104,6 +104,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     byName.get("list_devices")?.description ?? "",
     /start or reconnect the local worker before retrying/,
   );
+  assert.doesNotMatch(
+    JSON.stringify(byName.get("list_devices")?.outputSchema),
+    /\bWindows\b/,
+  );
 
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;

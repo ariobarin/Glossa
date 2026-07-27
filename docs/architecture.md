@@ -19,7 +19,7 @@ hosted relay
         |
 glossa process on user device
   +-- canonical root
-  +-- path and symlink enforcement
+  +-- linked-path enforcement
   +-- atomic file operations
   +-- bounded one-shot commands
 ```

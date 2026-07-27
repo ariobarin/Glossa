@@ -148,12 +148,12 @@
 <p><strong>Threat:</strong> absolute paths, parent traversal, symlinks, junctions, or writable ancestors escape the root.</p>
 <p><strong>Controls:</strong></p>
 <ul>
-<li>enforce canonicalization, realpath, symlink, and junction checks from the current Glossa requirements;</li>
+<li>enforce canonicalization, realpath, symlink, and junction checks for the host operating system;</li>
 <li>validate existing paths and nearest writable ancestors locally;</li>
 <li>reject absolute paths and lexical parent escapes;</li>
 <li>revalidate root-relative paths for every operation;</li>
-<li>treat Windows path, junction, and reparse-point behavior as the launch security baseline;</li>
-<li>verify Windows junction and reparse-point behavior when path enforcement changes.</li>
+<li>preserve correct case-sensitive or case-insensitive path comparison for the host;</li>
+<li>verify Windows junction and reparse-point behavior and POSIX symlink behavior when path enforcement changes.</li>
 </ul>
 <h3 id="shell-authority"><a class="heading-anchor" href="#shell-authority" aria-label="Link to Shell authority"></a>Shell authority</h3>
 <p><strong>Threat:</strong> a command accesses resources outside the exposed file root.</p>

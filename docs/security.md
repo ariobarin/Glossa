@@ -76,12 +76,12 @@ Glossa executes commands with the permissions and environment of the local accou
 
 **Controls:**
 
-- enforce canonicalization, realpath, symlink, and junction checks from the current Glossa requirements;
+- enforce canonicalization, realpath, symlink, and junction checks for the host operating system;
 - validate existing paths and nearest writable ancestors locally;
 - reject absolute paths and lexical parent escapes;
 - revalidate root-relative paths for every operation;
-- treat Windows path, junction, and reparse-point behavior as the launch security baseline;
-- verify Windows junction and reparse-point behavior when path enforcement changes.
+- preserve correct case-sensitive or case-insensitive path comparison for the host;
+- verify Windows junction and reparse-point behavior and POSIX symlink behavior when path enforcement changes.
 
 ### Shell authority
 
