@@ -11,10 +11,18 @@ const secondWorkerId = "00000000-0000-4000-8000-000000000004";
 
 test("routes multiple workers enrolled on one computer independently", async () => {
   const state = new RouterState();
-  const firstGeneration = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  const firstGeneration = state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    firstWorkerId,
+    { commandProgress: true },
+  );
   state.register(accountId, deviceId, "Test PC", secondWorkerId);
 
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
+  assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
+  assert.equal(state.supportsCommandProgress(accountId, secondWorkerId), false);
   assert.deepEqual(state.listDevices(accountId), [
     { deviceId: firstWorkerId, name: "Test PC", path: "." },
     { deviceId: secondWorkerId, name: "Test PC", path: "." },

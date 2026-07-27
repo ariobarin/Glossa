@@ -51,7 +51,11 @@ export class LocalWorker {
           });
           break;
         case "get_command":
-          value = await this.commands.get(job.commandId, job.waitMs);
+          value = await this.commands.get(
+            job.commandId,
+            job.waitMs,
+            job.afterSequence,
+          );
           break;
         case "cancel_command":
           value = await this.commands.cancel(job.commandId);

@@ -100,7 +100,8 @@ The hosting layer imposes a bounded request window. Therefore:
 - `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request;
 - later command calls carry both IDs, so relay restarts do not lose a command routing lookup;
-- `get_command` may wait up to 15 seconds, and `cancel_command` uses a separate bounded request;
+- `get_command` may wait up to 15 seconds and can wake as soon as command output or status changes;
+- `cancel_command` uses a separate bounded request;
 - no hosted request remains open for the lifetime of a command.
 
 The core protocol uses ordinary MCP tools for command start, status, result, and cancellation. Native MCP Tasks support is deferred until target clients support it dependably.

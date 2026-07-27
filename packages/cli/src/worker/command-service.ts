@@ -31,6 +31,7 @@ export interface StartCommandOptions {
 export interface CommandSnapshot {
   commandId: string;
   status: CommandStatus;
+  sequence: number;
   startedAt: string;
   finishedAt?: string;
   exitCode?: number | null;
@@ -51,6 +52,8 @@ interface CommandRecord {
   id: string;
   child: ChildProcessWithoutNullStreams;
   status: CommandStatus;
+  sequence: number;
+  changeWaiters: Set<() => void>;
   startedAt: number;
   finishedAt?: number;
   exitCode?: number | null;
@@ -63,28 +66,65 @@ interface CommandRecord {
   timeout?: NodeJS.Timeout;
 }
 
-function capture(record: CommandRecord, stream: CapturedStream, chunk: Buffer): void {
+function capture(record: CommandRecord, stream: CapturedStream, chunk: Buffer): boolean {
   const capturedBytes = record.stdout.bytes + record.stderr.bytes;
   if (capturedBytes >= MAX_COMMAND_OUTPUT_BYTES) {
+    if (stream.truncated) return false;
     stream.truncated = true;
-    return;
+    return true;
   }
   const remaining = MAX_COMMAND_OUTPUT_BYTES - capturedBytes;
   const accepted = chunk.subarray(0, remaining);
-  stream.chunks.push(accepted);
-  stream.bytes += accepted.byteLength;
-  if (accepted.byteLength < chunk.byteLength) stream.truncated = true;
+  if (accepted.byteLength > 0) {
+    stream.chunks.push(accepted);
+    stream.bytes += accepted.byteLength;
+  }
+  const newlyTruncated = accepted.byteLength < chunk.byteLength && !stream.truncated;
+  if (newlyTruncated) stream.truncated = true;
+  return accepted.byteLength > 0 || newlyTruncated;
+}
+
+function markChanged(record: CommandRecord): void {
+  record.sequence += 1;
+  const waiters = [...record.changeWaiters];
+  record.changeWaiters.clear();
+  for (const waiter of waiters) waiter();
+}
+
+async function waitForChange(
+  record: CommandRecord,
+  afterSequence: number,
+  waitMs: number,
+): Promise<void> {
+  if (record.status !== "running" || record.sequence > afterSequence || waitMs === 0) {
+    return;
+  }
+  let changed!: () => void;
+  const change = new Promise<void>((resolve) => {
+    changed = resolve;
+    record.changeWaiters.add(changed);
+  });
+  const waitController = new AbortController();
+  try {
+    await Promise.race([
+      change,
+      delay(waitMs, undefined, { signal: waitController.signal }),
+    ]);
+  } finally {
+    record.changeWaiters.delete(changed);
+    waitController.abort();
+  }
 }
 
 function emptyCapture(): CapturedStream {
   return { chunks: [], bytes: 0, truncated: false };
 }
 
-function decodeCapture(stream: CapturedStream): string {
+function decodeCapture(stream: CapturedStream, complete: boolean): string {
   const content = Buffer.concat(stream.chunks);
-  return stream.truncated
-    ? new StringDecoder("utf8").write(content)
-    : content.toString("utf8");
+  return complete && !stream.truncated
+    ? content.toString("utf8")
+    : new StringDecoder("utf8").write(content);
 }
 
 function shellInvocation(command: string): { file: string; args: string[] } {
@@ -182,6 +222,8 @@ export class CommandService {
       id,
       child,
       status: "running",
+      sequence: 0,
+      changeWaiters: new Set(),
       startedAt: Date.now(),
       stdout: emptyCapture(),
       stderr: emptyCapture(),
@@ -197,8 +239,12 @@ export class CommandService {
     this.#commands.set(id, record);
     this.#activeCommandId = id;
 
-    child.stdout.on("data", (chunk: Buffer) => capture(record, record.stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => capture(record, record.stderr, chunk));
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (capture(record, record.stdout, chunk)) markChanged(record);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (capture(record, record.stderr, chunk)) markChanged(record);
+    });
     child.once("error", (error) => {
       if (record.status !== "running") return;
       if (record.timeout) clearTimeout(record.timeout);
@@ -206,6 +252,7 @@ export class CommandService {
       record.finishedAt = Date.now();
       capture(record, record.stderr, Buffer.from(error.message, "utf8"));
       this.#activeCommandId = null;
+      markChanged(record);
       record.complete();
     });
     child.once("close", (exitCode, signal) => {
@@ -216,6 +263,7 @@ export class CommandService {
       record.signal = signal;
       record.status = record.requestedTerminal ?? (exitCode === 0 ? "succeeded" : "failed");
       this.#activeCommandId = null;
+      markChanged(record);
       record.complete();
       setTimeout(() => this.#commands.delete(id), 5 * 60 * 1000).unref();
     });
@@ -246,21 +294,40 @@ export class CommandService {
     return this.snapshot(record);
   }
 
-  async get(commandId: string, waitMs = 0): Promise<CommandSnapshot> {
+  async get(
+    commandId: string,
+    waitMs = 0,
+    afterSequence?: number,
+  ): Promise<CommandSnapshot> {
     const record = this.#commands.get(commandId);
     if (!record) throw new WorkerError("command_not_found", "The command was not found.");
     if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > MAX_COMMAND_STATUS_WAIT_MS) {
       throw new WorkerError("invalid_wait", "Status wait must be between 0 and 15 seconds.");
     }
+    if (
+      afterSequence !== undefined &&
+      (!Number.isInteger(afterSequence) ||
+        afterSequence < 0 ||
+        afterSequence > record.sequence)
+    ) {
+      throw new WorkerError(
+        "invalid_sequence",
+        "The command sequence is invalid for this command.",
+      );
+    }
     if (record.status === "running" && waitMs > 0) {
-      const waitController = new AbortController();
-      try {
-        await Promise.race([
-          record.completion,
-          delay(waitMs, undefined, { signal: waitController.signal }),
-        ]);
-      } finally {
-        waitController.abort();
+      if (afterSequence === undefined) {
+        const waitController = new AbortController();
+        try {
+          await Promise.race([
+            record.completion,
+            delay(waitMs, undefined, { signal: waitController.signal }),
+          ]);
+        } finally {
+          waitController.abort();
+        }
+      } else {
+        await waitForChange(record, afterSequence, waitMs);
       }
     }
     return this.snapshot(record);
@@ -289,16 +356,17 @@ export class CommandService {
     const base: CommandSnapshot = {
       commandId: record.id,
       status: record.status,
+      sequence: record.sequence,
       startedAt: new Date(record.startedAt).toISOString(),
+      stdout: decodeCapture(record.stdout, record.status !== "running"),
+      stderr: decodeCapture(record.stderr, record.status !== "running"),
+      stdoutTruncated: record.stdout.truncated,
+      stderrTruncated: record.stderr.truncated,
     };
     if (record.finishedAt !== undefined) {
       base.finishedAt = new Date(record.finishedAt).toISOString();
       base.exitCode = record.exitCode ?? null;
       base.signal = record.signal ?? null;
-      base.stdout = decodeCapture(record.stdout);
-      base.stderr = decodeCapture(record.stderr);
-      base.stdoutTruncated = record.stdout.truncated;
-      base.stderrTruncated = record.stderr.truncated;
     }
     return base;
   }

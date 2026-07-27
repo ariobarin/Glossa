@@ -9,6 +9,7 @@ interface ConnectedWorker {
   deviceName: string;
   workerId: string;
   generation: string;
+  commandProgress: boolean;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
   pollWaiter?: (job: WorkerJob | null) => void;
@@ -33,6 +34,7 @@ export class RouterState {
     deviceId: string,
     deviceName: string,
     workerId: string,
+    capabilities: { commandProgress: boolean } = { commandProgress: false },
   ): string {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
@@ -51,6 +53,7 @@ export class RouterState {
       deviceName,
       workerId,
       generation,
+      commandProgress: capabilities.commandProgress === true,
       lastSeenAt: Date.now(),
       pendingJobs: [],
     });
@@ -212,6 +215,12 @@ export class RouterState {
       (worker) =>
         worker.accountId === accountId && worker.deviceId === deviceId,
     ).length;
+  }
+
+  supportsCommandProgress(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.commandProgress;
   }
 
   #pruneStaleWorkers(): void {

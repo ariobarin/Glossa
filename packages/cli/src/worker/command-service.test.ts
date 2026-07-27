@@ -53,6 +53,47 @@ test("returns a handle when a command outlives the fast wait", async (context) =
   assert.equal(completed.stdout, "later");
 });
 
+test("returns running output and wakes when command progress changes", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      "process.stdout.write('first'); setTimeout(() => process.stdout.write(' second'), 1000); setTimeout(() => {}, 1500)",
+    ],
+    timeoutMs: 10_000,
+    waitMs: 0,
+  });
+
+  const first = await commands.get(started.commandId, 5_000, started.sequence);
+  assert.equal(first.status, "running");
+  assert.equal(first.stdout, "first");
+  assert.ok(first.sequence > started.sequence);
+
+  const second = await commands.get(started.commandId, 5_000, first.sequence);
+  assert.equal(second.stdout, "first second");
+  assert.ok(second.sequence > first.sequence);
+
+  const completed = await commands.get(started.commandId, 5_000);
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stdout, "first second");
+  assert.ok(completed.sequence > second.sequence);
+});
+
+test("rejects a command sequence ahead of current progress", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 500)"],
+    timeoutMs: 10_000,
+    waitMs: 0,
+  });
+
+  await assert.rejects(
+    commands.get(started.commandId, 0, started.sequence + 1),
+    /sequence is invalid/,
+  );
+});
+
 test("runs the platform shell inside the exposed root", async (context) => {
   const { root, commands } = await commandFixture(context);
   const started = await commands.start({

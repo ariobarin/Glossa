@@ -156,22 +156,35 @@ export class RemoteWorker {
     try {
       response = await this.#post("/device/register", {
         workerId: this.#workerId,
+        capabilities: { commandProgress: true },
       });
     } catch (error) {
       if (!(error instanceof RelayResponseError) || error.status !== 400) {
         throw error;
       }
-      response = await this.#post("/device/register", {});
-      const legacyValue = (await response.json()) as unknown;
-      if (
-        typeof legacyValue !== "object" ||
-        legacyValue === null ||
-        !("generation" in legacyValue) ||
-        typeof legacyValue.generation !== "string"
-      ) {
-        throw new Error("The relay returned an invalid registration response.");
+      try {
+        response = await this.#post("/device/register", {
+          workerId: this.#workerId,
+        });
+      } catch (currentError) {
+        if (
+          !(currentError instanceof RelayResponseError) ||
+          currentError.status !== 400
+        ) {
+          throw currentError;
+        }
+        response = await this.#post("/device/register", {});
+        const legacyValue = (await response.json()) as unknown;
+        if (
+          typeof legacyValue !== "object" ||
+          legacyValue === null ||
+          !("generation" in legacyValue) ||
+          typeof legacyValue.generation !== "string"
+        ) {
+          throw new Error("The relay returned an invalid registration response.");
+        }
+        return { generation: legacyValue.generation, legacyRelay: true };
       }
-      return { generation: legacyValue.generation, legacyRelay: true };
     }
     const value = (await response.json()) as unknown;
     if (
