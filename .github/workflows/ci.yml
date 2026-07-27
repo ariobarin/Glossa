@@ -22,12 +22,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm run test --workspace @glossa/relay
-      - run: npm run test --workspace @ariobarin/glossa
+      - run: npm run check
+      - run: node packages/cli/dist/main.js --version
 
   relay-check:
-    needs: relay-matrix
+    needs: [relay-matrix, macos-matrix]
     runs-on: ubuntu-latest
     steps:
       - run: echo "relay matrix passed"
@@ -46,6 +45,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+        env:
+          GLOSSA_TEST_NATIVE_KEYRING: "1"
       - run: node packages/cli/dist/main.js --version
 
   windows-check:
@@ -53,6 +54,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "windows matrix passed"
+
+  macos-matrix:
+    name: macos-check (${{ matrix.node-version }})
+    runs-on: macos-15
+    strategy:
+      matrix:
+        node-version: ["22.9.0", "24"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+        env:
+          GLOSSA_TEST_NATIVE_KEYRING: "1"
+      - run: node packages/cli/dist/main.js --version
+
+  macos-check:
+    needs: macos-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "macos matrix passed"
 
   standalone-matrix:
     name: standalone-check (${{ matrix.asset }})
@@ -176,7 +201,7 @@ jobs:
 
   deploy:
     if: needs.deploy-changes.outputs.relay == 'true'
-    needs: [relay-check, windows-check, standalone-matrix, deploy-changes]
+    needs: [relay-check, windows-check, macos-check, standalone-matrix, deploy-changes]
     runs-on: ubuntu-latest
     concurrency:
       group: heroku-production
