@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "pg";
-import { databaseOptions } from "./database-options.js";
+import {
+  databaseOptions,
+  relayPoolOptions,
+} from "./database-options.js";
 
 const databaseUrl = "postgres://user:password@database.example/glossa";
 
@@ -102,4 +105,21 @@ test("does not enable TLS for local development", () => {
     connectionString: databaseUrl,
     ssl: undefined,
   });
+});
+
+test("keeps relay database connections across worker polls", () => {
+  assert.deepEqual(
+    relayPoolOptions(databaseUrl, { NODE_ENV: "development" }),
+    {
+      connectionString: databaseUrl,
+      ssl: undefined,
+      max: 5,
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 60_000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 5_000,
+      query_timeout: 5_000,
+      statement_timeout: 5_000,
+    },
+  );
 });

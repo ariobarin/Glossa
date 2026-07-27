@@ -5,10 +5,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   DEFAULT_COMMAND_FAST_WAIT_MS,
   DEFAULT_COMMAND_TIMEOUT_MS,
+  MAX_COMMAND_OUTPUT_BYTES,
   MAX_COMMAND_FAST_WAIT_MS,
   MAX_COMMAND_STATUS_WAIT_MS,
   MAX_COMMAND_TIMEOUT_MS,
-  MAX_TEXT_BYTES,
 } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
 import type { PathPolicy } from "./path-policy.js";
@@ -63,12 +63,13 @@ interface CommandRecord {
   timeout?: NodeJS.Timeout;
 }
 
-function capture(stream: CapturedStream, chunk: Buffer): void {
-  if (stream.bytes >= MAX_TEXT_BYTES) {
+function capture(record: CommandRecord, stream: CapturedStream, chunk: Buffer): void {
+  const capturedBytes = record.stdout.bytes + record.stderr.bytes;
+  if (capturedBytes >= MAX_COMMAND_OUTPUT_BYTES) {
     stream.truncated = true;
     return;
   }
-  const remaining = MAX_TEXT_BYTES - stream.bytes;
+  const remaining = MAX_COMMAND_OUTPUT_BYTES - capturedBytes;
   const accepted = chunk.subarray(0, remaining);
   stream.chunks.push(accepted);
   stream.bytes += accepted.byteLength;
@@ -196,14 +197,14 @@ export class CommandService {
     this.#commands.set(id, record);
     this.#activeCommandId = id;
 
-    child.stdout.on("data", (chunk: Buffer) => capture(record.stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => capture(record.stderr, chunk));
+    child.stdout.on("data", (chunk: Buffer) => capture(record, record.stdout, chunk));
+    child.stderr.on("data", (chunk: Buffer) => capture(record, record.stderr, chunk));
     child.once("error", (error) => {
       if (record.status !== "running") return;
       if (record.timeout) clearTimeout(record.timeout);
       record.status = "failed";
       record.finishedAt = Date.now();
-      capture(record.stderr, Buffer.from(error.message, "utf8"));
+      capture(record, record.stderr, Buffer.from(error.message, "utf8"));
       this.#activeCommandId = null;
       record.complete();
     });
