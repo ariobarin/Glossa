@@ -172,16 +172,22 @@ test("uses worker credentials without repeating device authentication", async (c
   const legacy = await register({});
   const current = await register({
     workerId,
-    capabilities: { commandProgress: true },
+    capabilities: { commandProgress: true, concurrentJobs: true },
   });
   assert.equal(legacy.workerId, deviceId);
   assert.equal(current.workerId, workerId);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
   assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
+  assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
   assert.equal(state.supportsCommandProgress(accountId, workerId), true);
+  assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
   assert.equal(deviceAuthentications, 2);
   assert.equal(typeof current.workerToken, "string");
   assert.equal(typeof current.generation, "string");
+  assert.deepEqual(current.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
   const workerAuthorization = `Worker ${String(current.workerToken)}`;
 
   const mismatched = await fetch(`${origin}/device/heartbeat`, {
@@ -230,7 +236,12 @@ test("uses worker credentials without repeating device authentication", async (c
       authorization: workerAuthorization,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ workerId, generation: current.generation }),
+    body: JSON.stringify({
+      workerId,
+      generation: current.generation,
+      acceptedTypes: ["read_file"],
+      waitMs: 5_000,
+    }),
   });
   assert.equal(poll.status, 200);
   assert.deepEqual(await poll.json(), { job });

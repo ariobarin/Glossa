@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   MAX_TEXT_BYTES,
+  MAX_WORKER_POLL_MS,
   deviceNameSchema,
   workerResultSchema,
 } from "@glossa/protocol";
@@ -26,11 +27,22 @@ const enrollSchema = z
 const renameSchema = z.object({ name: deviceNameSchema }).strict();
 const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
+const workerJobTypeSchema = z.enum([
+  "read_file",
+  "write_file",
+  "edit_file",
+  "run_command",
+  "get_command",
+  "cancel_command",
+]);
 const registerSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     capabilities: z
-      .object({ commandProgress: z.literal(true).optional() })
+      .object({
+        commandProgress: z.literal(true).optional(),
+        concurrentJobs: z.literal(true).optional(),
+      })
       .strict()
       .optional(),
   }).strict(),
@@ -40,6 +52,8 @@ const pollSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     generation: z.string().uuid(),
+    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(6).optional(),
+    waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
   }).strict(),
   z.object({ generation: z.string().uuid() }).strict(),
 ]);
@@ -442,6 +456,9 @@ export function buildRoutes(
         commandProgress:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.commandProgress === true,
+        concurrentJobs:
+          "capabilities" in parsed.data &&
+          parsed.data.capabilities?.concurrentJobs === true,
       },
     );
     response.json({
@@ -449,6 +466,10 @@ export function buildRoutes(
       workerId,
       generation: session.generation,
       workerToken: session.workerToken,
+      capabilities: {
+        commandProgress: state.supportsCommandProgress(device.accountId, workerId),
+        concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
+      },
     });
   });
 
@@ -495,7 +516,16 @@ export function buildRoutes(
         deviceId,
         workerId,
         parsed.data.generation,
-        Math.min(config.GLOSSA_WORKER_POLL_MS, remainingRequestMs),
+        Math.min(
+          config.GLOSSA_WORKER_POLL_MS,
+          "waitMs" in parsed.data && parsed.data.waitMs !== undefined
+            ? parsed.data.waitMs
+            : config.GLOSSA_WORKER_POLL_MS,
+          remainingRequestMs,
+        ),
+        "acceptedTypes" in parsed.data && parsed.data.acceptedTypes
+          ? new Set(parsed.data.acceptedTypes)
+          : undefined,
       );
       if (!job) {
         response.status(204).end();
