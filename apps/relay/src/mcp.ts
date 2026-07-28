@@ -338,7 +338,7 @@ function registerTools(
     "logout",
     {
       title: "Log Out of Glossa",
-      description: "Use when the user asks to sign out of Glossa or switch Google accounts. Tell the user to press l and confirm in the Glossa terminal or run glossa logout, stop any other Glossa sessions, and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. The returned logoutUrl is a fallback if the CLI does not open a browser. This tool returns instructions only and does not revoke credentials or change server state.",
+      description: "Use when the user asks to sign out of Glossa or switch Google accounts. Tell the user to run glossa logout, stop any other Glossa sessions, and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. The returned logoutUrl is a fallback if the CLI does not open a browser. This tool returns instructions only and does not revoke credentials or change server state.",
       inputSchema: z.object({}).strict(),
       outputSchema: logoutOutputSchema,
       _meta: toolMetadata,
@@ -353,7 +353,7 @@ function registerTools(
       const logoutUrl = browserLogoutUrl(config.GLOSSA_AUTH0_ISSUER);
       return structuredResult({
         logoutUrl,
-        instructions: `In the Glossa terminal, press l and confirm, or run glossa logout. Stop any other Glossa sessions with q or Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. Choose the same intended Google account for both authorizations.`,
+        instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. Choose the same intended Google account for both authorizations.`,
       });
     },
   );

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { WorkerJob } from "@glossa/protocol";
 import type { StoredCredentials } from "../config-store.js";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
@@ -8,10 +9,11 @@ import {
   reenrollRejectedDevice,
   statusMessage,
   shouldRecoverRejectedDevice,
+  visibleWorker,
 } from "./managed-session.js";
 import { DeviceRejectedError } from "./remote-worker.js";
 
-test("aborts device enrollment when the UI session stops", async () => {
+test("aborts device enrollment when the managed session stops", async () => {
   const controller = new AbortController();
   const endpoints = {
     relayOrigin: "https://relay.example",
@@ -266,5 +268,72 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
       true,
     ),
     "Connection lost: TLS handshake failed Retrying in 2 seconds.",
+  );
+});
+
+test("reports one finished result for each visible activity", async () => {
+  const jobs: WorkerJob[] = [
+    {
+      type: "write_file",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      path: "README.md",
+      content: "updated",
+    },
+    {
+      type: "edit_file",
+      requestId: "00000000-0000-4000-8000-000000000002",
+      path: "README.md",
+      edits: [{ oldText: "old", newText: "new" }],
+    },
+    {
+      type: "run_command",
+      requestId: "00000000-0000-4000-8000-000000000003",
+      argv: ["node", "--version"],
+      timeoutMs: 1_000,
+    },
+    {
+      type: "cancel_command",
+      requestId: "00000000-0000-4000-8000-000000000004",
+      commandId: "00000000-0000-4000-8000-000000000005",
+    },
+    {
+      type: "read_file",
+      requestId: "00000000-0000-4000-8000-000000000006",
+      path: "README.md",
+    },
+  ];
+  const events: unknown[] = [];
+  const messages: string[] = [];
+  const originalError = console.error;
+  console.error = (message?: unknown) => {
+    messages.push(String(message));
+  };
+  try {
+    const worker = visibleWorker(
+      {
+        async handle(job) {
+          return { requestId: job.requestId, ok: true };
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    for (const job of jobs) await worker.handle(job);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(events.length, 4);
+  assert.equal(messages.length, 4);
+  for (const event of events) {
+    assert.equal((event as { phase?: string }).phase, "finished");
+  }
+  assert.deepEqual(
+    messages.map((message) => message.replace(/ \(.+\)\.$/, "")),
+    [
+      "File write completed",
+      "File edit completed",
+      "Command started",
+      "Command cancellation completed",
+    ],
   );
 });

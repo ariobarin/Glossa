@@ -60,17 +60,23 @@ test("browser logout uses the stored session issuer", async () => {
 
 test("browser logout still opens when already signed out locally", async () => {
   let openedUrl: string | undefined;
+  let deleted = false;
+  const messages: string[] = [];
 
   await logoutFromGlossa({
     peekCredentials: async () => null,
-    deleteCredentials: async () => undefined,
+    deleteCredentials: async () => {
+      deleted = true;
+    },
     openBrowser: async (url) => {
       openedUrl = url;
       return false;
     },
     issuer: "https://identity.glossa.test/",
-    log: () => undefined,
+    log: (message) => messages.push(message),
   });
 
+  assert.equal(deleted, true);
   assert.equal(openedUrl, "https://identity.glossa.test/v2/logout");
+  assert.equal(messages.at(-1), openedUrl);
 });

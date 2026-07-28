@@ -13,7 +13,6 @@ await rm("dist", { recursive: true, force: true });
 
 const define = {
   __GLOSSA_VERSION__: JSON.stringify(packageJson.version),
-  __GLOSSA_STANDALONE__: "false",
 };
 
 // Application bundle, targeted at the supported Node.js release.

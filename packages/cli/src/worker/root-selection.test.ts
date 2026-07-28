@@ -30,15 +30,33 @@ test("uses an explicitly selected directory", async () => {
   }
 });
 
-test("refuses a broad current directory", async () => {
+test("refuses a filesystem root whether implicit or explicit", async () => {
   const filesystemRoot = path.parse(process.cwd()).root;
-  await assert.rejects(
-    selectExposureRoot(undefined, filesystemRoot),
-    (error: unknown) => {
+  for (const selection of [
+    () => selectExposureRoot(undefined, filesystemRoot),
+    () => selectExposureRoot(filesystemRoot, process.cwd()),
+  ]) {
+    await assert.rejects(selection(), (error: unknown) => {
       if (!(error instanceof WorkerError) || error.code !== "broad_root_refused") return false;
       return /filesystem root/.test(error.message) && /project directory/.test(error.message);
-    },
-  );
+    });
+  }
+});
+
+test("refuses a home directory whether implicit or explicit", async () => {
+  const home = await realpath(os.homedir());
+  for (const selection of [
+    () => selectExposureRoot(undefined, home),
+    () => selectExposureRoot(home, process.cwd()),
+  ]) {
+    await assert.rejects(
+      selection(),
+      (error: unknown) =>
+        error instanceof WorkerError &&
+        error.code === "broad_root_refused" &&
+        /home directory/.test(error.message),
+    );
+  }
 });
 
 test("refuses a home directory ancestor when selected implicitly", async () => {

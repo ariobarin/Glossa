@@ -2,15 +2,13 @@ export class UsageError extends Error {}
 
 export type CliInvocation =
   | { command: "workspace"; path?: string }
-  | { command: "status"; json: boolean }
-  | { command: "doctor"; json: boolean }
-  | { command: "devices"; action: "list"; json: boolean }
+  | { command: "status" }
   | { command: "devices"; action: "revoke"; deviceId: string }
-  | { command: "update" }
-  | { command: "login" }
   | { command: "logout" }
   | { command: "help" }
   | { command: "version" };
+
+const retiredCommands = new Set(["doctor", "login", "start", "update"]);
 
 function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
@@ -23,6 +21,8 @@ function parseWorkspace(args: string[]): CliInvocation {
       throw new UsageError(`Unknown option: ${argument}`);
     } else if (selectedPath) {
       throw new UsageError("Glossa accepts at most one directory.");
+    } else if (!optionsEnded && retiredCommands.has(argument)) {
+      throw new UsageError(`The ${argument} command is no longer available.`);
     } else {
       selectedPath = argument;
     }
@@ -34,24 +34,11 @@ function parseWorkspace(args: string[]): CliInvocation {
   };
 }
 
-function parseJsonOption(command: string, args: string[]): boolean {
-  if (args.length === 0) return false;
-  if (args.length === 1 && args[0] === "--json") return true;
-  throw new UsageError(`${command} accepts only --json.`);
-}
-
 function parseDevices(args: string[]): CliInvocation {
-  if (args.length === 0 || (args.length === 1 && args[0] === "--json")) {
-    return {
-      command: "devices",
-      action: "list",
-      json: parseJsonOption("Devices", args),
-    };
-  }
   if (args[0] === "revoke" && args.length === 2) {
     return { command: "devices", action: "revoke", deviceId: args[1]! };
   }
-  throw new UsageError("Use: glossa devices [--json] or glossa devices revoke <id>.");
+  throw new UsageError("Use: glossa devices revoke <id>.");
 }
 
 function noOptions(command: string, args: string[]): void {
@@ -70,18 +57,13 @@ export function parseInvocation(args: string[]): CliInvocation {
     return { command: "version" };
   }
   if (command === "--") return parseWorkspace(args);
-  if (options.includes("--help") || options.includes("-h")) {
-    return { command: "help" };
-  }
   if (command === "status") {
-    return { command, json: parseJsonOption("Status", options) };
-  }
-  if (command === "doctor") {
-    return { command, json: parseJsonOption("Doctor", options) };
+    noOptions("Status", options);
+    return { command };
   }
   if (command === "devices") return parseDevices(options);
-  if (command === "update" || command === "login" || command === "logout") {
-    noOptions(command[0]!.toUpperCase() + command.slice(1), options);
+  if (command === "logout") {
+    noOptions("Logout", options);
     return { command };
   }
   return parseWorkspace(args);

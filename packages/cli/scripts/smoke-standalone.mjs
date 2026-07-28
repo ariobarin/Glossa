@@ -27,37 +27,22 @@ assert.equal(version.stdout.trim(), packageJson.version);
 const help = run(["--help"]);
 assert.equal(help.status, 0, help.stderr);
 assert.match(help.stdout, /Usage:/);
-for (const command of [
-  "status",
-  "doctor",
-  "devices",
-  "update",
-  "login",
-  "logout",
+for (const usage of [
+  "glossa [directory]",
+  "glossa status",
+  "glossa devices revoke <id>",
+  "glossa logout",
+  "glossa --help",
+  "glossa --version",
 ]) {
-  assert.match(help.stdout, new RegExp(`glossa ${command}`));
+  assert.match(help.stdout, new RegExp(usage.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
-assert.doesNotMatch(help.stdout, /glossa (?:ui|completions)\b/);
+assert.doesNotMatch(help.stdout, /\b(?:doctor|login|update|--json)\b/);
 
-const doctor = run(["doctor", "--json"]);
-assert.equal(doctor.status, 1, doctor.stderr);
-const doctorResult = JSON.parse(doctor.stdout);
-assert.equal(doctorResult.ready, false);
-assert.equal(
-  doctorResult.checks.some(
-    (check) => check.name === "Relay" && check.status === "fail",
-  ),
-  true,
-);
-assert.equal(
-  doctorResult.checks.some((check) => check.name === "Node.js"),
-  false,
-);
-assert.equal(
-  doctorResult.checks.some(
-    (check) => check.name === "Runtime" && check.status === "pass",
-  ),
-  true,
-);
+for (const retired of [["doctor"], ["login"], ["start"], ["update"], ["status", "--json"]]) {
+  const result = run(retired);
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /Run glossa --help for usage/);
+}
 
 console.log(`Standalone smoke passed for ${executable}.`);

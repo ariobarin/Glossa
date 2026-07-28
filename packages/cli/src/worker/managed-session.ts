@@ -33,39 +33,24 @@ const visibleActivity = new Set([
   "cancel_command",
 ]);
 
-function activityLabel(type: WorkerJob["type"], finished: boolean, ok = true): string {
+function activityLabel(type: WorkerJob["type"], ok: boolean): string {
   if (type === "run_command") {
-    return finished
-      ? ok
-        ? "Command started"
-        : "Command rejected"
-      : "Command requested";
+    return ok ? "Command started" : "Command rejected";
   }
   if (type === "write_file") {
-    return finished
-      ? ok
-        ? "File write completed"
-        : "File write rejected"
-      : "File write started";
+    return ok ? "File write completed" : "File write rejected";
   }
   if (type === "edit_file") {
-    return finished
-      ? ok
-        ? "File edit completed"
-        : "File edit rejected"
-      : "File edit started";
+    return ok ? "File edit completed" : "File edit rejected";
   }
-  return finished
-    ? ok
-      ? "Command cancellation completed"
-      : "Command cancellation rejected"
-    : "Command cancellation requested";
+  return ok
+    ? "Command cancellation completed"
+    : "Command cancellation rejected";
 }
 
 export type ManagedSessionEvent =
   | { type: "session"; root: string; deviceName: string }
   | { type: "status"; status: RemoteWorkerStatus }
-  | { type: "activity"; phase: "requested"; jobType: WorkerJob["type"]; requestId: string }
   | { type: "activity"; phase: "finished"; jobType: WorkerJob["type"]; requestId: string; ok: boolean }
   | { type: "notice"; message: string };
 
@@ -86,16 +71,12 @@ function report(
   if (!options.quiet) console.error(message);
 }
 
-function visibleWorker(worker: LocalWorker, options: ManagedSessionOptions): WorkerHandler {
+export function visibleWorker(
+  worker: WorkerHandler,
+  options: ManagedSessionOptions,
+): WorkerHandler {
   return {
     async handle(job: WorkerJob): Promise<WorkerResult> {
-      if (visibleActivity.has(job.type)) {
-        report(
-          options,
-          { type: "activity", phase: "requested", jobType: job.type, requestId: job.requestId },
-          `${activityLabel(job.type, false)} (${job.requestId}).`,
-        );
-      }
       const result = await worker.handle(job);
       if (visibleActivity.has(job.type)) {
         report(
@@ -107,7 +88,7 @@ function visibleWorker(worker: LocalWorker, options: ManagedSessionOptions): Wor
             requestId: job.requestId,
             ok: result.ok,
           },
-          `${activityLabel(job.type, true, result.ok)} (${job.requestId}).`,
+          `${activityLabel(job.type, result.ok)} (${job.requestId}).`,
         );
       }
       return result;

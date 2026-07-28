@@ -27,7 +27,6 @@ const result = await Bun.build({
   },
   define: {
     __GLOSSA_VERSION__: JSON.stringify(version),
-    __GLOSSA_STANDALONE__: "true",
   },
 });
 
