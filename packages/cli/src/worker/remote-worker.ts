@@ -9,6 +9,13 @@ const WORKER_REQUEST_TIMEOUT_MS = 19_000;
 const DEFAULT_RECONNECT_BASE_MS = 500;
 const DEFAULT_RECONNECT_MAX_MS = 10_000;
 const DEFAULT_HEARTBEAT_MS = 15_000;
+const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
+
+interface RegisteredSession {
+  generation: string;
+  legacyRelay: boolean;
+  workerToken?: string;
+}
 
 type Fetcher = typeof fetch;
 type Sleeper = (milliseconds: number, signal: AbortSignal) => Promise<void>;
@@ -49,6 +56,14 @@ class RelayResponseError extends Error {
     super(`The relay returned HTTP ${status}.`);
     this.name = "RelayResponseError";
   }
+}
+
+function optionalWorkerToken(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !WORKER_TOKEN_PATTERN.test(value)) {
+    throw new Error("The relay returned an invalid worker credential.");
+  }
+  return value;
 }
 
 function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -109,11 +124,13 @@ export class RemoteWorker {
   async run(): Promise<void> {
     let failures = 0;
     let connectedBefore = false;
+    let registeredSession: RegisteredSession | undefined;
     this.#onStatus({ state: "connecting" });
     try {
       while (!this.#signal.aborted) {
         try {
           const session = await this.#register();
+          registeredSession = session;
           this.#onStatus({
             state: "connected",
             reconnected: connectedBefore,
@@ -146,12 +163,12 @@ export class RemoteWorker {
         }
       }
     } finally {
-      await this.#unregister();
+      await this.#unregister(registeredSession);
       this.#onStatus({ state: "disconnected" });
     }
   }
 
-  async #register(): Promise<{ generation: string; legacyRelay: boolean }> {
+  async #register(): Promise<RegisteredSession> {
     let response: Response;
     try {
       response = await this.#post("/device/register", {
@@ -183,7 +200,14 @@ export class RemoteWorker {
         ) {
           throw new Error("The relay returned an invalid registration response.");
         }
-        return { generation: legacyValue.generation, legacyRelay: true };
+        const workerToken = "workerToken" in legacyValue
+          ? optionalWorkerToken(legacyValue.workerToken)
+          : undefined;
+        return {
+          generation: legacyValue.generation,
+          legacyRelay: true,
+          ...(workerToken ? { workerToken } : {}),
+        };
       }
     }
     const value = (await response.json()) as unknown;
@@ -197,19 +221,24 @@ export class RemoteWorker {
     ) {
       throw new Error("The relay returned an invalid registration response.");
     }
-    return { generation: value.generation, legacyRelay: false };
+    const workerToken = "workerToken" in value
+      ? optionalWorkerToken(value.workerToken)
+      : undefined;
+    return {
+      generation: value.generation,
+      legacyRelay: false,
+      ...(workerToken ? { workerToken } : {}),
+    };
   }
 
-  async #pollGeneration(session: {
-    generation: string;
-    legacyRelay: boolean;
-  }): Promise<void> {
+  async #pollGeneration(session: RegisteredSession): Promise<void> {
     while (!this.#signal.aborted) {
       const response = await this.#post(
         "/device/poll",
         session.legacyRelay
           ? { generation: session.generation }
           : { workerId: this.#workerId, generation: session.generation },
+        session.workerToken,
       );
       if (response.status === 204) continue;
       const value = (await response.json()) as unknown;
@@ -224,10 +253,14 @@ export class RemoteWorker {
       const heartbeat = session.legacyRelay
         ? undefined
         : setInterval(() => {
-            void this.#post("/device/heartbeat", {
-              workerId: this.#workerId,
-              generation: session.generation,
-            }).catch(() => {});
+            void this.#post(
+              "/device/heartbeat",
+              {
+                workerId: this.#workerId,
+                generation: session.generation,
+              },
+              session.workerToken,
+            ).catch(() => {});
           }, this.#heartbeatMs);
       heartbeat?.unref();
       let result: WorkerResult;
@@ -239,39 +272,67 @@ export class RemoteWorker {
       await this.#post(
         "/device/result",
         session.legacyRelay ? result : { workerId: this.#workerId, result },
+        session.workerToken,
       );
     }
   }
 
-  async #unregister(): Promise<void> {
-    try {
-      await this.#fetcher(new URL("/device/unregister", this.#origin), {
-        method: "POST",
-        headers: {
-          authorization: `Device ${this.#deviceToken}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ workerId: this.#workerId }),
-        signal: AbortSignal.timeout(3_000),
-      });
-    } catch {
-      // Liveness expiry removes workers after abrupt or offline shutdowns.
+  async #unregister(session?: RegisteredSession): Promise<void> {
+    const unregister = async (
+      authorization: string,
+    ): Promise<"accepted" | "rejected" | "unreachable"> => {
+      try {
+        const response = await this.#fetcher(
+          new URL("/device/unregister", this.#origin),
+          {
+            method: "POST",
+            headers: {
+              authorization,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ workerId: this.#workerId }),
+            signal: AbortSignal.timeout(3_000),
+          },
+        );
+        if (response.ok) return "accepted";
+        return [400, 401, 404, 409].includes(response.status)
+          ? "rejected"
+          : "unreachable";
+      } catch {
+        return "unreachable";
+      }
+    };
+
+    if (!session?.workerToken) {
+      await unregister(`Device ${this.#deviceToken}`);
+      return;
     }
+    const result = await unregister(`Worker ${session.workerToken}`);
+    if (result === "rejected") {
+      await unregister(`Device ${this.#deviceToken}`);
+    }
+    // Liveness expiry removes workers after abrupt or offline shutdowns.
   }
 
-  async #post(path: string, body: unknown): Promise<Response> {
+  async #post(
+    path: string,
+    body: unknown,
+    workerToken?: string,
+  ): Promise<Response> {
     const timeout = AbortSignal.timeout(WORKER_REQUEST_TIMEOUT_MS);
     const signal = AbortSignal.any([this.#signal, timeout]);
     const response = await this.#fetcher(new URL(path, this.#origin), {
       method: "POST",
       headers: {
-        authorization: `Device ${this.#deviceToken}`,
+        authorization: workerToken
+          ? `Worker ${workerToken}`
+          : `Device ${this.#deviceToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
       signal,
     });
-    if (response.status === 401) throw new DeviceRejectedError();
+    if (response.status === 401 && !workerToken) throw new DeviceRejectedError();
     if (!response.ok) throw new RelayResponseError(response.status);
     return response;
   }

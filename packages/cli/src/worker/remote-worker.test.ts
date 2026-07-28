@@ -144,9 +144,152 @@ test("falls back to the legacy single-worker protocol", async () => {
   );
 });
 
-test("heartbeats while a current-protocol job is running", async () => {
+test("falls back to device auth when worker unregister is rejected", async () => {
   const controller = new AbortController();
   const generation = "00000000-0000-4000-8000-000000000001";
+  const workerToken = `glw_${"b".repeat(43)}`;
+  const unregisterAuthorizations: Array<string | null> = [];
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const authorization = new Headers(init?.headers).get("authorization");
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        workerToken,
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      unregisterAuthorizations.push(authorization);
+      return authorization?.startsWith("Worker ")
+        ? Response.json({ error: "invalid_worker" }, { status: 401 })
+        : new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.deepEqual(unregisterAuthorizations, [
+    `Worker ${workerToken}`,
+    "Device device-token",
+  ]);
+});
+
+test("does not retry unregister after a network failure", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const workerToken = `glw_${"b".repeat(43)}`;
+  const unregisterAuthorizations: Array<string | null> = [];
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const authorization = new Headers(init?.headers).get("authorization");
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        workerToken,
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      unregisterAuthorizations.push(authorization);
+      throw new Error("relay unavailable");
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.deepEqual(unregisterAuthorizations, [`Worker ${workerToken}`]);
+});
+
+test("re-registers when an ephemeral worker credential is rejected", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const workerTokens = [
+    `glw_${"b".repeat(43)}`,
+    `glw_${"c".repeat(43)}`,
+  ];
+  const statuses: RemoteWorkerStatus[] = [];
+  let registrations = 0;
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const authorization = new Headers(init?.headers).get("authorization");
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      assert.equal(authorization, "Device device-token");
+      const workerToken = workerTokens[registrations]!;
+      registrations += 1;
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        workerToken,
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      assert.equal(authorization, `Worker ${workerTokens[registrations - 1]}`);
+      if (registrations === 1) {
+        return Response.json({ error: "invalid_worker" }, { status: 401 });
+      }
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      assert.equal(authorization, `Worker ${workerTokens[1]}`);
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+    sleep: async () => {},
+    onStatus: (status) => statuses.push(status),
+  }).run();
+
+  assert.equal(registrations, 2);
+  assert.deepEqual(statuses.map((status) => status.state), [
+    "connecting",
+    "connected",
+    "retrying",
+    "connected",
+    "disconnected",
+  ]);
+});
+
+test("uses a worker credential for current-protocol hot requests", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const workerToken = `glw_${"b".repeat(43)}`;
   let workerId = "";
   let releaseHandler: (() => void) | undefined;
   const heartbeatSeen = new Promise<void>((resolve) => {
@@ -157,11 +300,14 @@ test("heartbeats while a current-protocol job is running", async () => {
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     paths.push(url.pathname);
+    const authorization = new Headers(init?.headers).get("authorization");
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
+      assert.equal(authorization, "Device device-token");
       workerId = String(body.workerId);
-      return Response.json({ workerId, generation });
+      return Response.json({ workerId, generation, workerToken });
     }
+    assert.equal(authorization, `Worker ${workerToken}`);
     if (url.pathname === "/device/poll") {
       return Response.json({
         job: {

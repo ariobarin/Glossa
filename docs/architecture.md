@@ -14,8 +14,8 @@ hosted relay
   +-- in-memory jobs
   +-- metadata persistence in Postgres
         ^
-        | HTTPS + per-device credential
-        | repeated outbound polling (20 seconds or less)
+        | HTTPS + device credential at registration
+        | ephemeral worker credential for repeated polling
         |
 glossa process on user device
   +-- canonical root
@@ -52,7 +52,7 @@ After user login, the CLI calls the device-enrollment API. The server returns a 
 gld_<device-id>_<random-256-bit-secret>
 ```
 
-The database stores the device ID, account ID, salt, and scrypt hash. Worker requests authenticate the device token over HTTPS. One device can be revoked without affecting the user's other devices or MCP authorizations.
+The database stores the device ID, account ID, salt, and scrypt hash. Worker registration authenticates the device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
 
 The CLI binds each locally stored device credential to the subject in the
 current Auth0 access token. Normal startup can therefore reject an account
@@ -75,7 +75,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
-- device IDs, ephemeral worker IDs, and connection generations, without local absolute paths
+- device IDs, ephemeral worker IDs, connection generations, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs
 - request waiters
 - recent nonces and bounded rate-limit counters
@@ -96,7 +96,7 @@ The hosting layer imposes a bounded request window. Therefore:
 
 - worker long polls return within 20 seconds;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
-- worker poll wait time is reduced by authentication time so the complete request remains bounded;
+- durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request;
 - later command calls carry both IDs, so relay restarts do not lose a command routing lookup;

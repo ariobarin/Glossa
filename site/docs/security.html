@@ -98,7 +98,7 @@
 <ul>
 <li>Local source code.</li>
 <li>Local developer credentials and environment.</li>
-<li>Device credentials.</li>
+<li>Device credentials and ephemeral worker credentials.</li>
 <li>OAuth refresh/access tokens.</li>
 <li>Account/device ownership relationships.</li>
 <li>Command results and file contents in transit.</li>
@@ -129,6 +129,17 @@
 <li>device-specific revocation;</li>
 <li>failed-authentication rate limiting and constant-time comparison;</li>
 <li>never log Authorization headers.</li>
+</ul>
+<h3 id="stolen-worker-token"><a class="heading-anchor" href="#stolen-worker-token" aria-label="Link to Stolen worker token"></a>Stolen worker token</h3>
+<p><strong>Threat:</strong> an active worker credential is replayed against relay worker endpoints.</p>
+<p><strong>Controls:</strong></p>
+<ul>
+<li>independent 256-bit random secret for each worker generation;</li>
+<li>bind the credential to one account, device, worker ID, and generation;</li>
+<li>store only its SHA-256 digest in relay process memory;</li>
+<li>invalidate it on reconnect, unregister, device revocation, or liveness expiry;</li>
+<li>reject mismatched worker IDs and generations;</li>
+<li>transmit only over HTTPS and never log Authorization headers.</li>
 </ul>
 <h3 id="malicious-or-compromised-mcp-client"><a class="heading-anchor" href="#malicious-or-compromised-mcp-client" aria-label="Link to Malicious or compromised MCP client"></a>Malicious or compromised MCP client</h3>
 <p><strong>Threat:</strong> authenticated client requests destructive actions.</p>
@@ -203,7 +214,7 @@
 <li>environment variables;</li>
 <li>full local paths;</li>
 <li>repository names unless explicitly chosen by the user;</li>
-<li>OAuth or device bearer secrets.</li>
+<li>OAuth, device, or worker bearer secrets.</li>
 </ul>
 <p>Additional defenses must extend these controls rather than replace them.</p>
 </section>

@@ -51,17 +51,25 @@ Rename a device owned by the account.
 
 Revoke a device owned by the account.
 
-## Device-authenticated worker API
+## Worker API authentication
 
-Use:
+Register with the durable device credential:
 
 ```text
 Authorization: Device gld_<device-id>_<secret>
 ```
 
+A successful current registration returns an opaque `workerToken` bound to the worker ID and connection generation. Use it for poll, result, heartbeat, and unregister requests:
+
+```text
+Authorization: Worker glw_<random-256-bit-secret>
+```
+
+The relay stores only a SHA-256 digest in process memory and invalidates the credential when the worker reconnects, unregisters, is revoked, or becomes stale. Valid worker-authenticated traffic refreshes in-memory liveness immediately and coalesces the durable device `last_seen_at` update to at most once per minute. During rollout, current relays continue accepting the durable device credential on later endpoints, and current CLIs fall back to it when an older relay does not return `workerToken`.
+
 ### `POST /device/register`
 
-Registers an active worker generation using an ephemeral worker UUID created by the CLI process. One enrolled device may register any number of workers. Reconnecting one worker replaces only that worker's generation. The request does not include the canonical local root or a derived repository name. Current workers advertise `commandProgress` support so the relay sends sequence-aware status jobs only to workers that accept them.
+Registers an active worker generation using an ephemeral worker UUID created by the CLI process and returns its generation plus the one-time `workerToken`. One enrolled device may register any number of workers. Reconnecting one worker replaces only that worker's generation and invalidates its previous worker credential. The request does not include the canonical local root or a derived repository name. Current workers advertise `commandProgress` support so the relay sends sequence-aware status jobs only to workers that accept them.
 
 During a relay-first beta rollout, a current relay accepts capability-aware, worker-aware, and earlier single-worker request shapes. A current CLI retries those shapes in that order when it reaches an older relay. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
 

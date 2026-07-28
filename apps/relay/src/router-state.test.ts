@@ -33,7 +33,13 @@ test("routes multiple workers enrolled on one computer independently", async () 
     requestId: "00000000-0000-4000-8000-000000000005",
     path: "README.md",
   };
-  const poll = state.poll(accountId, deviceId, firstWorkerId, firstGeneration, 100);
+  const poll = state.poll(
+    accountId,
+    deviceId,
+    firstWorkerId,
+    firstGeneration.generation,
+    100,
+  );
   const pending = state.enqueue(accountId, firstWorkerId, job, 1_000);
   assert.deepEqual(await poll, job);
 
@@ -86,7 +92,13 @@ test("filters progress against the current worker generation", async () => {
   };
   const pending = state.enqueue(accountId, firstWorkerId, job, 1_000);
   assert.deepEqual(
-    await state.poll(accountId, deviceId, firstWorkerId, generation, 100),
+    await state.poll(
+      accountId,
+      deviceId,
+      firstWorkerId,
+      generation.generation,
+      100,
+    ),
     {
       type: "get_command",
       requestId: job.requestId,
@@ -102,6 +114,81 @@ test("filters progress against the current worker generation", async () => {
   };
   assert.equal(state.complete(accountId, firstWorkerId, result), true);
   assert.deepEqual(await pending, result);
+});
+
+test("invalidates worker credentials on reconnect and unregister", () => {
+  const state = new RouterState();
+  const first = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+
+  assert.match(first.workerToken, /^glw_[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(state.authenticateWorkerToken(first.workerToken), {
+    accountId,
+    deviceId,
+    workerId: firstWorkerId,
+    generation: first.generation,
+  });
+
+  const second = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  assert.equal(state.authenticateWorkerToken(first.workerToken), null);
+  assert.equal(
+    state.authenticateWorkerToken(second.workerToken)?.generation,
+    second.generation,
+  );
+
+  state.unregisterWorker(accountId, deviceId, firstWorkerId);
+  assert.equal(state.authenticateWorkerToken(second.workerToken), null);
+});
+
+test("does not unregister a newer worker generation", () => {
+  const state = new RouterState();
+  const first = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  const second = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+
+  state.unregisterWorker(
+    accountId,
+    deviceId,
+    firstWorkerId,
+    first.generation,
+  );
+  assert.equal(
+    state.authenticateWorkerToken(second.workerToken)?.generation,
+    second.generation,
+  );
+
+  state.unregisterWorker(
+    accountId,
+    deviceId,
+    firstWorkerId,
+    second.generation,
+  );
+  assert.equal(state.authenticateWorkerToken(second.workerToken), null);
+});
+
+test("prunes stale workers while retaining active device counts", (context) => {
+  let now = 1_000_000;
+  context.mock.method(Date, "now", () => now);
+  const state = new RouterState();
+  const first = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  const second = state.register(accountId, deviceId, "Test PC", secondWorkerId);
+
+  now += 30_000;
+  assert.equal(
+    state.heartbeat(
+      accountId,
+      deviceId,
+      firstWorkerId,
+      first.generation,
+    ),
+    true,
+  );
+
+  now += 20_001;
+  assert.equal(
+    state.authenticateWorkerToken(first.workerToken)?.workerId,
+    firstWorkerId,
+  );
+  assert.equal(state.authenticateWorkerToken(second.workerToken), null);
+  assert.equal(state.activeWorkerCount(accountId, deviceId), 1);
 });
 
 test("does not deliver a queued job after its request times out", async () => {
@@ -127,7 +214,13 @@ test("does not deliver a queued job after its request times out", async () => {
     delay(10),
   ]);
   assert.equal(
-    await state.poll(accountId, deviceId, firstWorkerId, generation, 5),
+    await state.poll(
+      accountId,
+      deviceId,
+      firstWorkerId,
+      generation.generation,
+      5,
+    ),
     null,
   );
 });
