@@ -92,7 +92,13 @@ test("filters progress against the current worker generation", async () => {
   };
   const pending = state.enqueue(accountId, firstWorkerId, job, 1_000);
   assert.deepEqual(
-    await state.poll(accountId, deviceId, firstWorkerId, generation, 100),
+    await state.poll(
+      accountId,
+      deviceId,
+      firstWorkerId,
+      generation.generation,
+      100,
+    ),
     {
       type: "get_command",
       requestId: job.requestId,
