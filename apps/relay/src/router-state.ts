@@ -14,6 +14,11 @@ function deviceKey(accountId: string, deviceId: string): string {
   return `${accountId}:${deviceId}`;
 }
 
+interface PollWaiter {
+  acceptedTypes?: ReadonlySet<WorkerJob["type"]>;
+  resolve: (job: WorkerJob | null) => void;
+}
+
 interface ConnectedWorker {
   accountId: string;
   deviceId: string;
@@ -21,10 +26,11 @@ interface ConnectedWorker {
   workerId: string;
   generation: string;
   commandProgress: boolean;
+  concurrentJobs: boolean;
   sessionDigest: string;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
-  pollWaiter?: (job: WorkerJob | null) => void;
+  pollWaiter?: PollWaiter;
 }
 
 export interface WorkerSessionIdentity {
@@ -70,7 +76,9 @@ export class RouterState {
     deviceId: string,
     deviceName: string,
     workerId: string,
-    capabilities: { commandProgress: boolean } = { commandProgress: false },
+    capabilities: { commandProgress: boolean; concurrentJobs?: boolean } = {
+      commandProgress: false,
+    },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
@@ -83,7 +91,7 @@ export class RouterState {
     ) {
       throw new Error("worker_identity_conflict");
     }
-    previous?.pollWaiter?.(null);
+    previous?.pollWaiter?.resolve(null);
     if (previous) this.#workerSessions.delete(previous.sessionDigest);
     this.#rejectWorkerWaiters(workerId);
     if (!previous) {
@@ -100,6 +108,7 @@ export class RouterState {
       workerId,
       generation,
       commandProgress: capabilities.commandProgress === true,
+      concurrentJobs: capabilities.concurrentJobs === true,
       sessionDigest,
       lastSeenAt: Date.now(),
       pendingJobs: [],
@@ -182,6 +191,7 @@ export class RouterState {
     workerId: string,
     generation: string,
     timeoutMs: number,
+    acceptedTypes?: ReadonlySet<WorkerJob["type"]>,
   ): Promise<WorkerJob | null> {
     const worker = this.#workers.get(workerId);
     if (
@@ -194,19 +204,24 @@ export class RouterState {
     }
     worker.lastSeenAt = Date.now();
 
-    const queued = worker.pendingJobs.shift();
-    if (queued) return queued;
+    const queuedIndex = worker.pendingJobs.findIndex(
+      (job) => !acceptedTypes || acceptedTypes.has(job.type),
+    );
+    if (queuedIndex !== -1) {
+      return worker.pendingJobs.splice(queuedIndex, 1)[0]!;
+    }
 
+    worker.pollWaiter?.resolve(null);
     return await new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        if (worker.pollWaiter === waiter) delete worker.pollWaiter;
-        resolve(null);
-      }, timeoutMs);
-      const waiter = (job: WorkerJob | null): void => {
-        clearTimeout(timer);
-        if (worker.pollWaiter === waiter) delete worker.pollWaiter;
-        resolve(job);
+      const waiter: PollWaiter = {
+        ...(acceptedTypes ? { acceptedTypes } : {}),
+        resolve(job) {
+          clearTimeout(timer);
+          if (worker.pollWaiter === waiter) delete worker.pollWaiter;
+          resolve(job);
+        },
       };
+      const timer = setTimeout(() => waiter.resolve(null), timeoutMs);
       worker.pollWaiter = waiter;
     });
   }
@@ -244,8 +259,17 @@ export class RouterState {
 
     const deliverableJob = compatibleJob(worker, job);
     const waitingPoll = worker.pollWaiter;
-    if (waitingPoll) waitingPoll(deliverableJob);
-    else worker.pendingJobs.push(deliverableJob);
+    if (
+      waitingPoll &&
+      (
+        !waitingPoll.acceptedTypes ||
+        waitingPoll.acceptedTypes.has(deliverableJob.type)
+      )
+    ) {
+      waitingPoll.resolve(deliverableJob);
+    } else {
+      worker.pendingJobs.push(deliverableJob);
+    }
 
     return new Promise((resolve, reject) => {
       const expiresAt = Date.now() + timeoutMs;
@@ -317,6 +341,12 @@ export class RouterState {
     return worker?.accountId === accountId && worker.commandProgress;
   }
 
+  supportsConcurrentJobs(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.concurrentJobs;
+  }
+
   #pruneStaleWorkers(): void {
     const now = Date.now();
     const elapsed = now - this.#lastPrunedAt;
@@ -331,7 +361,7 @@ export class RouterState {
   }
 
   #removeWorker(worker: ConnectedWorker): void {
-    worker.pollWaiter?.(null);
+    worker.pollWaiter?.resolve(null);
     this.#workers.delete(worker.workerId);
     this.#workerSessions.delete(worker.sessionDigest);
     const key = deviceKey(worker.accountId, worker.deviceId);

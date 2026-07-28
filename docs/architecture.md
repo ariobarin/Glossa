@@ -88,13 +88,13 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - complete inherited local environment and developer credentials
 - temporary active command state
 
-One enrolled device may run any number of concurrent workers. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name.
+One enrolled device may run any number of concurrent workers. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. Current workers also negotiate bounded concurrent job delivery: command status, cancellation, reads, and mutations use separate local capacity lanes, while older workers remain sequential.
 
 ## Hosted request deadlines
 
 The hosting layer imposes a bounded request window. Therefore:
 
-- worker long polls return within 20 seconds;
+- worker long polls return within 20 seconds; a worker with concurrent jobs negotiated uses shorter capacity-aware polls while local jobs are active;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;

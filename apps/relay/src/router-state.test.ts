@@ -16,13 +16,15 @@ test("routes multiple workers enrolled on one computer independently", async () 
     deviceId,
     "Test PC",
     firstWorkerId,
-    { commandProgress: true },
+    { commandProgress: true, concurrentJobs: true },
   );
   state.register(accountId, deviceId, "Test PC", secondWorkerId);
 
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
   assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
+  assert.equal(state.supportsConcurrentJobs(accountId, firstWorkerId), true);
   assert.equal(state.supportsCommandProgress(accountId, secondWorkerId), false);
+  assert.equal(state.supportsConcurrentJobs(accountId, secondWorkerId), false);
   assert.deepEqual(state.listDevices(accountId), [
     { deviceId: firstWorkerId, name: "Test PC", path: "." },
     { deviceId: secondWorkerId, name: "Test PC", path: "." },
@@ -189,6 +191,67 @@ test("prunes stale workers while retaining active device counts", (context) => {
   );
   assert.equal(state.authenticateWorkerToken(second.workerToken), null);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 1);
+});
+
+
+test("delivers only job types accepted by the current worker capacity", async () => {
+  const state = new RouterState();
+  const session = state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    firstWorkerId,
+    { commandProgress: true, concurrentJobs: true },
+  );
+  const readJob: WorkerJob = {
+    type: "read_file",
+    requestId: "00000000-0000-4000-8000-000000000010",
+    path: "README.md",
+  };
+  const cancelJob: WorkerJob = {
+    type: "cancel_command",
+    requestId: "00000000-0000-4000-8000-000000000011",
+    commandId: "00000000-0000-4000-8000-000000000012",
+  };
+
+  const readPending = state.enqueue(accountId, firstWorkerId, readJob, 1_000);
+  const cancelPoll = state.poll(
+    accountId,
+    deviceId,
+    firstWorkerId,
+    session.generation,
+    100,
+    new Set(["cancel_command"]),
+  );
+  const cancelPending = state.enqueue(accountId, firstWorkerId, cancelJob, 1_000);
+  assert.deepEqual(await cancelPoll, cancelJob);
+
+  assert.deepEqual(
+    await state.poll(
+      accountId,
+      deviceId,
+      firstWorkerId,
+      session.generation,
+      100,
+      new Set(["read_file"]),
+    ),
+    readJob,
+  );
+
+  const cancelResult: WorkerResult = {
+    requestId: cancelJob.requestId,
+    ok: true,
+    value: { status: "canceled" },
+  };
+  const readResult: WorkerResult = {
+    requestId: readJob.requestId,
+    ok: true,
+    value: { content: "ok" },
+  };
+  assert.equal(state.complete(accountId, firstWorkerId, cancelResult), true);
+  assert.equal(state.complete(accountId, firstWorkerId, readResult), true);
+  assert.deepEqual(await cancelPending, cancelResult);
+  assert.deepEqual(await readPending, readResult);
 });
 
 test("does not deliver a queued job after its request times out", async () => {

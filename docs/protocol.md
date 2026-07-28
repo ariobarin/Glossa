@@ -69,13 +69,13 @@ The relay stores only a SHA-256 digest in process memory and invalidates the cre
 
 ### `POST /device/register`
 
-Registers an active worker generation using an ephemeral worker UUID created by the CLI process and returns its generation plus the one-time `workerToken`. One enrolled device may register any number of workers. Reconnecting one worker replaces only that worker's generation and invalidates its previous worker credential. The request does not include the canonical local root or a derived repository name. Current workers advertise `commandProgress` support so the relay sends sequence-aware status jobs only to workers that accept them.
+Registers an active worker generation using an ephemeral worker UUID created by the CLI process and returns its generation plus the one-time `workerToken`. One enrolled device may register any number of workers. Reconnecting one worker replaces only that worker's generation and invalidates its previous worker credential. The request does not include the canonical local root or a derived repository name. Current workers advertise `commandProgress` and `concurrentJobs` support. The relay returns the accepted capabilities, sends sequence-aware status jobs only to workers that accept them, and enables capacity-aware concurrent delivery only after both sides negotiate it.
 
-During a relay-first beta rollout, a current relay accepts capability-aware, worker-aware, and earlier single-worker request shapes. A current CLI retries those shapes in that order when it reaches an older relay. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
+During a relay-first beta rollout, a current relay accepts concurrent-capability, command-progress-only, worker-aware, and earlier single-worker request shapes. A current CLI retries those shapes in that order when it reaches an older relay. Concurrency remains disabled unless the registration response explicitly accepts `concurrentJobs`. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
 
 ### `POST /device/poll`
 
-Includes the worker ID and generation. Waits no more than 18 seconds. Returns one job or `204 No Content`. A worker has at most one delivered active job. Worker HTTP requests use a 19 second client timeout and reconnect with bounded exponential jitter.
+Includes the worker ID and generation. Waits no more than 18 seconds and returns one job or `204 No Content`. A worker with `concurrentJobs` may also send `acceptedTypes` and a shorter `waitMs`; the relay skips queued jobs outside the advertised capacity instead of allowing them to block control work. The current worker allows one command-status wait, one cancellation, two reads, and one mutation at a time, with five total in-flight jobs. `write_file`, `edit_file`, and `run_command` share the serialized mutation lane, while `cancel_command` remains independent from a long `get_command`. Older workers omit these fields and retain sequential delivery. Worker HTTP requests use a 19 second client timeout and reconnect with bounded exponential jitter.
 
 ### `POST /device/result`
 
