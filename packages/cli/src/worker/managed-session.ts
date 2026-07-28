@@ -220,6 +220,19 @@ export function workspaceLabelNotice(
   return "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
 }
 
+const legacyRelayNotice = "The relay needs an update before this computer can expose several workspaces at once.";
+
+export function combinedCompatibilityNotice(
+  labelNotice: string | undefined,
+  includeLegacyRelayNotice: boolean,
+): string | undefined {
+  const messages = [
+    labelNotice,
+    includeLegacyRelayNotice ? legacyRelayNotice : undefined,
+  ].filter((message): message is string => Boolean(message));
+  return messages.length > 0 ? messages.join(" ") : undefined;
+}
+
 export function statusMessage(status: RemoteWorkerStatus, connectedBefore: boolean): string {
   if (status.state === "connecting") return "Connecting to Glossa...";
   if (status.state === "connected") {
@@ -243,6 +256,7 @@ async function connectRemoteWorker(
   let connectionState: RemoteWorkerStatus["state"] | undefined;
   let connectedBefore = false;
   let labelNoticeShown = false;
+  let legacyNoticeShown = false;
   await new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
@@ -261,25 +275,28 @@ async function connectRemoteWorker(
       } else {
         options.onEvent?.({ type: "status", status });
       }
-      const labelNotice = workspaceLabelNotice(status, options.workspaceLabel);
-      if (labelNotice && !labelNoticeShown) {
-        labelNoticeShown = true;
+      const labelNotice = labelNoticeShown
+        ? undefined
+        : workspaceLabelNotice(status, options.workspaceLabel);
+      const includeLegacyNotice =
+        status.state === "connected" && status.legacyRelay && !legacyNoticeShown;
+      const compatibilityNotice = combinedCompatibilityNotice(
+        labelNotice,
+        includeLegacyNotice,
+      );
+      if (labelNotice) labelNoticeShown = true;
+      if (includeLegacyNotice) legacyNoticeShown = true;
+      if (compatibilityNotice) {
         report(
           options,
-          { type: "notice", message: labelNotice },
-          labelNotice,
-        );
-      }
-      if (status.state === "connected" && status.legacyRelay) {
-        report(
-          options,
-          { type: "notice", message: "The relay needs an update before this computer can expose several workspaces at once." },
-          "The relay needs an update before this computer can expose several workspaces at once.",
+          { type: "notice", message: compatibilityNotice },
+          compatibilityNotice,
         );
       }
       if (
         status.state === "connected" &&
         !status.reconnected &&
+        !compatibilityNotice &&
         shouldShowConnectHint(endpoints.relayOrigin)
       ) {
         void announceConnectHint(connectHintStore(), (message) => {

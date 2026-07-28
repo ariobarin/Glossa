@@ -4,6 +4,7 @@ import type { StoredCredentials } from "../config-store.js";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
+  combinedCompatibilityNotice,
   deviceForSession,
   reenrollRejectedDevice,
   statusMessage,
@@ -268,6 +269,21 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
     ),
     "Connection lost: TLS handshake failed Retrying in 2 seconds.",
   );
+});
+
+test("combines compatibility warnings so later notices cannot replace them", () => {
+  const labelNotice =
+    "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
+  assert.equal(
+    combinedCompatibilityNotice(labelNotice, true),
+    labelNotice + " The relay needs an update before this computer can expose several workspaces at once.",
+  );
+  assert.equal(combinedCompatibilityNotice(labelNotice, false), labelNotice);
+  assert.equal(
+    combinedCompatibilityNotice(undefined, true),
+    "The relay needs an update before this computer can expose several workspaces at once.",
+  );
+  assert.equal(combinedCompatibilityNotice(undefined, false), undefined);
 });
 
 test("reports when an older relay drops a requested workspace label", () => {
