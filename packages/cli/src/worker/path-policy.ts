@@ -3,10 +3,18 @@ import os from "node:os";
 import path from "node:path";
 import { WorkerError } from "./errors.js";
 
-function samePath(left: string, right: string): boolean {
+export function samePath(left: string, right: string): boolean {
   return process.platform === "win32"
     ? left.toLowerCase() === right.toLowerCase()
     : left === right;
+}
+
+export function accountHomeDirectory(): string {
+  try {
+    return os.userInfo().homedir;
+  } catch {
+    return os.homedir();
+  }
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -46,9 +54,14 @@ export async function canonicalizeRoot(
   }
 
   const filesystemRoot = path.parse(root).root;
-  const home = await realpath(os.homedir()).catch(() => path.resolve(os.homedir()));
-  if (samePath(root, filesystemRoot) || samePath(root, home)) {
-    const kind = samePath(root, home) ? "your home directory" : "a filesystem root";
+  const homes = await Promise.all(
+    [os.homedir(), accountHomeDirectory()].map(async (home) =>
+      await realpath(home).catch(() => path.resolve(home))
+    ),
+  );
+  const isHomeDirectory = homes.some((home) => samePath(root, home));
+  if (samePath(root, filesystemRoot) || isHomeDirectory) {
+    const kind = isHomeDirectory ? "your home directory" : "a filesystem root";
     throw new WorkerError(
       "broad_root_refused",
       `The selected root is ${kind}, which Glossa will not expose. Choose a project directory instead.`,

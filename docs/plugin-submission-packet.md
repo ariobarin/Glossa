@@ -53,10 +53,10 @@ Create or refresh the deterministic local workspace from the repository root:
 ```powershell
 node scripts/prepare-plugin-review-workspace.mjs --reset
 Set-Location .review-workspace
-glossa .
+glossa
 ```
 
-The explicit path prevents Git discovery from selecting an enclosing repository. The reset command targets only `.review-workspace` beside this repository's scripts and replaces it only when it contains the exact Glossa fixture marker. It builds the replacement first and uses a recognized backup to recover an interrupted swap. It refuses to replace an unrecognized directory. Keep this worker online throughout review and expose no other workspace.
+The reset command targets only `.review-workspace` beside this repository's scripts and replaces it only when it contains the exact Glossa fixture marker. It builds the replacement first and uses a recognized backup to recover an interrupted swap. It refuses to replace an unrecognized directory. Keep this worker online throughout review and expose no other workspace.
 
 Before submitting:
 

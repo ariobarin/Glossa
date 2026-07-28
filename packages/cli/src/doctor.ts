@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { peekCredentials } from "./config-store.js";
 import {
   MIN_NODE_MAJOR,
@@ -13,8 +11,6 @@ import {
 } from "./relay-client.js";
 import { isStandaloneExecutable } from "./runtime.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
-
-const execFileAsync = promisify(execFile);
 
 const HEALTHZ_TIMEOUT_MS = 5_000;
 
@@ -37,7 +33,6 @@ export interface DoctorDependencies {
   endpoints?: RelayEndpoints;
   loadRelayOrigin?: () => string;
   loadWorkerOrigin?: (relayOrigin: string) => string;
-  checkGit?: () => Promise<boolean>;
   checkWorkspace?: () => Promise<boolean>;
   fetchHealthz?: (origin: string) => Promise<HealthProbe>;
   probeCredentials?: () => Promise<CredentialProbe>;
@@ -67,30 +62,17 @@ export async function runDoctorChecks(
     });
   }
 
-  const checkGit = dependencies.checkGit ?? defaultCheckGit;
-  const gitOk = await checkGit();
-  checks.push({
-    name: "Git",
-    status: gitOk ? "pass" : "warn",
-    detail: gitOk
-      ? "Git is installed."
-      : "Git was not found. It is only needed when Glossa discovers the current worktree.",
-    ...(gitOk ? {} : { nextStep: 'Install Git to run "glossa" without a path, or use "glossa <path>" to expose a selected directory.' }),
-  });
-
-  const checkWorkspace = dependencies.checkWorkspace ?? defaultCheckWorkspace;
-  const workspaceOk = gitOk && await checkWorkspace();
+  const checkWorkspace = dependencies.checkWorkspace ?? checkWorkspaceRoot;
+  const workspaceOk = await checkWorkspace();
   checks.push({
     name: "Workspace",
     status: workspaceOk ? "pass" : "warn",
     detail: workspaceOk
-      ? "Current directory is a Git worktree."
-      : gitOk
-        ? "Current directory is not a usable Git worktree."
-        : "Current directory cannot be checked without Git.",
+      ? "Current directory can be exposed."
+      : "Current directory cannot be exposed.",
     ...(workspaceOk
       ? {}
-      : { nextStep: 'Run "glossa doctor" from a Git worktree, or use "glossa <path>" to expose a selected non-Git directory.' }),
+      : { nextStep: 'Run "glossa doctor" from the directory you want to expose, or use "glossa <path>" to select another directory.' }),
   });
 
   let relayOrigin = dependencies.endpoints?.relayOrigin;
@@ -198,20 +180,7 @@ export async function runDoctor(
   return checks.every((check) => check.status !== "fail");
 }
 
-async function defaultCheckGit(): Promise<boolean> {
-  try {
-    await execFileAsync("git", ["--version"], { windowsHide: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function defaultCheckWorkspace(): Promise<boolean> {
-  return await checkGitWorktree();
-}
-
-export async function checkGitWorktree(cwd = process.cwd()): Promise<boolean> {
+export async function checkWorkspaceRoot(cwd = process.cwd()): Promise<boolean> {
   try {
     await selectExposureRoot(undefined, cwd);
     return true;

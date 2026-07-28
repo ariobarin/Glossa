@@ -55,11 +55,14 @@ After Glossa starts, press `u` to install the newest beta. You can also run `glo
 
 ## Step 2: Start a workspace
 
-Open a terminal in the folder where you want ChatGPT to work:
+Open a terminal in the directory you want ChatGPT to use:
 
 ```shell
 glossa
 ```
+
+With no directory argument, Glossa exposes the current directory and signs in
+automatically. To expose a different directory, run `glossa <directory>`.
 
 > Keep this terminal open. Closing it disconnects that local workspace from ChatGPT.
 

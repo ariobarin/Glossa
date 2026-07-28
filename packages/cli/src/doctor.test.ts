@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  checkGitWorktree,
+  checkWorkspaceRoot,
   formatDoctorResult,
   nodeVersionSatisfies,
   runDoctor,
@@ -34,7 +33,6 @@ const healthy: DoctorDependencies = {
     relayOrigin: "https://mcp.glossa.test",
     workerOrigin: "https://mcp.glossa.test",
   },
-  checkGit: async () => true,
   checkWorkspace: async () => true,
   fetchHealthz: async () => "healthy",
   probeCredentials: async () => "stored",
@@ -44,7 +42,7 @@ test("reports a configured machine while qualifying stored credentials", async (
   const checks = await runDoctorChecks(healthy);
   assert.deepEqual(
     checks.map((check) => check.name),
-    ["Node.js", "Git", "Workspace", "Relay", "Sign-in"],
+    ["Node.js", "Workspace", "Relay", "Sign-in"],
   );
   assert.equal(checks.find((check) => check.name === "Sign-in")?.status, "pass");
   assert.match(
@@ -53,32 +51,27 @@ test("reports a configured machine while qualifying stored credentials", async (
   );
 });
 
-test("warns about missing Git and offers the explicit-path alternative", async () => {
+test("warns when the current directory cannot be exposed", async () => {
   const checks = await runDoctorChecks({
     ...healthy,
-    checkGit: async () => false,
+    checkWorkspace: async () => false,
   });
-  const git = checks.find((check) => check.name === "Git");
   const workspace = checks.find((check) => check.name === "Workspace");
-  assert.equal(git?.status, "warn");
-  assert.match(git?.nextStep ?? "", /glossa <path>/);
   assert.equal(workspace?.status, "warn");
-  assert.match(workspace?.detail ?? "", /without Git/);
+  assert.match(workspace?.nextStep ?? "", /glossa <path>/);
 });
 
-test("does not treat a bare Git repository as a worktree", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "glossa-doctor-bare-"));
-  const bare = path.join(root, "repository.git");
+test("accepts a regular directory that Glossa can expose", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "glossa-doctor-root-"));
   try {
-    execFileSync("git", ["init", "--bare", bare], { windowsHide: true });
-    assert.equal(await checkGitWorktree(bare), false);
+    assert.equal(await checkWorkspaceRoot(root), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("accepts a Git worktree that Glossa can expose", async () => {
-  assert.equal(await checkGitWorktree(process.cwd()), true);
+test("rejects a protected workspace root", async () => {
+  assert.equal(await checkWorkspaceRoot(path.parse(process.cwd()).root), false);
 });
 
 test("distinguishes unreachable and unhealthy relay health endpoints", async () => {
@@ -124,7 +117,6 @@ test("reports a separate worker endpoint with its own health failure", async () 
 test("attributes malformed relay and worker origins to their owning endpoints", async () => {
   const relayChecks = await runDoctorChecks({
     nodeVersion: "24.13.0",
-    checkGit: async () => true,
     checkWorkspace: async () => true,
     loadRelayOrigin: () => {
       throw new Error("GLOSSA_RELAY_ORIGIN must contain only an origin.");
@@ -136,7 +128,6 @@ test("attributes malformed relay and worker origins to their owning endpoints", 
 
   const workerChecks = await runDoctorChecks({
     nodeVersion: "24.13.0",
-    checkGit: async () => true,
     checkWorkspace: async () => true,
     loadRelayOrigin: () => "https://relay.glossa.test",
     loadWorkerOrigin: () => {
@@ -209,10 +200,10 @@ test("reports ready only when every check passes", () => {
 test("text output counts failures", () => {
   const failing = [
     {
-      name: "Git",
+      name: "Runtime",
       status: "fail" as const,
-      detail: "Git was not found.",
-      nextStep: "Install Git.",
+      detail: "Runtime was not found.",
+      nextStep: "Install the runtime.",
     },
   ];
   assert.match(formatDoctorResult(failing, false), /1 check failed/);
