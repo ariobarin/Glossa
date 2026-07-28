@@ -52,6 +52,19 @@ const sha256Schema = z
   .describe("Lowercase SHA-256 digest of the UTF-8 file content.");
 const listDevicesOutputSchema = z
   .object({
+    product: z
+      .object({
+        name: z.literal("Glossa").describe("Product name."),
+        description: z
+          .literal("The local bridge between ChatGPT and one explicitly exposed workspace.")
+          .describe("Concise product identity for agent context."),
+      })
+      .strict()
+      .describe("Stable Glossa product identity."),
+    documentationUrl: z
+      .string()
+      .url()
+      .describe("Official setup and reconnect documentation for this relay deployment."),
     devices: z
       .array(
         z
@@ -327,9 +340,17 @@ export const MCP_SERVER_VERSION = "0.1.0-beta.5";
 const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
 const MANAGED_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
 const SELF_HOSTING_DOCS_URL = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
+const PRODUCT_CONTEXT = {
+  name: "Glossa",
+  description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
+} as const;
 
-function recoveryDocumentationUrl(publicOrigin: string): string {
-  return new URL(publicOrigin).origin === MANAGED_RELAY_ORIGIN
+function isManagedRelay(publicOrigin: string): boolean {
+  return new URL(publicOrigin).origin === MANAGED_RELAY_ORIGIN;
+}
+
+function officialDocumentationUrl(publicOrigin: string): string {
+  return isManagedRelay(publicOrigin)
     ? MANAGED_QUICKSTART_URL
     : SELF_HOSTING_DOCS_URL;
 }
@@ -370,8 +391,13 @@ function structuredResult(value: Record<string, unknown>) {
 }
 
 function offlineWorkspaceMessage(config: RelayConfig): string {
-  const guidance = "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry.";
-  return `${guidance} See ${recoveryDocumentationUrl(config.GLOSSA_PUBLIC_ORIGIN)} for the official setup and reconnect steps.`;
+  const documentationUrl = officialDocumentationUrl(
+    config.GLOSSA_PUBLIC_ORIGIN,
+  );
+  if (isManagedRelay(config.GLOSSA_PUBLIC_ORIGIN)) {
+    return `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run \`glossa\`. Keep that terminal open, wait for the workspace to appear, then retry. See ${documentationUrl} for setup help.`;
+  }
+  return `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${documentationUrl}. Keep that terminal open, wait for the workspace to appear, then retry.`;
 }
 
 function browserLogoutUrl(issuer: string): string {
@@ -503,7 +529,7 @@ function registerTools(
     "list_devices",
     {
       title: "List Devices",
-      description: "Call this first to obtain the deviceId for every online Glossa workspace. If none are online, use availability and message to explain Glossa and guide the user to start or reconnect the local worker before retrying. One computer may expose several workspaces at once.",
+      description: "Call this first to obtain the deviceId for every online Glossa workspace. If none are online, use message and documentationUrl to give the user the deployment-specific start instructions, then retry after the workspace appears. One computer may expose several workspaces at once.",
       inputSchema: z.object({}).strict(),
       outputSchema: listDevicesOutputSchema,
       _meta: toolMetadata,
@@ -516,14 +542,21 @@ function registerTools(
     },
     async () => {
       const devices = state.listDevices(accountId);
+      const documentationUrl = officialDocumentationUrl(
+        config.GLOSSA_PUBLIC_ORIGIN,
+      );
       return structuredResult(
         devices.length > 0
           ? {
+              product: PRODUCT_CONTEXT,
+              documentationUrl,
               devices,
               availability: "online",
               message: "Glossa workspaces are available.",
             }
           : {
+              product: PRODUCT_CONTEXT,
+              documentationUrl,
               devices,
               availability: "offline",
               message: offlineWorkspaceMessage(config),
