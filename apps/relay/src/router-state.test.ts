@@ -60,6 +60,50 @@ test("reconnecting one worker does not displace another", () => {
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
 });
 
+test("filters progress against the current worker generation", async () => {
+  const state = new RouterState();
+  state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    firstWorkerId,
+    { commandProgress: true },
+  );
+  assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
+
+  const generation = state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    firstWorkerId,
+  );
+  const job: WorkerJob = {
+    type: "get_command",
+    requestId: "00000000-0000-4000-8000-000000000007",
+    commandId: "00000000-0000-4000-8000-000000000008",
+    waitMs: 25,
+    afterSequence: 3,
+  };
+  const pending = state.enqueue(accountId, firstWorkerId, job, 1_000);
+  assert.deepEqual(
+    await state.poll(accountId, deviceId, firstWorkerId, generation, 100),
+    {
+      type: "get_command",
+      requestId: job.requestId,
+      commandId: job.commandId,
+      waitMs: job.waitMs,
+    },
+  );
+
+  const result: WorkerResult = {
+    requestId: job.requestId,
+    ok: true,
+    value: { status: "running" },
+  };
+  assert.equal(state.complete(accountId, firstWorkerId, result), true);
+  assert.deepEqual(await pending, result);
+});
+
 test("does not deliver a queued job after its request times out", async () => {
   const state = new RouterState();
   const generation = state.register(

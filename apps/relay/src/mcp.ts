@@ -525,12 +525,7 @@ function registerTools(
           requestId: randomUUID(),
           commandId,
           ...(waitMs === undefined ? {} : { waitMs }),
-          ...(
-            afterSequence === undefined ||
-            !state.supportsCommandProgress(accountId, deviceId)
-              ? {}
-              : { afterSequence }
-          ),
+          ...(afterSequence === undefined ? {} : { afterSequence }),
         });
         return commandSuccess(result, deviceId);
       } catch (error) {

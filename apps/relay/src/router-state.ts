@@ -24,6 +24,19 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
+function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
+  if (
+    job.type !== "get_command" ||
+    job.afterSequence === undefined ||
+    worker.commandProgress
+  ) {
+    return job;
+  }
+  const compatible = { ...job };
+  delete compatible.afterSequence;
+  return compatible;
+}
+
 
 export class RouterState {
   readonly #workers = new Map<string, ConnectedWorker>();
@@ -146,9 +159,10 @@ export class RouterState {
       return Promise.reject(new Error("device_offline"));
     }
 
+    const deliverableJob = compatibleJob(worker, job);
     const waitingPoll = worker.pollWaiter;
-    if (waitingPoll) waitingPoll(job);
-    else worker.pendingJobs.push(job);
+    if (waitingPoll) waitingPoll(deliverableJob);
+    else worker.pendingJobs.push(deliverableJob);
 
     return new Promise((resolve, reject) => {
       const expiresAt = Date.now() + timeoutMs;
