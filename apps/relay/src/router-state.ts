@@ -150,12 +150,18 @@ export class RouterState {
     }
   }
 
-  unregisterWorker(accountId: string, deviceId: string, workerId: string): void {
+  unregisterWorker(
+    accountId: string,
+    deviceId: string,
+    workerId: string,
+    generation?: string,
+  ): void {
     const worker = this.#workers.get(workerId);
     if (
       !worker ||
       worker.accountId !== accountId ||
-      worker.deviceId !== deviceId
+      worker.deviceId !== deviceId ||
+      (generation !== undefined && worker.generation !== generation)
     ) {
       return;
     }
