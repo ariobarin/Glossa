@@ -166,6 +166,24 @@ test("caps replacement characters within the output budget", async (context) => 
   assert.ok(Buffer.byteLength(completed.stdout ?? "") <= MAX_COMMAND_OUTPUT_BYTES);
 });
 
+test("retains short malformed UTF-8 diagnostics", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      "process.stdout.write(Buffer.from([0xff]))",
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stdout, "\ufffd");
+  assert.equal(completed.stdoutTruncated, false);
+  assert.equal(Buffer.byteLength(completed.stdout), 3);
+});
+
 test("shares one capture budget across standard output and error", async (context) => {
   const { commands } = await commandFixture(context);
   const started = await commands.start({

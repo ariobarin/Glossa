@@ -149,8 +149,17 @@ function emptyCapture(): CapturedStream {
   };
 }
 
-function retainedBytes(stream: CapturedStream): number {
-  return Math.min(stream.totalBytes, MAX_COMMAND_OUTPUT_BYTES);
+function retainedBytes(stream: CapturedStream, complete: boolean): number {
+  const head = Buffer.concat(stream.head, stream.headBytes);
+  const retained = Buffer.concat([head, stream.tail]);
+  const content = stream.totalBytes <= MAX_COMMAND_OUTPUT_BYTES
+    ? (
+      complete
+        ? retained.toString("utf8")
+        : new StringDecoder("utf8").write(retained)
+    )
+    : safePrefix(head) + safeSuffix(stream.tail);
+  return Math.min(Buffer.byteLength(content), MAX_COMMAND_OUTPUT_BYTES);
 }
 
 function safePrefix(buffer: Buffer): string {
@@ -240,8 +249,8 @@ function renderOutput(
   complete: boolean,
 ): { stdout: RenderedStream; stderr: RenderedStream } {
   const half = Math.floor(MAX_COMMAND_OUTPUT_BYTES / 2);
-  const stdoutAvailable = retainedBytes(stdout);
-  const stderrAvailable = retainedBytes(stderr);
+  const stdoutAvailable = retainedBytes(stdout, complete);
+  const stderrAvailable = retainedBytes(stderr, complete);
   let stdoutBudget = Math.min(stdoutAvailable, half);
   let stderrBudget = Math.min(stderrAvailable, half);
   let remaining = MAX_COMMAND_OUTPUT_BYTES - stdoutBudget - stderrBudget;
