@@ -30,6 +30,12 @@ const unused = async (): Promise<never> => {
 test("bounds coalesced presence writes by the relay deadline", async (context) => {
   let now = 1_000_000;
   context.mock.method(Date, "now", () => now);
+  let releaseTouch!: () => void;
+  const touchReleased = new Promise<void>((resolve) => {
+    releaseTouch = resolve;
+  });
+  let touchCompleted = false;
+  let observedDeadlineAt: number | undefined;
   const state = new RouterState();
   const session = state.register(
     accountId,
@@ -45,7 +51,8 @@ test("bounds coalesced presence writes by the relay deadline", async (context) =
     renameDevice: unused,
     revokeDevice: unused,
     touchDevice: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await touchReleased;
+      touchCompleted = true;
       return true;
     },
     authenticateDevice: unused,
@@ -60,14 +67,18 @@ test("bounds coalesced presence writes by the relay deadline", async (context) =
   });
   const app = express();
   app.use(express.json({ limit: MAX_RELAY_JSON_BYTES }));
-  app.use(buildRoutes(config, store, state));
+  app.use(buildRoutes(config, store, state, {
+    beforeDeadline: async (_operation, deadlineAt) => {
+      observedDeadlineAt = deadlineAt;
+      throw new Error("deadline");
+    },
+  }));
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   context.after(() => server.close());
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing address.");
 
-  const startedAt = performance.now();
   const response = await fetch(
     `http://127.0.0.1:${address.port}/device/heartbeat`,
     {
@@ -80,12 +91,14 @@ test("bounds coalesced presence writes by the relay deadline", async (context) =
         workerId,
         generation: session.generation,
       }),
+      signal: AbortSignal.timeout(5_000),
     },
   );
-  const elapsedMs = performance.now() - startedAt;
 
   assert.equal(response.status, 204);
-  assert.ok(elapsedMs < 150, `presence refresh took ${elapsedMs}ms`);
+  assert.equal(observedDeadlineAt, now + 25);
+  assert.equal(touchCompleted, false);
+  releaseTouch();
 });
 
 test("accepts a maximum text payload after JSON escaping", async (context) => {

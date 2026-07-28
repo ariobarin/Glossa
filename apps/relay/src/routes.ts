@@ -98,10 +98,13 @@ type AuthFactory = (
   requiredScope?: string,
 ) => RequestHandler;
 
+type DeadlineRunner = <T>(operation: Promise<T>, deadlineAt: number) => Promise<T>;
+
 export interface RouteDependencies {
   authFactory?: AuthFactory;
   enrollmentRateLimiter?: FixedWindowRateLimiter;
   deviceRateLimiter?: FixedWindowRateLimiter;
+  beforeDeadline?: DeadlineRunner;
 }
 
 function publicDevice(device: DeviceRecord, state: RouterState) {
@@ -159,6 +162,7 @@ async function authenticatedDevice(
   store: RelayStore,
   limiter: FixedWindowRateLimiter,
   deadlineAt: number,
+  runBeforeDeadline: DeadlineRunner,
 ): Promise<DeviceRecord | null> {
   const source = request.ip || request.socket.remoteAddress || "unknown";
 
@@ -186,7 +190,7 @@ async function authenticatedDevice(
   }
   let device: DeviceRecord | null;
   try {
-    device = await beforeDeadline(
+    device = await runBeforeDeadline(
       store.authenticateDevice(parsed.deviceId, parsed.secret),
       deadlineAt,
     );
@@ -207,6 +211,7 @@ async function refreshWorkerDevicePresence(
   store: RelayStore,
   state: RouterState,
   deadlineAt: number,
+  runBeforeDeadline: DeadlineRunner,
 ): Promise<boolean> {
   const claimedAt = state.claimDeviceSeenPersistence(
     identity.accountId,
@@ -215,7 +220,7 @@ async function refreshWorkerDevicePresence(
   if (claimedAt === null) return true;
   try {
     if (
-      await beforeDeadline(
+      await runBeforeDeadline(
         store.touchDevice(identity.accountId, identity.deviceId),
         deadlineAt,
       )
@@ -238,6 +243,7 @@ async function authenticatedWorkerRequest(
   state: RouterState,
   limiter: FixedWindowRateLimiter,
   deadlineAt: number,
+  runBeforeDeadline: DeadlineRunner,
 ): Promise<WorkerRequestIdentity | null> {
   const header = request.header("authorization");
   const [scheme, token] = header?.split(/\s+/, 2) ?? [];
@@ -251,6 +257,7 @@ async function authenticatedWorkerRequest(
         store,
         state,
         deadlineAt,
+        runBeforeDeadline,
       )
     ) {
       return { mode: "worker", ...identity };
@@ -269,6 +276,7 @@ async function authenticatedWorkerRequest(
     store,
     limiter,
     deadlineAt,
+    runBeforeDeadline,
   );
   return device ? { mode: "device", device } : null;
 }
@@ -300,6 +308,7 @@ export function buildRoutes(
 ): Router {
   const router = Router();
   const authFactory = dependencies.authFactory ?? requireAuth;
+  const runBeforeDeadline = dependencies.beforeDeadline ?? beforeDeadline;
   const enrollmentRateLimiter =
     dependencies.enrollmentRateLimiter ??
     new FixedWindowRateLimiter(
@@ -441,6 +450,7 @@ export function buildRoutes(
       store,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!device) return;
     const parsed = registerSchema.safeParse(request.body ?? {});
@@ -490,6 +500,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = pollSchema.safeParse(request.body);
@@ -554,6 +565,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = workerResultRequestSchema.safeParse(request.body);
@@ -591,6 +603,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = heartbeatSchema.safeParse(request.body);
@@ -630,6 +643,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = unregisterSchema.safeParse(request.body);
