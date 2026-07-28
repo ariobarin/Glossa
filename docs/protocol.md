@@ -140,6 +140,7 @@ type WorkerJob =
       type: "get_command";
       requestId: string;
       commandId: string;
+      afterSequence?: number;
       waitMs?: number;
     }
   | { type: "cancel_command"; requestId: string; commandId: string };
