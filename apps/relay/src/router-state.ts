@@ -9,6 +9,7 @@ interface ConnectedWorker {
   deviceName: string;
   workerId: string;
   generation: string;
+  commandProgress: boolean;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
   pollWaiter?: (job: WorkerJob | null) => void;
@@ -23,6 +24,19 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
+function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
+  if (
+    job.type !== "get_command" ||
+    job.afterSequence === undefined ||
+    worker.commandProgress
+  ) {
+    return job;
+  }
+  const compatible = { ...job };
+  delete compatible.afterSequence;
+  return compatible;
+}
+
 
 export class RouterState {
   readonly #workers = new Map<string, ConnectedWorker>();
@@ -33,6 +47,7 @@ export class RouterState {
     deviceId: string,
     deviceName: string,
     workerId: string,
+    capabilities: { commandProgress: boolean } = { commandProgress: false },
   ): string {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
@@ -51,6 +66,7 @@ export class RouterState {
       deviceName,
       workerId,
       generation,
+      commandProgress: capabilities.commandProgress === true,
       lastSeenAt: Date.now(),
       pendingJobs: [],
     });
@@ -143,9 +159,10 @@ export class RouterState {
       return Promise.reject(new Error("device_offline"));
     }
 
+    const deliverableJob = compatibleJob(worker, job);
     const waitingPoll = worker.pollWaiter;
-    if (waitingPoll) waitingPoll(job);
-    else worker.pendingJobs.push(job);
+    if (waitingPoll) waitingPoll(deliverableJob);
+    else worker.pendingJobs.push(deliverableJob);
 
     return new Promise((resolve, reject) => {
       const expiresAt = Date.now() + timeoutMs;
@@ -212,6 +229,12 @@ export class RouterState {
       (worker) =>
         worker.accountId === accountId && worker.deviceId === deviceId,
     ).length;
+  }
+
+  supportsCommandProgress(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.commandProgress;
   }
 
   #pruneStaleWorkers(): void {

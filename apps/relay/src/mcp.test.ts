@@ -117,6 +117,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     assert.ok(inputSchema.properties?.deviceId);
     assert.ok(inputSchema.required?.includes("deviceId"));
   }
+  const getCommandInputSchema = byName.get("get_command")?.inputSchema as {
+    properties?: Record<string, unknown>;
+  };
+  assert.ok(getCommandInputSchema.properties?.afterSequence);
 
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;
@@ -124,6 +128,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(commandOutputSchema.properties?.deviceId);
   assert.ok(commandOutputSchema.properties?.commandId);
   assert.ok(commandOutputSchema.properties?.status);
+  assert.ok(commandOutputSchema.properties?.sequence);
   assert.equal(commandOutputSchema.properties?.startedAt, undefined);
   assert.equal(commandOutputSchema.properties?.finishedAt, undefined);
 

@@ -117,6 +117,12 @@ const workerCommandOutputSchema = z
     status: z
       .enum(["running", "succeeded", "failed", "canceled", "timed_out"])
       .describe("Current command lifecycle state."),
+    sequence: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Monotonic output and status revision for incremental get_command calls."),
     exitCode: z
       .number()
       .int()
@@ -131,11 +137,11 @@ const workerCommandOutputSchema = z
     stdout: z
       .string()
       .optional()
-      .describe("Captured standard output after completion."),
+      .describe("Captured standard output so far, including while the command is running."),
     stderr: z
       .string()
       .optional()
-      .describe("Captured standard error after completion."),
+      .describe("Captured standard error so far, including while the command is running."),
     stdoutTruncated: z
       .boolean()
       .optional()
@@ -180,6 +186,7 @@ const safeWorkerMessages: Record<string, string> = {
   invalid_command: "The command request is invalid.",
   invalid_timeout: "The command timeout is invalid.",
   invalid_wait: "The command status wait is invalid.",
+  invalid_sequence: "The command progress sequence is invalid.",
   command_not_found: "The command was not found.",
   command_spawn_failed: "The command could not be started.",
   worker_failure: "The local worker operation failed.",
@@ -500,7 +507,7 @@ function registerTools(
     "get_command",
     {
       title: "Get Command",
-      description: "Use after run_command with its deviceId and commandId to read current status or completed output. Set waitMs to wait up to 15 seconds when the command is still running.",
+      description: "Use after run_command with its deviceId and commandId to read status and captured output so far. Pass the returned sequence as afterSequence with waitMs to return when output or status changes, for up to 15 seconds.",
       inputSchema: getCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
@@ -511,13 +518,14 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, commandId, waitMs }) => {
+    async ({ deviceId, commandId, waitMs, afterSequence }) => {
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "get_command",
           requestId: randomUUID(),
           commandId,
           ...(waitMs === undefined ? {} : { waitMs }),
+          ...(afterSequence === undefined ? {} : { afterSequence }),
         });
         return commandSuccess(result, deviceId);
       } catch (error) {

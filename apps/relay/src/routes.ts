@@ -27,7 +27,13 @@ const renameSchema = z.object({ name: deviceNameSchema }).strict();
 const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
 const registerSchema = z.union([
-  z.object({ workerId: workerIdSchema }).strict(),
+  z.object({
+    workerId: workerIdSchema,
+    capabilities: z
+      .object({ commandProgress: z.literal(true).optional() })
+      .strict()
+      .optional(),
+  }).strict(),
   z.object({}).strict(),
 ]);
 const pollSchema = z.union([
@@ -346,6 +352,11 @@ export function buildRoutes(
       device.id,
       device.name,
       workerId,
+      {
+        commandProgress:
+          "capabilities" in parsed.data &&
+          parsed.data.capabilities?.commandProgress === true,
+      },
     );
     response.json({
       deviceId: device.id,

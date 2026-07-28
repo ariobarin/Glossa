@@ -97,10 +97,15 @@ test("accepts legacy and concurrent worker registration without charging valid t
   };
 
   const legacy = await register({});
-  const current = await register({ workerId });
+  const current = await register({
+    workerId,
+    capabilities: { commandProgress: true },
+  });
   assert.equal(legacy.workerId, deviceId);
   assert.equal(current.workerId, workerId);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
+  assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
+  assert.equal(state.supportsCommandProgress(accountId, workerId), true);
 
   const heartbeat = await fetch(`${origin}/device/heartbeat`, {
     method: "POST",

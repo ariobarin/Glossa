@@ -186,6 +186,14 @@ export const getCommandRequestSchema = z.object({
     .max(MAX_COMMAND_STATUS_WAIT_MS)
     .optional()
     .describe("Optional long-poll duration in milliseconds, from 0 through 15000."),
+  afterSequence: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "Sequence returned by an earlier command result. When current, wait for output or status to change.",
+    ),
 }).strict();
 
 export const getCommandJobSchema = getCommandRequestSchema.extend({
