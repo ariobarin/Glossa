@@ -23,15 +23,10 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
-interface RoutedResource {
-  accountId: string;
-  workerId: string;
-}
 
 export class RouterState {
   readonly #workers = new Map<string, ConnectedWorker>();
   readonly #results = new Map<string, ResultWaiter>();
-  readonly #commands = new Map<string, RoutedResource>();
 
   register(
     accountId: string,
@@ -71,7 +66,7 @@ export class RouterState {
     ) {
       return;
     }
-    this.#removeWorker(worker, true);
+    this.#removeWorker(worker);
   }
 
   unregisterDevice(deviceId: string): void {
@@ -195,14 +190,6 @@ export class RouterState {
     return true;
   }
 
-  rememberCommand(accountId: string, workerId: string, commandId: string): void {
-    this.#commands.set(commandId, { accountId, workerId });
-  }
-
-  workerForCommand(accountId: string, commandId: string): string | null {
-    const command = this.#commands.get(commandId);
-    return command?.accountId === accountId ? command.workerId : null;
-  }
 
   listDevices(accountId: string): Array<{
     deviceId: string;
@@ -231,16 +218,15 @@ export class RouterState {
     const staleBefore = Date.now() - WORKER_STALE_MS;
     for (const worker of [...this.#workers.values()]) {
       if (worker.lastSeenAt < staleBefore) {
-        this.#removeWorker(worker, false);
+        this.#removeWorker(worker);
       }
     }
   }
 
-  #removeWorker(worker: ConnectedWorker, deleteResources: boolean): void {
+  #removeWorker(worker: ConnectedWorker): void {
     worker.pollWaiter?.(null);
     this.#workers.delete(worker.workerId);
     this.#rejectWorkerWaiters(worker.workerId);
-    if (deleteResources) this.#deleteWorkerResources(worker.workerId);
   }
 
   #rejectWorkerWaiters(workerId: string): void {
@@ -252,9 +238,4 @@ export class RouterState {
     }
   }
 
-  #deleteWorkerResources(workerId: string): void {
-    for (const [commandId, command] of this.#commands) {
-      if (command.workerId === workerId) this.#commands.delete(commandId);
-    }
-  }
 }

@@ -109,9 +109,19 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     /\bWindows\b/,
   );
 
+  for (const toolName of ["get_command", "cancel_command"]) {
+    const inputSchema = byName.get(toolName)?.inputSchema as {
+      properties?: Record<string, unknown>;
+      required?: string[];
+    };
+    assert.ok(inputSchema.properties?.deviceId);
+    assert.ok(inputSchema.required?.includes("deviceId"));
+  }
+
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;
   };
+  assert.ok(commandOutputSchema.properties?.deviceId);
   assert.ok(commandOutputSchema.properties?.commandId);
   assert.ok(commandOutputSchema.properties?.status);
   assert.equal(commandOutputSchema.properties?.startedAt, undefined);

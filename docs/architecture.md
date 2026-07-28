@@ -97,8 +97,9 @@ The hosting layer imposes a bounded request window. Therefore:
 - worker long polls return within 20 seconds;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - worker poll wait time is reduced by authentication time so the complete request remains bounded;
-- `run_command` returns after the worker accepts the command and supplies a command ID;
+- `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request;
+- later command calls carry both IDs, so relay restarts do not lose a command routing lookup;
 - `get_command` may wait up to 15 seconds, and `cancel_command` uses a separate bounded request;
 - no hosted request remains open for the lifetime of a command.
 

@@ -31,6 +31,8 @@ const editFileInputSchema = editFileRequestSchema.safeExtend(deviceIdSchema.shap
 const runCommandInputSchema = runCommandRequestSchema.safeExtend(
   deviceIdSchema.shape,
 );
+const getCommandInputSchema = getCommandRequestSchema.extend(deviceIdSchema.shape);
+const cancelCommandInputSchema = cancelCommandRequestSchema.extend(deviceIdSchema.shape);
 const sha256Schema = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
@@ -106,7 +108,7 @@ const editFileOutputSchema = writeFileOutputSchema
       .describe("Whether the returned diff exceeded its display limit."),
   })
   .strict();
-const commandOutputSchema = z
+const workerCommandOutputSchema = z
   .object({
     commandId: z
       .string()
@@ -144,6 +146,12 @@ const commandOutputSchema = z
       .describe("Whether standard error exceeded the shared command-output capture limit. Use a narrower command to retrieve omitted output."),
   })
   .strip();
+const commandOutputSchema = workerCommandOutputSchema.extend({
+  deviceId: z
+    .string()
+    .uuid()
+    .describe("Online worker identifier required by get_command and cancel_command."),
+});
 
 export const MCP_SERVER_VERSION = "0.1.0-beta.5";
 
@@ -240,6 +248,18 @@ function workerSuccess<T extends z.ZodObject>(
     );
   }
   return structuredResult(parsed.data);
+}
+
+function commandSuccess(result: WorkerResult, deviceId: string) {
+  if (!result.ok) return workerError(result);
+  const parsed = workerCommandOutputSchema.safeParse(result.value);
+  if (!parsed.success) {
+    return errorResult(
+      "invalid_worker_result",
+      "The worker returned an invalid result.",
+    );
+  }
+  return structuredResult({ deviceId, ...parsed.data });
 }
 
 async function executeJob(
@@ -469,16 +489,7 @@ function registerTools(
           deviceId,
           job,
         );
-        if (!result.ok) return workerError(result);
-        const parsed = commandOutputSchema.safeParse(result.value);
-        if (!parsed.success) {
-          return errorResult(
-            "invalid_worker_result",
-            "The worker returned an invalid result.",
-          );
-        }
-        state.rememberCommand(accountId, deviceId, parsed.data.commandId);
-        return structuredResult(parsed.data);
+        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
@@ -489,8 +500,8 @@ function registerTools(
     "get_command",
     {
       title: "Get Command",
-      description: "Use after run_command to read current status or completed output. Set waitMs to wait up to 15 seconds when the command is still running.",
-      inputSchema: getCommandRequestSchema,
+      description: "Use after run_command with its deviceId and commandId to read current status or completed output. Set waitMs to wait up to 15 seconds when the command is still running.",
+      inputSchema: getCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
       annotations: {
@@ -500,11 +511,7 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ commandId, waitMs }) => {
-      const deviceId = state.workerForCommand(accountId, commandId);
-      if (!deviceId) {
-        return errorResult("command_not_found", "The command was not found.");
-      }
+    async ({ deviceId, commandId, waitMs }) => {
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "get_command",
@@ -512,7 +519,7 @@ function registerTools(
           commandId,
           ...(waitMs === undefined ? {} : { waitMs }),
         });
-        return workerSuccess(result, commandOutputSchema);
+        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
@@ -523,8 +530,8 @@ function registerTools(
     "cancel_command",
     {
       title: "Cancel Command",
-      description: "Use only to stop a command started by run_command. Terminates its process tree but does not revert effects already caused.",
-      inputSchema: cancelCommandRequestSchema,
+      description: "Use only to stop a command started by run_command, passing its deviceId and commandId. Terminates its process tree but does not revert effects already caused.",
+      inputSchema: cancelCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
       annotations: {
@@ -534,18 +541,14 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ commandId }) => {
-      const deviceId = state.workerForCommand(accountId, commandId);
-      if (!deviceId) {
-        return errorResult("command_not_found", "The command was not found.");
-      }
+    async ({ deviceId, commandId }) => {
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "cancel_command",
           requestId: randomUUID(),
           commandId,
         });
-        return workerSuccess(result, commandOutputSchema);
+        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
