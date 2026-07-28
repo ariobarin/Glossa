@@ -133,6 +133,31 @@ test("invalidates worker credentials on reconnect and unregister", () => {
   assert.equal(state.authenticateWorkerToken(second.workerToken), null);
 });
 
+test("does not unregister a newer worker generation", () => {
+  const state = new RouterState();
+  const first = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  const second = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+
+  state.unregisterWorker(
+    accountId,
+    deviceId,
+    firstWorkerId,
+    first.generation,
+  );
+  assert.equal(
+    state.authenticateWorkerToken(second.workerToken)?.generation,
+    second.generation,
+  );
+
+  state.unregisterWorker(
+    accountId,
+    deviceId,
+    firstWorkerId,
+    second.generation,
+  );
+  assert.equal(state.authenticateWorkerToken(second.workerToken), null);
+});
+
 test("prunes stale workers while retaining active device counts", (context) => {
   let now = 1_000_000;
   context.mock.method(Date, "now", () => now);
