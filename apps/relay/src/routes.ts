@@ -607,6 +607,7 @@ export function buildRoutes(
       identity.mode === "worker" ? identity.accountId : identity.device.accountId,
       identity.mode === "worker" ? identity.deviceId : identity.device.id,
       parsed.data.workerId,
+      identity.mode === "worker" ? identity.generation : undefined,
     );
     response.status(204).end();
   });
