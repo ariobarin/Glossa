@@ -71,7 +71,11 @@ test("falls back without a label when the relay does not accept labels", async (
       return Response.json({
         workerId: body.workerId,
         generation,
-        capabilities: { commandProgress: true, concurrentJobs: true },
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
       });
     }
     if (url.pathname === "/device/poll") {
@@ -100,6 +104,7 @@ test("falls back without a label when the relay does not accept labels", async (
   assert.deepEqual(registerBodies[1]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
   const connected = statuses.find((status) => status.state === "connected");
   assert.equal(connected?.state, "connected");
@@ -108,7 +113,7 @@ test("falls back without a label when the relay does not accept labels", async (
   }
 });
 
-test("falls back to current registration when capabilities are unsupported", async () => {
+test("falls back when structured and concurrent capabilities are unsupported", async () => {
   const controller = new AbortController();
   const registerBodies: Array<Record<string, unknown>> = [];
   const statuses: RemoteWorkerStatus[] = [];
@@ -119,7 +124,7 @@ test("falls back to current registration when capabilities are unsupported", asy
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
       registerBodies.push(body);
-      if (registerBodies.length === 1) {
+      if (registerBodies.length <= 2) {
         return Response.json({ error: "invalid_request" }, { status: 400 });
       }
       return Response.json({ workerId: body.workerId, generation });
@@ -143,16 +148,69 @@ test("falls back to current registration when capabilities are unsupported", asy
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 2);
+  assert.equal(registerBodies.length, 3);
   assert.deepEqual(registerBodies[0]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
-  assert.deepEqual(registerBodies[1]?.capabilities, { commandProgress: true });
+  assert.deepEqual(registerBodies[1]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
+  assert.deepEqual(registerBodies[2]?.capabilities, { commandProgress: true });
   assert.equal(
     statuses.find((status) => status.state === "connected")?.legacyRelay,
     false,
   );
+});
+
+test("keeps structured job types out of concurrency-only relay polls", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const registerBodies: Array<Record<string, unknown>> = [];
+  let pollBody: Record<string, unknown> | undefined;
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      registerBodies.push(body);
+      const capabilities = body.capabilities as Record<string, unknown> | undefined;
+      if (capabilities?.structuredReads === true) {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        capabilities: { commandProgress: true, concurrentJobs: true },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      pollBody = body;
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.equal(registerBodies.length, 2);
+  const accepted = pollBody?.acceptedTypes as string[];
+  assert.equal(accepted.includes("read_file"), true);
+  assert.equal(accepted.includes("list_files"), false);
+  assert.equal(accepted.includes("search_text"), false);
+  assert.equal(accepted.includes("read_file_range"), false);
 });
 
 test("falls back to the legacy single-worker protocol", async () => {
@@ -191,14 +249,19 @@ test("falls back to the legacy single-worker protocol", async () => {
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 4);
+  assert.equal(registerBodies.length, 5);
   assert.deepEqual(registerBodies[0]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
-  assert.deepEqual(registerBodies[1]?.capabilities, { commandProgress: true });
-  assert.equal("capabilities" in registerBodies[2]!, false);
-  assert.deepEqual(registerBodies[3], {});
+  assert.deepEqual(registerBodies[1]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
+  assert.deepEqual(registerBodies[2]?.capabilities, { commandProgress: true });
+  assert.equal("capabilities" in registerBodies[3]!, false);
+  assert.deepEqual(registerBodies[4], {});
   assert.equal(
     statuses.find((status) => status.state === "connected")?.legacyRelay,
     true,
@@ -447,7 +510,11 @@ test("handles cancellation while a command status wait is still running", async 
         workerId: body.workerId,
         generation,
         workerToken,
-        capabilities: { commandProgress: true, concurrentJobs: true },
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
       });
     }
     if (url.pathname === "/device/poll") {
@@ -516,6 +583,9 @@ test("handles cancellation while a command status wait is still running", async 
     "get_command",
     "cancel_command",
     "read_file",
+    "list_files",
+    "search_text",
+    "read_file_range",
     "write_file",
     "edit_file",
     "run_command",
@@ -549,7 +619,11 @@ test("keeps file mutation jobs serialized while other lanes stay available", asy
         workerId: body.workerId,
         generation,
         workerToken,
-        capabilities: { commandProgress: true, concurrentJobs: true },
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
       });
     }
     if (url.pathname === "/device/poll") {
@@ -604,4 +678,53 @@ test("keeps file mutation jobs serialized while other lanes stay available", asy
   }).run();
 
   assert.ok(polls >= 2);
+});
+
+test("accepts a discarded late result without reconnecting", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const requestId = "00000000-0000-4000-8000-000000000002";
+  let polls = 0;
+  let handled = 0;
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      return Response.json({ workerId: body.workerId, generation });
+    }
+    if (url.pathname === "/device/poll") {
+      polls += 1;
+      if (polls === 1) {
+        return Response.json({
+          job: { type: "read_file", requestId, path: "README.md" },
+        });
+      }
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/result") {
+      return Response.json({ accepted: false }, { status: 202 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    worker: {
+      async handle(job) {
+        handled += 1;
+        return { requestId: job.requestId, ok: true, value: {} };
+      },
+    },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.equal(handled, 1);
+  assert.equal(polls, 2);
 });

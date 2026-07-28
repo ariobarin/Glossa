@@ -93,6 +93,8 @@ Glossa executes commands with the permissions and environment of the local accou
 - validate existing paths and nearest writable ancestors locally;
 - reject absolute paths and lexical parent escapes;
 - revalidate root-relative paths for every operation;
+- stream directory entries into bounded traversal state, skip links and unavailable files during structured listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;
+- preserve discovered native filenames during structured traversal; prefix POSIX names containing literal backslashes with `./` so they remain safely reusable, and normalize returned separators only on Windows;
 - preserve correct case-sensitive or case-insensitive path comparison for the host;
 - verify Windows junction and reparse-point behavior and POSIX symlink behavior when path enforcement changes.
 

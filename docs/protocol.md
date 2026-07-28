@@ -69,17 +69,17 @@ The relay stores only a SHA-256 digest in process memory and invalidates the cre
 
 ### `POST /device/register`
 
-Registers an active worker generation using an ephemeral worker UUID created by the CLI process and returns its generation plus the one-time `workerToken`. One enrolled device may register any number of workers. Reconnecting one worker replaces only that worker's generation and invalidates its previous worker credential. The request does not include the canonical local root or a derived repository name. It may include a validated `workspaceLabel` only when the user supplied `--label`; the relay retains that value with the active worker and does not persist it. Current workers advertise `commandProgress` and `concurrentJobs` support. The relay returns the accepted capabilities, sends sequence-aware status jobs only to workers that accept them, and enables capacity-aware concurrent delivery only after both sides negotiate it.
+Registers an active worker generation using an ephemeral worker UUID created by the CLI process and returns its generation plus the one-time `workerToken`. One enrolled device may register any number of workers. Reconnecting one worker replaces only that worker's generation and invalidates its previous worker credential. The request does not include the canonical local root or a derived repository name. It may include a validated `workspaceLabel` only when the user supplied `--label`; the relay retains that value with the active worker and does not persist it. Current workers advertise `commandProgress`, `concurrentJobs`, and `structuredReads` support. The relay returns the accepted capabilities, sends sequence-aware status jobs only to workers that accept them, enables capacity-aware concurrent delivery only after both sides negotiate it, and routes structured repository jobs only to workers that advertised them.
 
-During a relay-first beta rollout, a current relay accepts concurrent-capability, command-progress-only, worker-aware, and earlier single-worker request shapes. A current CLI retries those shapes in that order when it reaches an older relay. Concurrency remains disabled unless the registration response explicitly accepts `concurrentJobs`. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
+During a relay-first beta rollout, a current relay accepts structured-read, concurrent-capability, command-progress-only, worker-aware, and earlier single-worker request shapes. A current CLI retries those shapes in that order when it reaches an older relay. Concurrency remains disabled unless the registration response explicitly accepts `concurrentJobs`, and the MCP structured repository tools return `worker_update_required` unless the active worker advertised `structuredReads`. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
 
 ### `POST /device/poll`
 
-Includes the worker ID and generation. Waits no more than 18 seconds and returns one job or `204 No Content`. A worker with `concurrentJobs` may also send `acceptedTypes` and a shorter `waitMs`; the relay skips queued jobs outside the advertised capacity instead of allowing them to block control work. The current worker allows one command-status wait, one cancellation, two reads, and one mutation at a time, with five total in-flight jobs. `write_file`, `edit_file`, and `run_command` share the serialized mutation lane, while `cancel_command` remains independent from a long `get_command`. Older workers omit these fields and retain sequential delivery. Worker HTTP requests use a 19 second client timeout and reconnect with bounded exponential jitter.
+Includes the worker ID and generation. Waits no more than 18 seconds and returns one job or `204 No Content`. A worker with `concurrentJobs` may also send `acceptedTypes` and a shorter `waitMs`; the relay skips queued jobs outside the advertised capacity instead of allowing them to block control work. The current worker allows one command-status wait, one cancellation, two reads, and one mutation at a time, with five total in-flight jobs. `read_file`, `list_files`, `search_text`, and `read_file_range` share the read lane. `write_file`, `edit_file`, and `run_command` share the serialized mutation lane, while `cancel_command` remains independent from a long `get_command`. Older workers omit these fields and retain sequential delivery. Worker HTTP requests use a 19 second client timeout and reconnect with bounded exponential jitter.
 
 ### `POST /device/result`
 
-Posts the worker ID and structured result for the delivered job. Late results after caller timeout are ignored.
+Posts the worker ID and structured result for the delivered job. The relay acknowledges late results with `202` and `accepted: false`, discards them after caller timeout, and does not force older workers to reconnect.
 
 ### `POST /device/heartbeat`
 
@@ -102,6 +102,9 @@ Tools:
 - `list_devices`
 - `logout`
 - `read_file`
+- `list_files`
+- `search_text`
+- `read_file_range`
 - `write_file`
 - `edit_file`
 - `run_command`
@@ -112,6 +115,12 @@ Tools:
 
 `logout` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
 
+`list_files` returns at most 200 regular files or directories in deterministic global relative-path order, so cursor pagination cannot skip nested or sibling entries. On POSIX, discovered names containing literal backslashes use a `./` native-path prefix so the returned value can be passed unchanged to other path-based tools. It reads directory streams incrementally, never holds more than the 20,000-entry scan ceiling, never follows symlinks or junctions, and skips entries or child directories that become missing or inaccessible plus common dependency and version-control directories during recursive traversal. `nextCursor` is a separate native ordering key; pass it back unchanged as `cursor` so reusable path encoding cannot change pagination order. Callers should narrow `path` when the scan ceiling is reached.
+
+`search_text` performs literal line-oriented matching without invoking a shell. It returns at most 100 matching lines with bounded 400-character snippets and scans at most 5,000 UTF-8 files, 32 MiB, or 20,000 filesystem entries. Files over 1 MiB, invalid UTF-8 files, links, transiently missing files, permission-denied files, and common dependency or version-control subtrees are skipped. Optional suffix filters support values such as `.ts` and `.d.ts`.
+
+`read_file_range` returns at most 500 complete normalized lines and 64 KiB per call, together with the full-file SHA-256, total line count, and `nextLine` continuation metadata. The full file remains subject to the 1 MiB UTF-8 limit. Every structured repository job receives a worker-local deadline equal to at most half the hosted request window and never more than 8 seconds. After that deadline, the read lane remains occupied until the current filesystem operation settles, any late directory handle is closed, and the worker returns `scan_timeout`; this bounds stalled work instead of accumulating background I/O.
+
 Tool annotations must describe actual behavior. `write_file`, `edit_file`, and `run_command` are non-read-only and destructive-capable.
 Every tool advertises the `glossa:access` OAuth scheme in descriptor metadata and is visible to the model. `run_command` declares `openWorldHint: true` because a command can use the worker account's inherited network access and affect external systems. All other tools declare `openWorldHint: false`.
 Tool descriptions state when the model should select each operation. Every public input and output field includes a description, and successful results provide both structured content and an equivalent JSON text fallback.
@@ -121,6 +130,33 @@ Tool descriptions state when the model should select each operation. Every publi
 ```ts
 type WorkerJob =
   | { type: "read_file"; requestId: string; path: string }
+  | {
+      type: "list_files";
+      requestId: string;
+      path?: string;
+      recursive?: boolean;
+      cursor?: string;
+      limit?: number;
+      timeoutMs: number;
+    }
+  | {
+      type: "search_text";
+      requestId: string;
+      query: string;
+      path?: string;
+      caseSensitive?: boolean;
+      maxResults?: number;
+      extensions?: string[];
+      timeoutMs: number;
+    }
+  | {
+      type: "read_file_range";
+      requestId: string;
+      path: string;
+      startLine?: number;
+      lineCount?: number;
+      timeoutMs: number;
+    }
   | {
       type: "write_file";
       requestId: string;
@@ -164,7 +200,7 @@ Command processes inherit the complete environment of the Glossa worker process.
 
 `run_command` waits up to 750 milliseconds by default for fast completion, configurable from 0 through 5,000 milliseconds. A command that finishes within that budget returns its terminal status and bounded output in the same tool call; a longer command returns the worker `deviceId`, a running `commandId`, captured output so far, and a monotonic `sequence` when the worker supports incremental progress. `get_command` and `cancel_command` require both IDs, so the relay routes command control directly instead of retaining a command-to-worker lookup. `get_command` may wait up to 15 seconds. Passing the latest `sequence` as `afterSequence` makes that wait end when new output arrives or lifecycle state changes; omitting it preserves completion-oriented waiting for compatibility. Results report `running`, `succeeded`, `failed`, `canceled`, or `timed_out` and include bounded output captured so far. Public MCP results omit worker-local lifecycle timestamps because clients do not need them to manage a command. `cancel_command` terminates the process tree. Disconnecting the worker rejects new jobs and terminates an active command. Command state, worker IDs, sequences, and output remain transient and are never persisted by the relay.
 
-Text file content is limited to 1 MiB. Returned standard output and standard error share a 12 KiB command-result budget. Each local stream retains a bounded beginning and rolling tail, then the worker allocates the response budget across both streams so noisy standard output cannot erase all diagnostic standard error. A truncated stream therefore preserves useful context from both ends and sets its truncation flag; clients can still use a narrower follow-up command when more detail is needed. One command may run at a time per worker; another `run_command` request returns `command_busy` until the active command finishes or is canceled.
+Full text-file reads and writes are limited to 1 MiB. Structured listings, searches, and ranged reads have the smaller per-call and scan ceilings described above. Returned standard output and standard error share a 12 KiB command-result budget. Each local stream retains a bounded beginning and rolling tail, then the worker allocates the response budget across both streams so noisy standard output cannot erase all diagnostic standard error. A truncated stream therefore preserves useful context from both ends and sets its truncation flag; clients can still use a narrower follow-up command when more detail is needed. One command may run at a time per worker; another `run_command` request returns `command_busy` until the active command finishes or is canceled.
 
 The requested command timeout defaults to 900,000 milliseconds and must be between 1 millisecond and the 3,600,000 millisecond hard maximum.
 
