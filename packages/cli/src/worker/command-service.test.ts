@@ -147,6 +147,25 @@ test("truncates command output at a complete UTF-8 character", async (context) =
   assert.ok(Buffer.byteLength(completed.stdout ?? "") <= MAX_COMMAND_OUTPUT_BYTES);
 });
 
+test("caps replacement characters within the output budget", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      `process.stdout.write(Buffer.alloc(${MAX_COMMAND_OUTPUT_BYTES}, 0xff))`,
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stdout?.startsWith("\ufffd"), true);
+  assert.equal(completed.stdout?.endsWith("\ufffd"), true);
+  assert.equal(completed.stdoutTruncated, true);
+  assert.ok(Buffer.byteLength(completed.stdout ?? "") <= MAX_COMMAND_OUTPUT_BYTES);
+});
+
 test("shares one capture budget across standard output and error", async (context) => {
   const { commands } = await commandFixture(context);
   const started = await commands.start({

@@ -168,6 +168,31 @@ function safeSuffix(buffer: Buffer): string {
   return new StringDecoder("utf8").write(buffer.subarray(start));
 }
 
+function utf8PrefixWithinBudget(value: string, budget: number): string {
+  let used = 0;
+  let end = 0;
+  for (const character of value) {
+    const bytes = Buffer.byteLength(character);
+    if (used + bytes > budget) break;
+    used += bytes;
+    end += character.length;
+  }
+  return value.slice(0, end);
+}
+
+function utf8SuffixWithinBudget(value: string, budget: number): string {
+  const characters = Array.from(value);
+  let used = 0;
+  let start = characters.length;
+  while (start > 0) {
+    const bytes = Buffer.byteLength(characters[start - 1]!);
+    if (used + bytes > budget) break;
+    used += bytes;
+    start -= 1;
+  }
+  return characters.slice(start).join("");
+}
+
 function renderStream(
   stream: CapturedStream,
   budget: number,
@@ -179,11 +204,18 @@ function renderStream(
   const head = Buffer.concat(stream.head, stream.headBytes);
   const retained = Buffer.concat([head, stream.tail]);
   if (stream.totalBytes <= budget) {
+    const content = complete
+      ? retained.toString("utf8")
+      : new StringDecoder("utf8").write(retained);
+    if (Buffer.byteLength(content) <= budget) {
+      return { content, truncated: false };
+    }
+    const prefixBudget = Math.floor(budget / 3);
     return {
-      content: complete
-        ? retained.toString("utf8")
-        : new StringDecoder("utf8").write(retained),
-      truncated: false,
+      content:
+        utf8PrefixWithinBudget(content, prefixBudget) +
+        utf8SuffixWithinBudget(content, budget - prefixBudget),
+      truncated: true,
     };
   }
 
@@ -191,10 +223,13 @@ function renderStream(
   const tailBudget = Math.min(stream.tail.byteLength, budget - headBudget);
   const remaining = budget - headBudget - tailBudget;
   const extraHead = Math.min(remaining, head.byteLength - headBudget);
+  const prefixBudget = headBudget + extraHead;
   const prefix = head.subarray(0, headBudget + extraHead);
   const suffix = stream.tail.subarray(stream.tail.byteLength - tailBudget);
   return {
-    content: safePrefix(prefix) + safeSuffix(suffix),
+    content:
+      utf8PrefixWithinBudget(safePrefix(prefix), prefixBudget) +
+      utf8SuffixWithinBudget(safeSuffix(suffix), tailBudget),
     truncated: true,
   };
 }
