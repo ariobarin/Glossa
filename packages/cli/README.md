@@ -24,7 +24,7 @@ macOS or Linux:
 curl -fsSL https://glossa.sh/install.sh | sh
 ```
 
-Open a terminal in the repository you want to expose, then run:
+Open a terminal in the directory you want to expose, then run:
 
 ```shell
 glossa
@@ -38,7 +38,7 @@ Glossa opens Google sign-in automatically when needed using OAuth Device Authori
 
 OAuth and device credentials use the operating-system credential store. If it is unavailable, Glossa warns before using a restricted credential file.
 
-Glossa signs in automatically and exposes the current Git worktree. Pass a directory to expose a different workspace. The live session display shows the connection, authority, and recent activity.
+Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. The live session display shows the connection, authority, and recent activity.
 
 The live display contains the full interactive workflow. Press `s` for account and device status, `r` to revoke a device, `l` to sign out, `u` to update, `d` for recent activity, or `q` or Ctrl+C to disconnect. Press `?` to see the keys at any time.
 

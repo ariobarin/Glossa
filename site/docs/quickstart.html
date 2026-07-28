@@ -155,7 +155,7 @@
 <p>After Glossa starts, press <code>u</code> to install the newest beta. You can also run <code>glossa update</code> directly.</p>
 </section><section class="doc-section">
 <h2 id="step-2-start-a-workspace"><a class="heading-anchor" href="#step-2-start-a-workspace" aria-label="Link to Step 2: Start a workspace"></a>Step 2: Start a workspace</h2>
-<p>Open a terminal in the folder where you want ChatGPT to work:</p>
+<p>Open a terminal in the directory you want ChatGPT to use:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-6" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
@@ -163,6 +163,8 @@
   <pre><code class="language-shell" id="docs-quickstart-code-6">glossa
 </code></pre>
 </div>
+<p>With no directory argument, Glossa exposes the current directory and signs in
+automatically. To expose a different directory, run <code>glossa &lt;directory&gt;</code>.</p>
 <blockquote>
 <p>Keep this terminal open. Closing it disconnects that local workspace from ChatGPT.</p>
 </blockquote>
