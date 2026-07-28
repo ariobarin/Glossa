@@ -48,11 +48,11 @@ Open a terminal in the directory you want to expose, then run:
 glossa
 ```
 
-Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. Run `glossa doctor` for non-destructive local readiness checks before starting, or `glossa doctor --json` for scriptable output. JSON `ready` is false when warnings or failures remain, while the process exits nonzero only when a check fails.
+Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. Run `glossa status` in another terminal to check the account, relay, enrolled devices, and active workspaces.
 
 On the first successful managed-relay connection on a computer, Glossa prints the ChatGPT quickstart link once. It records a `connect-hint-shown` marker in the local Glossa config directory so later starts stay quiet.
 
-Starting `glossa` opens the live session display and authorizes connected clients to modify files inside that root and run commands with the full environment and permissions of the operating-system account that launched it. Press `q` or Ctrl+C to disconnect.
+Starting `glossa` prints the exposed root, connection state, security warning, and write or command activity. Connected clients can modify files inside that root and run commands with the full environment and permissions of the operating-system account that launched Glossa. Press Ctrl+C to disconnect.
 
 ## ChatGPT
 
@@ -62,7 +62,7 @@ See the [open beta guide](docs/open-beta.md) for safe setup, verification, and t
 
 ## Local development
 
-Node 24 and Docker are required. Start local Postgres, create `.env` when missing, build, and migrate with:
+Node.js 22.9 or newer and Docker are required. Start local Postgres, create `.env` when missing, build, and migrate with:
 
 ```powershell
 npm run dev:setup

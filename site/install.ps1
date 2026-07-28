@@ -101,7 +101,7 @@ function Invoke-GlossaInstaller {
     }
     Write-Host "Installed Glossa $version."
     Write-Host "Next: open a new terminal in a project and run glossa."
-    Write-Host "Inside Glossa, press ? for controls."
+    Write-Host "Press Ctrl+C to disconnect."
 }
 
 Invoke-GlossaInstaller
