@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#111016" />
     <title>Quickstart | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=37" />
-    <script src="/copy.js?v=4" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=38" />
+    <script src="/copy.js?v=5" defer></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from site/docs/quickstart.md. Run npm run docs:build after editing Markdown. -->
@@ -82,6 +82,7 @@
         </ol>
       </nav>
       <article class="docs-content">
+
 <section class="doc-section">
 <h2 id="before-you-begin"><a class="heading-anchor" href="#before-you-begin" aria-label="Link to Before you begin"></a>Before you begin</h2>
 <p>Make sure you have:</p>
@@ -92,17 +93,18 @@
 <blockquote>
 <p>Glossa can modify files and run commands on your computer. Review the <a href="/docs/security">security model</a>.</p>
 </blockquote>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="step-1-install-glossa"><a class="heading-anchor" href="#step-1-install-glossa" aria-label="Link to Step 1: Install Glossa"></a>Step 1: Install Glossa</h2>
-<div class="docs-switcher" data-docs-tabs data-tabs-storage="glossa-install-method-v2">
+<div class="docs-switcher" data-docs-tabs data-tabs-storage="glossa-install-method-v2" data-tabs-param="install">
   <p class="docs-switcher-label">Install with</p>
   <div class="docs-tabs docs-tabs-wide" role="tablist" aria-label="Install method">
     <button id="install-npm-tab" type="button" role="tab" aria-selected="true" aria-controls="install-npm" data-docs-tab="npm">npm (Recommended)</button>
     <button id="install-direct-tab" type="button" role="tab" aria-selected="false" aria-controls="install-direct" data-docs-tab="direct" tabindex="-1">Direct installer</button>
   </div>
   <div id="install-npm" class="docs-tab-panel" role="tabpanel" aria-labelledby="install-npm-tab" data-docs-tab-panel="npm">
-    <p>Install the beta on Windows, macOS, or Linux:</p>
-    <div class="code-block">
+<p>Install the beta on Windows, macOS, or Linux:</p>
+<div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-1" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
@@ -110,65 +112,66 @@
 </div>
   </div>
   <div id="install-direct" class="docs-tab-panel" role="tabpanel" aria-labelledby="install-direct-tab" data-docs-tab-panel="direct" hidden>
-    <p>Install a self-contained executable without Node.js or npm.</p>
-    <div class="docs-switcher docs-switcher-nested" data-docs-tabs data-tabs-storage="glossa-direct-platform-v2">
-      <p class="docs-switcher-label">Platform</p>
-      <div class="docs-tabs" role="tablist" aria-label="Direct installer platform">
-        <button id="direct-windows-tab" type="button" role="tab" aria-selected="true" aria-controls="direct-windows" data-docs-tab="windows">Windows</button>
-        <button id="direct-macos-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-macos" data-docs-tab="macos" tabindex="-1">macOS</button>
-        <button id="direct-linux-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-linux" data-docs-tab="linux" tabindex="-1">Linux</button>
-      </div>
-      <div id="direct-windows" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-windows-tab" data-docs-tab-panel="windows">
-        <div class="code-block">
+<p>Install a self-contained executable without Node.js or npm.</p>
+<div class="docs-switcher docs-switcher-nested" data-docs-tabs data-tabs-storage="glossa-direct-platform-v2" data-tabs-param="platform">
+  <p class="docs-switcher-label">Platform</p>
+  <div class="docs-tabs" role="tablist" aria-label="Direct installer platform">
+    <button id="direct-windows-tab" type="button" role="tab" aria-selected="true" aria-controls="direct-windows" data-docs-tab="windows">Windows</button>
+    <button id="direct-macos-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-macos" data-docs-tab="macos" tabindex="-1">macOS</button>
+    <button id="direct-linux-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-linux" data-docs-tab="linux" tabindex="-1">Linux</button>
+  </div>
+  <div id="direct-windows" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-windows-tab" data-docs-tab-panel="windows">
+<div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-2" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
   <pre><code class="language-powershell" id="docs-quickstart-code-2">irm https://glossa.sh/install | iex</code></pre>
 </div>
-      </div>
-      <div id="direct-macos" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-macos-tab" data-docs-tab-panel="macos" hidden>
-        <div class="code-block">
+  </div>
+  <div id="direct-macos" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-macos-tab" data-docs-tab-panel="macos" hidden>
+<div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-3" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
   <pre><code class="language-shell" id="docs-quickstart-code-3">curl -fsSL https://glossa.sh/install.sh | sh</code></pre>
 </div>
-      </div>
-      <div id="direct-linux" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-linux-tab" data-docs-tab-panel="linux" hidden>
-        <div class="code-block">
+  </div>
+  <div id="direct-linux" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-linux-tab" data-docs-tab-panel="linux" hidden>
+<div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-4" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
   <pre><code class="language-shell" id="docs-quickstart-code-4">curl -fsSL https://glossa.sh/install.sh | sh</code></pre>
 </div>
-      </div>
-    </div>
   </div>
-</div><p>Confirm Glossa is available:</p>
+</div>
+  </div>
+</div>
+<p>Confirm Glossa is available:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-5" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-5">glossa --version
-</code></pre>
+  <pre><code class="language-shell" id="docs-quickstart-code-5">glossa --version</code></pre>
 </div>
 <p>After Glossa starts, press <code>u</code> to install the newest beta. You can also run <code>glossa update</code> directly.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="step-2-start-a-workspace"><a class="heading-anchor" href="#step-2-start-a-workspace" aria-label="Link to Step 2: Start a workspace"></a>Step 2: Start a workspace</h2>
 <p>Open a terminal in the directory you want ChatGPT to use:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-6" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-6">glossa
-</code></pre>
+  <pre><code class="language-shell" id="docs-quickstart-code-6">glossa</code></pre>
 </div>
 <p>With no directory argument, Glossa exposes the current directory and signs in
 automatically. To expose a different directory, run <code>glossa &lt;directory&gt;</code>.</p>
 <blockquote>
 <p>Keep this terminal open. Closing it disconnects that local workspace from ChatGPT.</p>
 </blockquote>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="step-3-connect-chatgpt"><a class="heading-anchor" href="#step-3-connect-chatgpt" aria-label="Link to Step 3: Connect ChatGPT"></a>Step 3: Connect ChatGPT</h2>
 <ol>
 <li>Open <strong>Settings &gt; Plugins/Apps</strong> and enable <strong>Developer Mode</strong>.</li>
@@ -179,14 +182,14 @@ automatically. To expose a different directory, run <code>glossa &lt;directory&g
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-7" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-text" id="docs-quickstart-code-7">https://mcp.glossa.sh/mcp
-</code></pre>
+  <pre><code class="language-text" id="docs-quickstart-code-7">https://mcp.glossa.sh/mcp</code></pre>
 </div>
 <ol start="4">
 <li>Choose <strong>OAuth</strong>.</li>
 <li>Sign in with the same Google account used by the Glossa CLI, then choose <strong>Create</strong>.</li>
 </ol>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="step-4-verify-the-connection"><a class="heading-anchor" href="#step-4-verify-the-connection" aria-label="Link to Step 4: Verify the connection"></a>Step 4: Verify the connection</h2>
 <p>Press <code>s</code> in Glossa to check the account, relay, enrolled device, and active worker. Press Esc to return to the workspace view. You can also run <code>glossa status</code> in another terminal.</p>
 <h3 id="try-a-read"><a class="heading-anchor" href="#try-a-read" aria-label="Link to Try a read"></a>Try a read</h3>
@@ -195,12 +198,12 @@ automatically. To expose a different directory, run <code>glossa &lt;directory&g
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-8" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-text" id="docs-quickstart-code-8">Use Glossa to list my connected workspaces.
-</code></pre>
+  <pre><code class="language-text" id="docs-quickstart-code-8">Use Glossa to list my connected workspaces.</code></pre>
 </div>
 <p>If Glossa lists the workspace, the connection is ready. Ask it to read a file
 next.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="what-next"><a class="heading-anchor" href="#what-next" aria-label="Link to What next"></a>What next</h2>
 <ul>
 <li>Read <a href="/docs/why">why Glossa works this way</a>.</li>

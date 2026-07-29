@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#111016" />
     <title>Privacy | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=37" />
-    <script src="/copy.js?v=4" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=38" />
+    <script src="/copy.js?v=5" defer></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from site/pages/privacy.md. Run npm run docs:build after editing Markdown. -->
@@ -95,19 +95,23 @@
 <li>Tool requests and responses in transit, including relative file paths, text file contents, command arguments, command input, and captured command output.</li>
 <li>Network and service metadata processed by hosting and authentication providers, such as IP address, request time, browser or client information, and error status.</li>
 </ul>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="how-data-is-used"><a class="heading-anchor" href="#how-data-is-used" aria-label="Link to How data is used"></a>How data is used</h2>
 <p>Glossa uses this data only to authenticate users, enroll and route requests to devices, perform requested workspace operations, prevent abuse, diagnose service failures, and maintain service security. Glossa does not sell personal data, serve advertisements, or use workspace content to train models.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="storage-and-retention"><a class="heading-anchor" href="#storage-and-retention" aria-label="Link to Storage and retention"></a>Storage and retention</h2>
 <p>File contents, command arguments, command input, command output, local absolute paths, environment variables, OAuth access tokens, and device bearer secrets are not intentionally written to Glossa&#39;s durable database. Request content is held temporarily in process memory while a job is queued or routed. It leaves the relay queue when delivered. An undelivered request remains in memory until the worker registers again, the device is revoked, or the relay process restarts. A client timeout or local worker exit does not itself remove a queued request. Registering the worker again discards the prior queue.</p>
 <p>Account, device, and audit metadata are retained for the life of the account or service, or until an account-deletion request is completed. Revoking a device prevents further use of its credential but does not by itself erase its metadata. Glossa does not currently apply a shorter automatic expiration period to audit metadata.</p>
 <p>The Glossa CLI stores OAuth and device credentials on the user&#39;s computer using the operating-system credential store when available. If that store is unavailable, the CLI warns before using a restricted local credential file.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="service-providers"><a class="heading-anchor" href="#service-providers" aria-label="Link to Service providers"></a>Service providers</h2>
 <p>Glossa relies on Auth0 for authentication, Heroku for the managed relay and database, and Vercel for the public website. These providers process the data needed to supply their part of the service under their own terms and privacy practices. GitHub and npm distribute the open-source repository and CLI package but do not receive workspace requests through Glossa.</p>
 <p>The ChatGPT app, plugin, or other MCP client that you connect receives the file contents, command details, and command output returned in response to its requests. That client processes and retains data under its own terms, privacy policy, workspace settings, and model-data controls. Glossa&#39;s statement that it does not train models on workspace content applies only to Glossa.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="user-controls"><a class="heading-anchor" href="#user-controls" aria-label="Link to User controls"></a>User controls</h2>
 <ul>
 <li>Stop the local <code>glossa</code> process to end useful workspace access immediately.</li>
@@ -115,13 +119,16 @@
 <li>Disconnect the Glossa app or plugin in ChatGPT to revoke the client&#39;s authorization.</li>
 <li>Request device or account deletion through the <a href="/support">support page</a>. Do not post private identifiers or credentials in a public issue.</li>
 </ul>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="security"><a class="heading-anchor" href="#security" aria-label="Link to Security"></a>Security</h2>
 <p>Glossa uses HTTPS, OAuth access-token validation, per-device credentials stored as salted hashes, account-scoped database queries, bounded requests, and local path checks. Command execution still has the full authority and environment of the operating-system account that starts the worker. File-root checks do not sandbox shell commands. Review the public <a href="/security">security model</a> before use.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="children"><a class="heading-anchor" href="#children" aria-label="Link to Children"></a>Children</h2>
 <p>Glossa is a developer tool and is not directed to children under 13. Do not use Glossa to submit personal data about a child who cannot legally consent to that processing.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="changes-and-contact"><a class="heading-anchor" href="#changes-and-contact" aria-label="Link to Changes and contact"></a>Changes and contact</h2>
 <p>This policy may change when Glossa&#39;s behavior, providers, or legal obligations change. Material changes will be published on this page with a new revision date. Questions and data requests can be started through the <a href="/support">support page</a>.</p>
 </section>
