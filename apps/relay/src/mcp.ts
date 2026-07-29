@@ -49,6 +49,10 @@ const listDevicesOutputSchema = z
               .describe("Identifier to pass to workspace tools."),
             name: z.string().describe("Name of the computer running this worker."),
             path: z.literal(".").describe("The single exposed workspace root."),
+            workspaceLabel: z
+              .string()
+              .optional()
+              .describe("Optional user-chosen label for distinguishing online workspaces."),
           })
           .strict(),
       )

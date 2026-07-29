@@ -75,7 +75,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
-- device IDs, ephemeral worker IDs, connection generations, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
+- device IDs, ephemeral worker IDs, connection generations, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs
 - request waiters
 - recent nonces and bounded rate-limit counters
@@ -88,7 +88,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - complete inherited local environment and developer credentials
 - temporary active command state
 
-One enrolled device may run any number of concurrent workers. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. Current workers also negotiate bounded concurrent job delivery: command status, cancellation, reads, and mutations use separate local capacity lanes, while older workers remain sequential.
+One enrolled device may run any number of concurrent workers. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path. Current workers also negotiate bounded concurrent job delivery: command status, cancellation, reads, and mutations use separate local capacity lanes, while older workers remain sequential.
 
 ## Hosted request deadlines
 

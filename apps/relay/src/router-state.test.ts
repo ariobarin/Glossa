@@ -16,7 +16,11 @@ test("routes multiple workers enrolled on one computer independently", async () 
     deviceId,
     "Test PC",
     firstWorkerId,
-    { commandProgress: true, concurrentJobs: true },
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      workspaceLabel: "frontend",
+    },
   );
   state.register(accountId, deviceId, "Test PC", secondWorkerId);
 
@@ -26,7 +30,12 @@ test("routes multiple workers enrolled on one computer independently", async () 
   assert.equal(state.supportsCommandProgress(accountId, secondWorkerId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, secondWorkerId), false);
   assert.deepEqual(state.listDevices(accountId), [
-    { deviceId: firstWorkerId, name: "Test PC", path: "." },
+    {
+      deviceId: firstWorkerId,
+      name: "Test PC",
+      path: ".",
+      workspaceLabel: "frontend",
+    },
     { deviceId: secondWorkerId, name: "Test PC", path: "." },
   ]);
 

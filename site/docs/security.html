@@ -188,6 +188,7 @@
 <li>redact headers and bodies;</li>
 <li>never attach request or response content;</li>
 <li>never add local absolute paths or derived repository names to relay metadata or logs;</li>
+<li>retain an optional workspace label only when the user explicitly supplies it, and only for the active worker lifetime;</li>
 <li>verify log scrubbing before deployment.</li>
 </ul>
 <h3 id="relay-compromise"><a class="heading-anchor" href="#relay-compromise" aria-label="Link to Relay compromise"></a>Relay compromise</h3>

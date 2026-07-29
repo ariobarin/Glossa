@@ -108,6 +108,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     JSON.stringify(byName.get("list_devices")?.outputSchema),
     /\bWindows\b/,
   );
+  const listDevicesSchema = byName.get("list_devices")?.outputSchema as JsonSchemaNode;
+  assert.ok(
+    listDevicesSchema.properties?.devices?.items?.properties?.workspaceLabel,
+  );
 
   for (const toolName of ["get_command", "cancel_command"]) {
     const inputSchema = byName.get(toolName)?.inputSchema as {

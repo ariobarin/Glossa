@@ -48,7 +48,7 @@ Open a terminal in the directory you want to expose, then run:
 glossa
 ```
 
-Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. Run `glossa doctor` for non-destructive local readiness checks before starting, or `glossa doctor --json` for scriptable output. JSON `ready` is false when warnings or failures remain, while the process exits nonzero only when a check fails.
+Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. When several workspaces are online, add an explicit ephemeral label such as `glossa --label frontend` or `glossa --label frontend <directory>` so clients can distinguish them; Glossa never derives this label from the local path. Run `glossa doctor` for non-destructive local readiness checks before starting, or `glossa doctor --json` for scriptable output. JSON `ready` is false when warnings or failures remain, while the process exits nonzero only when a check fails.
 
 On the first successful managed-relay connection on a computer, Glossa prints the ChatGPT quickstart link once. It records a `connect-hint-shown` marker in the local Glossa config directory so later starts stay quiet.
 

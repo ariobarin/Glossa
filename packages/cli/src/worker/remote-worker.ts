@@ -17,6 +17,7 @@ interface RegisteredSession {
   generation: string;
   legacyRelay: boolean;
   concurrentJobs: boolean;
+  workspaceLabelAccepted: boolean;
   workerToken?: string;
 }
 
@@ -34,6 +35,7 @@ export interface WorkerHandler {
 export interface RemoteWorkerOptions {
   origin: string;
   deviceToken: string;
+  workspaceLabel?: string;
   worker: WorkerHandler;
   signal: AbortSignal;
   fetcher?: Fetcher;
@@ -47,7 +49,12 @@ export interface RemoteWorkerOptions {
 
 export type RemoteWorkerStatus =
   | { state: "connecting" }
-  | { state: "connected"; reconnected: boolean; legacyRelay: boolean }
+  | {
+      state: "connected";
+      reconnected: boolean;
+      legacyRelay: boolean;
+      workspaceLabelAccepted?: boolean;
+    }
   | { state: "retrying"; error: Error; retryInMs: number }
   | { state: "disconnected" };
 
@@ -142,6 +149,7 @@ export function reconnectDelayMs(
 export class RemoteWorker {
   readonly #origin: URL;
   readonly #deviceToken: string;
+  readonly #workspaceLabel: string | undefined;
   readonly #worker: WorkerHandler;
   readonly #signal: AbortSignal;
   readonly #fetcher: Fetcher;
@@ -156,6 +164,7 @@ export class RemoteWorker {
   constructor(options: RemoteWorkerOptions) {
     this.#origin = new URL(options.origin);
     this.#deviceToken = options.deviceToken;
+    this.#workspaceLabel = options.workspaceLabel;
     this.#worker = options.worker;
     this.#signal = options.signal;
     this.#fetcher = options.fetcher ?? fetch;
@@ -182,6 +191,7 @@ export class RemoteWorker {
             state: "connected",
             reconnected: connectedBefore,
             legacyRelay: session.legacyRelay,
+            workspaceLabelAccepted: session.workspaceLabelAccepted,
           });
           connectedBefore = true;
           failures = 0;
@@ -216,12 +226,22 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
+    const concurrentBody = {
+      workerId: this.#workerId,
+      capabilities: { commandProgress: true, concurrentJobs: true },
+    };
     const attempts: Array<{ body: object; legacyRelay: boolean }> = [
+      ...(this.#workspaceLabel
+        ? [{
+            body: {
+              ...concurrentBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
       {
-        body: {
-          workerId: this.#workerId,
-          capabilities: { commandProgress: true, concurrentJobs: true },
-        },
+        body: concurrentBody,
         legacyRelay: false,
       },
       {
@@ -272,6 +292,10 @@ export class RemoteWorker {
         generation: value.generation,
         legacyRelay: attempt.legacyRelay,
         concurrentJobs: !attempt.legacyRelay && supportsConcurrentJobs(value),
+        workspaceLabelAccepted:
+          this.#workspaceLabel === undefined ||
+          ("workspaceLabel" in value &&
+            value.workspaceLabel === this.#workspaceLabel),
         ...(workerToken ? { workerToken } : {}),
       };
     }

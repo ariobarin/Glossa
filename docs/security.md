@@ -123,6 +123,7 @@ Glossa executes commands with the permissions and environment of the local accou
 - redact headers and bodies;
 - never attach request or response content;
 - never add local absolute paths or derived repository names to relay metadata or logs;
+- retain an optional workspace label only when the user explicitly supplies it, and only for the active worker lifetime;
 - verify log scrubbing before deployment.
 
 ### Relay compromise

@@ -40,7 +40,7 @@ const VERSION = __GLOSSA_VERSION__;
 const HELP = `Glossa ${VERSION}
 
 Usage:
-  glossa [directory]
+  glossa [--label <name>] [directory]
   glossa status [--json]
   glossa doctor [--json]
   glossa devices [--json]
@@ -136,6 +136,7 @@ async function showDevices(json: boolean): Promise<void> {
 
 async function runWorkspace(
   path: string | undefined,
+  label: string | undefined,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const endpoints = loadRelayEndpoints();
@@ -183,6 +184,7 @@ async function runWorkspace(
       run: async (signal, onEvent) => {
         await runManagedSession(root, endpoints, {
           credentials,
+          ...(label ? { workspaceLabel: label } : {}),
           signal,
           onEvent(event) {
             onEvent(event);
@@ -228,7 +230,7 @@ async function main(): Promise<void> {
   } else if (invocation.command === "version") {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
-    await runWorkspace(invocation.path);
+    await runWorkspace(invocation.path, invocation.label);
   } else if (invocation.command === "status") {
     await showStatus(invocation.json);
   } else if (invocation.command === "doctor") {
