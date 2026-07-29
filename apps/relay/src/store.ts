@@ -50,7 +50,22 @@ export class Store implements RelayStore {
   }
 
   async accountIdForSubject(subject: string): Promise<string | null> {
-    const result = await this.#pool.query<{ id: string }>(
+    const existing = await this.#pool.query<{
+      id: string;
+      admitted_at: Date | null;
+      disabled_at: Date | null;
+    }>(
+      `SELECT id, admitted_at, disabled_at
+       FROM accounts
+       WHERE auth0_subject = $1
+       FOR NO KEY UPDATE`,
+      [subject],
+    );
+    const account = existing.rows[0];
+    if (account?.disabled_at) return null;
+    if (account?.admitted_at) return account.id;
+
+    const admitted = await this.#pool.query<{ id: string }>(
       `INSERT INTO accounts (id, auth0_subject, admitted_at)
        VALUES ($1, $2, now())
        ON CONFLICT (auth0_subject) DO UPDATE
@@ -59,7 +74,7 @@ export class Store implements RelayStore {
        RETURNING accounts.id`,
       [randomUUID(), subject],
     );
-    return result.rows[0]?.id ?? null;
+    return admitted.rows[0]?.id ?? null;
   }
 
   async enrollDevice(

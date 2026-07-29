@@ -6,6 +6,7 @@ import {
   MAX_WORKER_POLL_MS,
   deviceNameSchema,
   workerResultSchema,
+  workspaceLabelSchema,
 } from "@glossa/protocol";
 import type { RelayConfig } from "./config.js";
 import { requireAuth, type AuthenticatedRequest } from "./auth.js";
@@ -29,6 +30,9 @@ const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
 const workerJobTypeSchema = z.enum([
   "read_file",
+  "list_files",
+  "search_text",
+  "read_file_range",
   "write_file",
   "edit_file",
   "run_command",
@@ -38,10 +42,12 @@ const workerJobTypeSchema = z.enum([
 const registerSchema = z.union([
   z.object({
     workerId: workerIdSchema,
+    workspaceLabel: workspaceLabelSchema.optional(),
     capabilities: z
       .object({
         commandProgress: z.literal(true).optional(),
         concurrentJobs: z.literal(true).optional(),
+        structuredReads: z.literal(true).optional(),
       })
       .strict()
       .optional(),
@@ -52,7 +58,7 @@ const pollSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     generation: z.string().uuid(),
-    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(6).optional(),
+    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(9).optional(),
     waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
   }).strict(),
   z.object({ generation: z.string().uuid() }).strict(),
@@ -96,10 +102,13 @@ type AuthFactory = (
   requiredScope?: string,
 ) => RequestHandler;
 
+type DeadlineRunner = <T>(operation: Promise<T>, deadlineAt: number) => Promise<T>;
+
 export interface RouteDependencies {
   authFactory?: AuthFactory;
   enrollmentRateLimiter?: FixedWindowRateLimiter;
   deviceRateLimiter?: FixedWindowRateLimiter;
+  beforeDeadline?: DeadlineRunner;
 }
 
 function publicDevice(device: DeviceRecord, state: RouterState) {
@@ -157,6 +166,7 @@ async function authenticatedDevice(
   store: RelayStore,
   limiter: FixedWindowRateLimiter,
   deadlineAt: number,
+  runBeforeDeadline: DeadlineRunner,
 ): Promise<DeviceRecord | null> {
   const source = request.ip || request.socket.remoteAddress || "unknown";
 
@@ -184,7 +194,7 @@ async function authenticatedDevice(
   }
   let device: DeviceRecord | null;
   try {
-    device = await beforeDeadline(
+    device = await runBeforeDeadline(
       store.authenticateDevice(parsed.deviceId, parsed.secret),
       deadlineAt,
     );
@@ -205,6 +215,7 @@ async function refreshWorkerDevicePresence(
   store: RelayStore,
   state: RouterState,
   deadlineAt: number,
+  runBeforeDeadline: DeadlineRunner,
 ): Promise<boolean> {
   const claimedAt = state.claimDeviceSeenPersistence(
     identity.accountId,
@@ -213,7 +224,7 @@ async function refreshWorkerDevicePresence(
   if (claimedAt === null) return true;
   try {
     if (
-      await beforeDeadline(
+      await runBeforeDeadline(
         store.touchDevice(identity.accountId, identity.deviceId),
         deadlineAt,
       )
@@ -236,6 +247,7 @@ async function authenticatedWorkerRequest(
   state: RouterState,
   limiter: FixedWindowRateLimiter,
   deadlineAt: number,
+  runBeforeDeadline: DeadlineRunner,
 ): Promise<WorkerRequestIdentity | null> {
   const header = request.header("authorization");
   const [scheme, token] = header?.split(/\s+/, 2) ?? [];
@@ -249,6 +261,7 @@ async function authenticatedWorkerRequest(
         store,
         state,
         deadlineAt,
+        runBeforeDeadline,
       )
     ) {
       return { mode: "worker", ...identity };
@@ -267,6 +280,7 @@ async function authenticatedWorkerRequest(
     store,
     limiter,
     deadlineAt,
+    runBeforeDeadline,
   );
   return device ? { mode: "device", device } : null;
 }
@@ -298,6 +312,7 @@ export function buildRoutes(
 ): Router {
   const router = Router();
   const authFactory = dependencies.authFactory ?? requireAuth;
+  const runBeforeDeadline = dependencies.beforeDeadline ?? beforeDeadline;
   const enrollmentRateLimiter =
     dependencies.enrollmentRateLimiter ??
     new FixedWindowRateLimiter(
@@ -439,6 +454,7 @@ export function buildRoutes(
       store,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!device) return;
     const parsed = registerSchema.safeParse(request.body ?? {});
@@ -459,6 +475,12 @@ export function buildRoutes(
         concurrentJobs:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.concurrentJobs === true,
+        structuredReads:
+          "capabilities" in parsed.data &&
+          parsed.data.capabilities?.structuredReads === true,
+        ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+          ? { workspaceLabel: parsed.data.workspaceLabel }
+          : {}),
       },
     );
     response.json({
@@ -469,7 +491,11 @@ export function buildRoutes(
       capabilities: {
         commandProgress: state.supportsCommandProgress(device.accountId, workerId),
         concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
+        structuredReads: state.supportsStructuredReads(device.accountId, workerId),
       },
+      ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+        ? { workspaceLabel: parsed.data.workspaceLabel }
+        : {}),
     });
   });
 
@@ -482,6 +508,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = pollSchema.safeParse(request.body);
@@ -546,6 +573,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = workerResultRequestSchema.safeParse(request.body);
@@ -571,7 +599,7 @@ export function buildRoutes(
       : requestedWorkerId;
     const result = "result" in parsed.data ? parsed.data.result : parsed.data;
     const accepted = state.complete(accountId, workerId, result);
-    response.status(accepted ? 202 : 410).json({ accepted });
+    response.status(202).json({ accepted });
   });
 
   router.post("/device/heartbeat", async (request, response) => {
@@ -583,6 +611,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = heartbeatSchema.safeParse(request.body);
@@ -622,6 +651,7 @@ export function buildRoutes(
       state,
       deviceRateLimiter,
       deadlineAt,
+      runBeforeDeadline,
     );
     if (!identity) return;
     const parsed = unregisterSchema.safeParse(request.body);

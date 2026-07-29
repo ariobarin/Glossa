@@ -23,7 +23,7 @@ const VERSION = __GLOSSA_VERSION__;
 const HELP = `Glossa ${VERSION}
 
 Usage:
-  glossa [directory]
+  glossa [--label <name>] [directory]
   glossa status
   glossa devices revoke <id>
   glossa logout
@@ -77,11 +77,15 @@ async function revokeKnownDevice(deviceId: string): Promise<void> {
 
 async function runWorkspace(
   path: string | undefined,
+  label: string | undefined,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const endpoints = loadRelayEndpoints();
   const credentials = (await authenticatedSession()).credentials;
-  await runManagedSession(root, endpoints, { credentials });
+  await runManagedSession(root, endpoints, {
+    credentials,
+    ...(label ? { workspaceLabel: label } : {}),
+  });
 }
 
 async function main(): Promise<void> {
@@ -91,7 +95,7 @@ async function main(): Promise<void> {
   } else if (invocation.command === "version") {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
-    await runWorkspace(invocation.path);
+    await runWorkspace(invocation.path, invocation.label);
   } else if (invocation.command === "status") {
     await showStatus();
   } else if (invocation.command === "logout") {

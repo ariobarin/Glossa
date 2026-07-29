@@ -8,8 +8,16 @@ import {
   cancelCommandRequestSchema,
   editFileRequestSchema,
   getCommandRequestSchema,
+  MAX_LIST_FILES_RESULTS,
+  MAX_READ_FILE_RANGE_BYTES,
+  MAX_SEARCH_TEXT_RESULTS,
+  MAX_SEARCH_TEXT_SNIPPET_CHARS,
+  MAX_STRUCTURED_READ_TIMEOUT_MS,
+  listFilesRequestSchema,
+  readFileRangeRequestSchema,
   readFileRequestSchema,
   runCommandRequestSchema,
+  searchTextRequestSchema,
   writeFileRequestSchema,
   type WorkerJob,
   type WorkerResult,
@@ -26,6 +34,11 @@ const deviceIdSchema = z
   })
   .strict();
 const readFileInputSchema = readFileRequestSchema.extend(deviceIdSchema.shape);
+const listFilesInputSchema = listFilesRequestSchema.extend(deviceIdSchema.shape);
+const searchTextInputSchema = searchTextRequestSchema.extend(deviceIdSchema.shape);
+const readFileRangeInputSchema = readFileRangeRequestSchema.extend(
+  deviceIdSchema.shape,
+);
 const writeFileInputSchema = writeFileRequestSchema.extend(deviceIdSchema.shape);
 const editFileInputSchema = editFileRequestSchema.safeExtend(deviceIdSchema.shape);
 const runCommandInputSchema = runCommandRequestSchema.safeExtend(
@@ -49,6 +62,10 @@ const listDevicesOutputSchema = z
               .describe("Identifier to pass to workspace tools."),
             name: z.string().describe("Name of the computer running this worker."),
             path: z.literal(".").describe("The single exposed workspace root."),
+            workspaceLabel: z
+              .string()
+              .optional()
+              .describe("Optional user-chosen label for distinguishing online workspaces."),
           })
           .strict(),
       )
@@ -83,6 +100,152 @@ const readFileOutputSchema = z
       .describe("UTF-8 byte length of content."),
   })
   .strict();
+const listFilesOutputSchema = z
+  .object({
+    entries: z
+      .array(
+        z
+          .object({
+            path: z
+              .string()
+              .max(4096)
+              .describe("Path relative to the exposed root."),
+            type: z
+              .enum(["file", "directory"])
+              .describe("Filesystem entry type."),
+            bytes: z
+              .number()
+              .int()
+              .nonnegative()
+              .optional()
+              .describe("File size in bytes. Omitted for directories."),
+          })
+          .strict(),
+      )
+      .max(MAX_LIST_FILES_RESULTS)
+      .describe("Bounded entries in deterministic path order."),
+    truncated: z
+      .boolean()
+      .describe("Whether additional entries are available."),
+    scannedEntries: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Filesystem entries examined during this request."),
+    skippedLinks: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Symlink or junction entries omitted from the result."),
+    nextCursor: z
+      .string()
+      .max(4096)
+      .optional()
+      .describe("Pass unchanged as cursor to continue a prior list_files result."),
+  })
+  .strict();
+
+const searchTextOutputSchema = z
+  .object({
+    matches: z
+      .array(
+        z
+          .object({
+            path: z
+              .string()
+              .max(4096)
+              .describe("Matching file relative to the exposed root."),
+            line: z
+              .number()
+              .int()
+              .positive()
+              .describe("One-based matching line number."),
+            column: z
+              .number()
+              .int()
+              .positive()
+              .describe("One-based column of the first match on the line."),
+            text: z
+              .string()
+              .max(MAX_SEARCH_TEXT_SNIPPET_CHARS)
+              .describe("Bounded matching line snippet."),
+            lineTruncated: z
+              .boolean()
+              .describe("Whether the matching line was shortened."),
+          })
+          .strict(),
+      )
+      .max(MAX_SEARCH_TEXT_RESULTS)
+      .describe("Matching lines in deterministic path and line order."),
+    truncated: z
+      .boolean()
+      .describe("Whether result or scan limits stopped the search."),
+    scannedFiles: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("UTF-8 files searched."),
+    scannedBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Total UTF-8 file bytes searched."),
+    skippedFiles: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Oversized, non-text, or unavailable files skipped."),
+    skippedLinks: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Symlink or junction entries skipped."),
+  })
+  .strict();
+
+const readFileRangeOutputSchema = z
+  .object({
+    content: z
+      .string()
+      .refine(
+        (value) => Buffer.byteLength(value, "utf8") <= MAX_READ_FILE_RANGE_BYTES,
+      )
+      .describe("Complete lines returned for the requested range."),
+    startLine: z
+      .number()
+      .int()
+      .positive()
+      .describe("One-based first requested line."),
+    endLine: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("One-based final returned line, or 0 for an empty file."),
+    totalLines: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Total complete lines in the file."),
+    sha256: sha256Schema,
+    bytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Full UTF-8 file size in bytes."),
+    contentBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("UTF-8 byte size of returned content."),
+    nextLine: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Next one-based line when more file content remains."),
+  })
+  .strict();
+
 const writeFileOutputSchema = z
   .object({
     sha256: sha256Schema,
@@ -178,6 +341,10 @@ const safeWorkerMessages: Record<string, string> = {
   not_file: "The requested path is not a file.",
   file_too_large: "The request exceeds the text size limit.",
   not_text: "The file is not valid UTF-8 text.",
+  scan_limit: "The repository scan limit was reached. Narrow the requested path.",
+  line_out_of_range: "The requested line is outside the file.",
+  line_too_large: "The requested line exceeds the ranged-read limit.",
+  scan_timeout: "The structured repository operation exceeded its local deadline.",
   stale_revision: "The file revision has changed.",
   edit_not_found: "The edit target was not found.",
   edit_ambiguous: "The edit target occurs more than once.",
@@ -190,6 +357,9 @@ const safeWorkerMessages: Record<string, string> = {
   command_not_found: "The command was not found.",
   command_spawn_failed: "The command could not be started.",
   worker_failure: "The local worker operation failed.",
+  invalid_limit: "The requested result limit is invalid.",
+  invalid_search: "The search text is invalid.",
+  invalid_range: "The requested file range is invalid.",
 };
 
 function structuredResult(value: Record<string, unknown>) {
@@ -267,6 +437,34 @@ function commandSuccess(result: WorkerResult, deviceId: string) {
     );
   }
   return structuredResult({ deviceId, ...parsed.data });
+}
+
+function structuredReadError(
+  state: RouterState,
+  accountId: string,
+  deviceId: string,
+) {
+  const online = state
+    .listDevices(accountId)
+    .some((device) => device.deviceId === deviceId);
+  if (!online) return errorResult("device_offline", "The device is offline.");
+  if (!state.supportsStructuredReads(accountId, deviceId)) {
+    return errorResult(
+      "worker_update_required",
+      "Update and reconnect the Glossa worker before using structured repository tools.",
+    );
+  }
+  return null;
+}
+
+function structuredReadTimeoutMs(config: RelayConfig): number {
+  return Math.max(
+    1,
+    Math.min(
+      MAX_STRUCTURED_READ_TIMEOUT_MS,
+      Math.floor(config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS / 2),
+    ),
+  );
 }
 
 async function executeJob(
@@ -381,6 +579,111 @@ function registerTools(
           path,
         });
         return workerSuccess(result, readFileOutputSchema);
+      } catch (error) {
+        return routedError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_files",
+    {
+      title: "List Files",
+      description: "List bounded regular files and directories without following links. Use cursor pagination or a narrower path for large workspaces.",
+      inputSchema: listFilesInputSchema,
+      outputSchema: listFilesOutputSchema,
+      _meta: toolMetadata,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ deviceId, path, recursive, cursor, limit }) => {
+      const unavailable = structuredReadError(state, accountId, deviceId);
+      if (unavailable) return unavailable;
+      try {
+        const result = await executeJob(state, config, accountId, deviceId, {
+          type: "list_files",
+          requestId: randomUUID(),
+          timeoutMs: structuredReadTimeoutMs(config),
+          ...(path ? { path } : {}),
+          ...(recursive === undefined ? {} : { recursive }),
+          ...(cursor ? { cursor } : {}),
+          ...(limit === undefined ? {} : { limit }),
+        });
+        return workerSuccess(result, listFilesOutputSchema);
+      } catch (error) {
+        return routedError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "search_text",
+    {
+      title: "Search Text",
+      description: "Search literal text across bounded UTF-8 files without invoking a shell. Returns matching lines, paths, and scan statistics.",
+      inputSchema: searchTextInputSchema,
+      outputSchema: searchTextOutputSchema,
+      _meta: toolMetadata,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ deviceId, query, path, caseSensitive, maxResults, extensions }) => {
+      const unavailable = structuredReadError(state, accountId, deviceId);
+      if (unavailable) return unavailable;
+      try {
+        const result = await executeJob(state, config, accountId, deviceId, {
+          type: "search_text",
+          requestId: randomUUID(),
+          timeoutMs: structuredReadTimeoutMs(config),
+          query,
+          ...(path ? { path } : {}),
+          ...(caseSensitive === undefined ? {} : { caseSensitive }),
+          ...(maxResults === undefined ? {} : { maxResults }),
+          ...(extensions ? { extensions } : {}),
+        });
+        return workerSuccess(result, searchTextOutputSchema);
+      } catch (error) {
+        return routedError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "read_file_range",
+    {
+      title: "Read File Range",
+      description: "Read a bounded range of complete lines from one UTF-8 file. Use nextLine to continue through a large file while retaining its full-file SHA-256.",
+      inputSchema: readFileRangeInputSchema,
+      outputSchema: readFileRangeOutputSchema,
+      _meta: toolMetadata,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ deviceId, path, startLine, lineCount }) => {
+      const unavailable = structuredReadError(state, accountId, deviceId);
+      if (unavailable) return unavailable;
+      try {
+        const result = await executeJob(state, config, accountId, deviceId, {
+          type: "read_file_range",
+          requestId: randomUUID(),
+          timeoutMs: structuredReadTimeoutMs(config),
+          path,
+          ...(startLine === undefined ? {} : { startLine }),
+          ...(lineCount === undefined ? {} : { lineCount }),
+        });
+        return workerSuccess(result, readFileRangeOutputSchema);
       } catch (error) {
         return routedError(error);
       }

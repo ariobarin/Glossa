@@ -27,6 +27,8 @@ interface ConnectedWorker {
   generation: string;
   commandProgress: boolean;
   concurrentJobs: boolean;
+  structuredReads: boolean;
+  workspaceLabel?: string;
   sessionDigest: string;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
@@ -76,9 +78,12 @@ export class RouterState {
     deviceId: string,
     deviceName: string,
     workerId: string,
-    capabilities: { commandProgress: boolean; concurrentJobs?: boolean } = {
-      commandProgress: false,
-    },
+    options: {
+      commandProgress: boolean;
+      concurrentJobs?: boolean;
+      structuredReads?: boolean;
+      workspaceLabel?: string;
+    } = { commandProgress: false },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
@@ -107,8 +112,12 @@ export class RouterState {
       deviceName,
       workerId,
       generation,
-      commandProgress: capabilities.commandProgress === true,
-      concurrentJobs: capabilities.concurrentJobs === true,
+      commandProgress: options.commandProgress === true,
+      concurrentJobs: options.concurrentJobs === true,
+      structuredReads: options.structuredReads === true,
+      ...(options.workspaceLabel
+        ? { workspaceLabel: options.workspaceLabel }
+        : {}),
       sessionDigest,
       lastSeenAt: Date.now(),
       pendingJobs: [],
@@ -319,6 +328,7 @@ export class RouterState {
     deviceId: string;
     name: string;
     path: ".";
+    workspaceLabel?: string;
   }> {
     this.#pruneStaleWorkers();
     return [...this.#workers.values()]
@@ -327,6 +337,9 @@ export class RouterState {
         deviceId: worker.workerId,
         name: worker.deviceName,
         path: ".",
+        ...(worker.workspaceLabel
+          ? { workspaceLabel: worker.workspaceLabel }
+          : {}),
       }));
   }
 
@@ -345,6 +358,12 @@ export class RouterState {
     this.#pruneStaleWorkers();
     const worker = this.#workers.get(workerId);
     return worker?.accountId === accountId && worker.concurrentJobs;
+  }
+
+  supportsStructuredReads(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.structuredReads;
   }
 
   #pruneStaleWorkers(): void {

@@ -20,6 +20,16 @@ test("uses the default invocation as the workspace entrypoint", () => {
     command: "workspace",
     path: "doctor",
   });
+  assert.deepEqual(parseInvocation(["--label", "frontend", "."]), {
+    command: "workspace",
+    path: ".",
+    label: "frontend",
+  });
+  assert.deepEqual(parseInvocation([".", "--label", "  API  "]), {
+    command: "workspace",
+    path: ".",
+    label: "API",
+  });
 });
 
 test("keeps the reduced direct CLI actions", () => {
@@ -51,6 +61,19 @@ test("rejects malformed retained commands and removed flags", () => {
     UsageError,
   );
   assert.throws(() => parseInvocation(["logout", "--browser"]), UsageError);
+  assert.throws(() => parseInvocation(["--label"]), UsageError);
+  assert.throws(
+    () => parseInvocation(["--label", "one", "--label", "two"]),
+    UsageError,
+  );
+  assert.throws(
+    () => parseInvocation(["--label", "x".repeat(81)]),
+    UsageError,
+  );
+  assert.throws(
+    () => parseInvocation(["--label", "bad\nlabel"]),
+    UsageError,
+  );
 });
 
 test("rejects retired command names instead of treating them as paths", () => {

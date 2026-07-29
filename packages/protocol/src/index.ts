@@ -11,6 +11,12 @@ export const MAX_COMMAND_FAST_WAIT_MS = 5_000;
 export const MAX_COMMAND_STATUS_WAIT_MS = 15_000;
 export const DEFAULT_WORKER_POLL_MS = 15_000;
 export const MAX_WORKER_POLL_MS = 18_000;
+export const MAX_LIST_FILES_RESULTS = 200;
+export const MAX_SEARCH_TEXT_RESULTS = 100;
+export const MAX_SEARCH_TEXT_SNIPPET_CHARS = 400;
+export const MAX_READ_FILE_RANGE_LINES = 500;
+export const MAX_READ_FILE_RANGE_BYTES = 64 * 1024;
+export const MAX_STRUCTURED_READ_TIMEOUT_MS = 8_000;
 
 export const deviceNameSchema = z
   .string()
@@ -18,6 +24,16 @@ export const deviceNameSchema = z
   .min(1)
   .max(80)
   .regex(/^[^\u0000-\u001f\u007f]+$/, "Device name contains control characters");
+
+export const workspaceLabelSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(
+    /^[^\u0000-\u001f\u007f]+$/,
+    "Workspace label contains control characters",
+  );
 
 export const relativePathSchema = z
   .string()
@@ -36,6 +52,106 @@ export const readFileRequestSchema = z.object({
 export const readFileJobSchema = readFileRequestSchema.extend({
   type: z.literal("read_file"),
   requestId: z.string().uuid(),
+});
+
+const structuredReadTimeoutSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_STRUCTURED_READ_TIMEOUT_MS);
+
+const listFilesCursorSchema = z
+  .string()
+  .max(4096)
+  .describe("Opaque cursor returned by an earlier list_files result.");
+
+export const listFilesRequestSchema = z.object({
+  path: relativePathSchema
+    .optional()
+    .describe("Directory relative to the exposed root. Defaults to the root."),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to include descendants. Defaults to false."),
+  cursor: listFilesCursorSchema.optional(),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_LIST_FILES_RESULTS)
+    .optional()
+    .describe("Maximum entries to return, from 1 through 200. Defaults to 100."),
+}).strict();
+
+export const listFilesJobSchema = listFilesRequestSchema.extend({
+  type: z.literal("list_files"),
+  requestId: z.string().uuid(),
+  timeoutMs: structuredReadTimeoutSchema,
+});
+
+export const searchTextRequestSchema = z.object({
+  query: z
+    .string()
+    .min(1)
+    .max(256)
+    .refine(
+      (value) => !/[\r\n\u0000]/.test(value),
+      "Search text must fit on one line",
+    )
+    .describe("Literal single-line UTF-8 text to search for."),
+  path: relativePathSchema
+    .optional()
+    .describe("File or directory relative to the exposed root. Defaults to the root."),
+  caseSensitive: z
+    .boolean()
+    .optional()
+    .describe("Whether matching is case-sensitive. Defaults to false."),
+  maxResults: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_SEARCH_TEXT_RESULTS)
+    .optional()
+    .describe("Maximum matching lines to return, from 1 through 100. Defaults to 50."),
+  extensions: z
+    .array(
+      z.string().regex(/^\.[A-Za-z0-9][A-Za-z0-9._-]{0,19}$/).describe(
+        "Filename suffix including the leading dot, such as .ts or .d.ts.",
+      ),
+    )
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Optional filename extensions to search."),
+}).strict();
+
+export const searchTextJobSchema = searchTextRequestSchema.extend({
+  type: z.literal("search_text"),
+  requestId: z.string().uuid(),
+  timeoutMs: structuredReadTimeoutSchema,
+});
+
+export const readFileRangeRequestSchema = z.object({
+  path: relativePathSchema,
+  startLine: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("First one-based line to return. Defaults to 1."),
+  lineCount: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_READ_FILE_RANGE_LINES)
+    .optional()
+    .describe("Maximum complete lines to return, from 1 through 500. Defaults to 200."),
+}).strict();
+
+export const readFileRangeJobSchema = readFileRangeRequestSchema.extend({
+  type: z.literal("read_file_range"),
+  requestId: z.string().uuid(),
+  timeoutMs: structuredReadTimeoutSchema,
 });
 
 export const writeFileRequestSchema = z.object({
@@ -215,6 +331,9 @@ export const cancelCommandJobSchema = cancelCommandRequestSchema.extend({
 
 export const workerJobSchema = z.discriminatedUnion("type", [
   readFileJobSchema,
+  listFilesJobSchema,
+  searchTextJobSchema,
+  readFileRangeJobSchema,
   writeFileJobSchema,
   editFileJobSchema,
   runCommandJobSchema,

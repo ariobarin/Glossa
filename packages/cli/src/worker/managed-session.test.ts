@@ -5,11 +5,13 @@ import type { StoredCredentials } from "../config-store.js";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
+  combinedCompatibilityNotice,
   deviceForSession,
   reenrollRejectedDevice,
   statusMessage,
   shouldRecoverRejectedDevice,
   visibleWorker,
+  workspaceLabelNotice,
 } from "./managed-session.js";
 import { DeviceRejectedError } from "./remote-worker.js";
 
@@ -335,5 +337,47 @@ test("reports one finished result for each visible activity", async () => {
       "Command started",
       "Command cancellation completed",
     ],
+  );
+});
+
+test("combines compatibility warnings so later notices cannot replace them", () => {
+  const labelNotice =
+    "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
+  assert.equal(
+    combinedCompatibilityNotice(labelNotice, true),
+    labelNotice + " The relay needs an update before this computer can expose several workspaces at once.",
+  );
+  assert.equal(combinedCompatibilityNotice(labelNotice, false), labelNotice);
+  assert.equal(
+    combinedCompatibilityNotice(undefined, true),
+    "The relay needs an update before this computer can expose several workspaces at once.",
+  );
+  assert.equal(combinedCompatibilityNotice(undefined, false), undefined);
+});
+
+test("reports when an older relay drops a requested workspace label", () => {
+  assert.equal(
+    workspaceLabelNotice(
+      {
+        state: "connected",
+        reconnected: false,
+        legacyRelay: false,
+        workspaceLabelAccepted: false,
+      },
+      "frontend",
+    ),
+    "The relay needs an update before workspace labels are available. This workspace is online without the requested label.",
+  );
+  assert.equal(
+    workspaceLabelNotice(
+      {
+        state: "connected",
+        reconnected: false,
+        legacyRelay: false,
+        workspaceLabelAccepted: true,
+      },
+      "frontend",
+    ),
+    undefined,
   );
 });

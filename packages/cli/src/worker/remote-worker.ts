@@ -17,6 +17,8 @@ interface RegisteredSession {
   generation: string;
   legacyRelay: boolean;
   concurrentJobs: boolean;
+  structuredReads: boolean;
+  workspaceLabelAccepted: boolean;
   workerToken?: string;
 }
 
@@ -34,6 +36,7 @@ export interface WorkerHandler {
 export interface RemoteWorkerOptions {
   origin: string;
   deviceToken: string;
+  workspaceLabel?: string;
   worker: WorkerHandler;
   signal: AbortSignal;
   fetcher?: Fetcher;
@@ -47,7 +50,12 @@ export interface RemoteWorkerOptions {
 
 export type RemoteWorkerStatus =
   | { state: "connecting" }
-  | { state: "connected"; reconnected: boolean; legacyRelay: boolean }
+  | {
+      state: "connected";
+      reconnected: boolean;
+      legacyRelay: boolean;
+      workspaceLabelAccepted?: boolean;
+    }
   | { state: "retrying"; error: Error; retryInMs: number }
   | { state: "disconnected" };
 
@@ -73,14 +81,15 @@ function optionalWorkerToken(value: unknown): string | undefined {
   return value;
 }
 
-function supportsConcurrentJobs(value: unknown): boolean {
+function supportsCapability(
+  value: unknown,
+  capability: "concurrentJobs" | "structuredReads",
+): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
   const capabilities = value.capabilities;
-  return typeof capabilities === "object" &&
-    capabilities !== null &&
-    "concurrentJobs" in capabilities &&
-    capabilities.concurrentJobs === true;
+  if (typeof capabilities !== "object" || capabilities === null) return false;
+  return (capabilities as Record<string, unknown>)[capability] === true;
 }
 
 function jobLane(job: WorkerJob): JobLane {
@@ -90,6 +99,9 @@ function jobLane(job: WorkerJob): JobLane {
     case "cancel_command":
       return "cancel";
     case "read_file":
+    case "list_files":
+    case "search_text":
+    case "read_file_range":
       return "read";
     case "write_file":
     case "edit_file":
@@ -101,12 +113,18 @@ function jobLane(job: WorkerJob): JobLane {
 function acceptedJobTypes(
   counts: LaneCounts,
   total: number,
+  structuredReads: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
   if (counts.status < 1) accepted.push("get_command");
   if (counts.cancel < 1) accepted.push("cancel_command");
-  if (counts.read < 2) accepted.push("read_file");
+  if (counts.read < 2) {
+    accepted.push("read_file");
+    if (structuredReads) {
+      accepted.push("list_files", "search_text", "read_file_range");
+    }
+  }
   if (counts.mutation < 1) {
     accepted.push("write_file", "edit_file", "run_command");
   }
@@ -142,6 +160,7 @@ export function reconnectDelayMs(
 export class RemoteWorker {
   readonly #origin: URL;
   readonly #deviceToken: string;
+  readonly #workspaceLabel: string | undefined;
   readonly #worker: WorkerHandler;
   readonly #signal: AbortSignal;
   readonly #fetcher: Fetcher;
@@ -156,6 +175,7 @@ export class RemoteWorker {
   constructor(options: RemoteWorkerOptions) {
     this.#origin = new URL(options.origin);
     this.#deviceToken = options.deviceToken;
+    this.#workspaceLabel = options.workspaceLabel;
     this.#worker = options.worker;
     this.#signal = options.signal;
     this.#fetcher = options.fetcher ?? fetch;
@@ -182,6 +202,7 @@ export class RemoteWorker {
             state: "connected",
             reconnected: connectedBefore,
             legacyRelay: session.legacyRelay,
+            workspaceLabelAccepted: session.workspaceLabelAccepted,
           });
           connectedBefore = true;
           failures = 0;
@@ -216,12 +237,43 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
+    const structuredBody = {
+      workerId: this.#workerId,
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+      },
+    };
+    const concurrentBody = {
+      workerId: this.#workerId,
+      capabilities: { commandProgress: true, concurrentJobs: true },
+    };
     const attempts: Array<{ body: object; legacyRelay: boolean }> = [
+      ...(this.#workspaceLabel
+        ? [{
+            body: {
+              ...structuredBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
       {
-        body: {
-          workerId: this.#workerId,
-          capabilities: { commandProgress: true, concurrentJobs: true },
-        },
+        body: structuredBody,
+        legacyRelay: false,
+      },
+      ...(this.#workspaceLabel
+        ? [{
+            body: {
+              ...concurrentBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
+      {
+        body: concurrentBody,
         legacyRelay: false,
       },
       {
@@ -271,7 +323,14 @@ export class RemoteWorker {
       return {
         generation: value.generation,
         legacyRelay: attempt.legacyRelay,
-        concurrentJobs: !attempt.legacyRelay && supportsConcurrentJobs(value),
+        concurrentJobs:
+          !attempt.legacyRelay && supportsCapability(value, "concurrentJobs"),
+        structuredReads:
+          !attempt.legacyRelay && supportsCapability(value, "structuredReads"),
+        workspaceLabelAccepted:
+          this.#workspaceLabel === undefined ||
+          ("workspaceLabel" in value &&
+            value.workspaceLabel === this.#workspaceLabel),
         ...(workerToken ? { workerToken } : {}),
       };
     }
@@ -342,7 +401,11 @@ export class RemoteWorker {
     try {
       while (!this.#signal.aborted) {
         if (failure !== undefined) throw failure;
-        const acceptedTypes = acceptedJobTypes(counts, inFlight.size);
+        const acceptedTypes = acceptedJobTypes(
+          counts,
+          inFlight.size,
+          session.structuredReads,
+        );
         if (acceptedTypes.length === 0) {
           await Promise.race(inFlight);
           continue;
@@ -416,11 +479,16 @@ export class RemoteWorker {
     } finally {
       if (heartbeat) clearInterval(heartbeat);
     }
-    await this.#post(
-      "/device/result",
-      session.legacyRelay ? result : { workerId: this.#workerId, result },
-      session.workerToken,
-    );
+    try {
+      await this.#post(
+        "/device/result",
+        session.legacyRelay ? result : { workerId: this.#workerId, result },
+        session.workerToken,
+      );
+    } catch (error) {
+      if (error instanceof RelayResponseError && error.status === 410) return;
+      throw error;
+    }
   }
 
   async #unregister(session?: RegisteredSession): Promise<void> {
