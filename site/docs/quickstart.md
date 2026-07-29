@@ -50,7 +50,7 @@ Confirm Glossa is available:
 glossa --version
 ```
 
-After Glossa starts, press `u` to install the newest beta. You can also run `glossa update` directly.
+To update Glossa, run the same npm or direct installer command again.
 
 ## Step 2: Start a workspace
 
@@ -80,7 +80,7 @@ https://mcp.glossa.sh/mcp
 
 ## Step 4: Verify the connection
 
-Press `s` in Glossa to check the account, relay, enrolled device, and active worker. Press Esc to return to the workspace view. You can also run `glossa status` in another terminal.
+Run `glossa status` in another terminal to check the account, relay, enrolled device, and active worker.
 
 ### Try a read
 

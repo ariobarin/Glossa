@@ -35,7 +35,7 @@ The ChatGPT app, plugin, or other MCP client that you connect receives the file 
 ## User controls
 
 - Stop the local `glossa` process to end useful workspace access immediately.
-- Press `l` and confirm in Glossa, or run `glossa logout`, to remove locally stored OAuth credentials.
+- Run `glossa logout` to remove locally stored OAuth credentials and sign out in the browser.
 - Disconnect the Glossa app or plugin in ChatGPT to revoke the client's authorization.
 - Request device or account deletion through the [support page](/support). Do not post private identifiers or credentials in a public issue.
 

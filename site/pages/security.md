@@ -9,7 +9,7 @@ Glossa does not copy your selected folder into the hosted relay. The local worke
 - You choose one local directory when you start Glossa.
 - Connected clients can read and modify files inside that root.
 - Connected clients can run commands with the worker account's authority.
-- Press `q` or Ctrl+C in the worker terminal to start disconnecting. The worker is disconnected when the process exits.
+- Press Ctrl+C in the worker terminal to start disconnecting. The worker is disconnected when the process exits.
 
 ## What the relay stores
 
