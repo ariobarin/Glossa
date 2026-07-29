@@ -1,18 +1,14 @@
+import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { chooseActiveSection, tabSelectionUrl } from "../site/copy.js";
+import { PAGE_REGISTRY } from "./build-docs.mjs";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const siteDirectory = join(repositoryRoot, "site");
-const generatedPages = new Set([
-  "site/docs/quickstart.html",
-  "site/docs/security.html",
-  "site/docs/why.html",
-  "site/privacy.html",
-  "site/security.html",
-  "site/support.html",
-  "site/terms.html",
-]);
+const generatedPages = new Set(PAGE_REGISTRY.map((page) => page.output));
 
 async function findHtmlFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -89,9 +85,10 @@ for (const page of pages) {
     requireAll(page.html, [
       '<body class="docs-shell">',
       '<nav class="docs-sidebar" aria-label="Documentation">',
-      '<link rel="stylesheet" href="/styles.css?v=38" />',
-      '<script src="/copy.js?v=5" defer></script>',
     ], page.name);
+    if (!/<script type="module" src="\/copy\.js(?:\?[^"]*)?"><\/script>/.test(page.html)) {
+      throw new Error(`${page.name} must load the site interactions`);
+    }
   }
 }
 
@@ -107,34 +104,41 @@ if (inconsistentPages.size > 0) {
 }
 
 const styles = await readFile(join(siteDirectory, "styles.css"), "utf8");
-requireAll(styles, [
-  "--page-width: 1180px",
-  "--reading-width: 720px",
-  "--sidebar-width: 190px",
-  "--toc-width: 180px",
-  ".page-width {",
-  ".site-header {",
-], "site/styles.css");
 if (styles.includes(".docs-shell .site-header")) {
   throw new Error("Docs must use the landing header geometry without overrides");
 }
 
 const interactions = await readFile(join(siteDirectory, "copy.js"), "utf8");
-requireAll(interactions, [
-  "function initCodeCopy()",
-  "function initPageCopy()",
-  "function initDocsTabs()",
-  "function initSectionNavigation()",
-  "new IntersectionObserver",
-  'window.addEventListener("storage"',
-  "new URLSearchParams",
-], "site/copy.js");
-if (
-  interactions.includes('addEventListener("scroll"')
-  || interactions.includes("requestAnimationFrame")
-) {
-  throw new Error("Section navigation must use IntersectionObserver");
-}
+assert.equal(chooseActiveSection([
+  { id: "before", top: -1800, visible: false },
+  { id: "install", top: -900, visible: false },
+  { id: "connect", top: -80, visible: false },
+  { id: "verify", top: 760, visible: false },
+]), "connect", "a large scroll jump selects the latest passed section");
+assert.equal(chooseActiveSection([
+  { id: "before", top: -120, visible: false },
+  { id: "install", top: 420, visible: true },
+]), "install", "an observed section takes precedence");
+
+const hiddenHashUrl = tabSelectionUrl(
+  "https://glossa.sh/docs/quickstart?platform=macos#direct-macos",
+  "install",
+  "npm",
+  true,
+);
+assert.equal(hiddenHashUrl.searchParams.get("install"), "npm");
+assert.equal(hiddenHashUrl.hash, "", "a hidden tab target is removed from the URL");
+const visibleHashUrl = tabSelectionUrl(
+  "https://glossa.sh/docs/quickstart#before-you-begin",
+  "install",
+  "direct",
+  false,
+);
+assert.equal(
+  visibleHashUrl.hash,
+  "#before-you-begin",
+  "a visible section target remains in the URL",
+);
 
 const quickstart = pagesByName.get("site/docs/quickstart.html")?.html ?? "";
 requireAll(quickstart, [
@@ -150,17 +154,16 @@ const generator = await readFile(
   join(repositoryRoot, "scripts", "build-docs.mjs"),
   "utf8",
 );
-requireAll(generator, [
-  "const PAGE_GROUPS = [",
-  "new Marked()",
-  "renderer: {",
-  "heading(token)",
-  "code(token)",
-  "renderSectionNavigation(page.bodyTokens)",
-], "scripts/build-docs.mjs");
-for (const forbidden of ["addCopyButtons", "addHeadingIds", "matchAll(/<h2"]) {
+const renderedHtmlTransforms = [
+  ["legacy copy wrapper", "addCopyButtons"],
+  ["legacy heading wrapper", "addHeadingIds"],
+  ["heading HTML matching", "matchAll(/<h2"],
+  ["heading HTML replacement", ".replace(/<h"],
+  ["code HTML replacement", ".replace(/<pre"],
+];
+for (const [label, forbidden] of renderedHtmlTransforms) {
   if (generator.includes(forbidden)) {
-    throw new Error(`Generator still uses rendered HTML transform: ${forbidden}`);
+    throw new Error(`Generator still uses ${label}`);
   }
 }
 

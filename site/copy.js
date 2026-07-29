@@ -1,5 +1,18 @@
 const RESET_DELAY = 1600;
 
+export function chooseActiveSection(sections, threshold = 140) {
+  return sections.find((section) => section.visible)?.id
+    ?? [...sections].reverse().find((section) => section.top <= threshold)?.id
+    ?? null;
+}
+
+export function tabSelectionUrl(href, param, value, hiddenHashTarget) {
+  const url = new URL(href);
+  url.searchParams.set(param, value);
+  if (hiddenHashTarget) url.hash = "";
+  return url;
+}
+
 function resetAfter(callback) {
   window.setTimeout(callback, RESET_DELAY);
 }
@@ -120,8 +133,20 @@ function writeUrlValue(controller, value) {
   if (!controller.param || !window.history?.replaceState) return;
 
   try {
-    const url = new URL(window.location.href);
-    url.searchParams.set(controller.param, value);
+    const currentUrl = new URL(window.location.href);
+    let hashId = "";
+    try {
+      hashId = decodeURIComponent(currentUrl.hash.slice(1));
+    } catch {
+      hashId = "";
+    }
+    const hashTarget = hashId ? document.getElementById(hashId) : null;
+    const url = tabSelectionUrl(
+      currentUrl,
+      controller.param,
+      value,
+      Boolean(hashTarget?.closest("[hidden]")),
+    );
     window.history.replaceState(window.history.state, "", url);
   } catch {
     return;
@@ -280,28 +305,32 @@ function initSectionNavigation() {
       else visibleHeadings.delete(entry.target);
     }
 
-    const visible = headings.find((heading) => visibleHeadings.has(heading));
-    const active = visible ?? [...headings]
-      .reverse()
-      .find((heading) => heading.getBoundingClientRect().top <= 140);
+    const activeId = chooseActiveSection(headings.map((heading) => ({
+      id: heading.id,
+      top: heading.getBoundingClientRect().top,
+      visible: visibleHeadings.has(heading),
+    })));
+    const active = headings.find((heading) => heading.id === activeId);
     if (active) setActive(active);
   }, {
-    rootMargin: "-120px 0px -65% 0px",
+    rootMargin: "-120px 0px -15% 0px",
     threshold: [0, 1],
   });
 
   for (const heading of headings) observer.observe(heading);
 }
 
-for (const initialize of [
-  initCodeCopy,
-  initPageCopy,
-  initDocsTabs,
-  initSectionNavigation,
-]) {
-  try {
-    initialize();
-  } catch {
-    continue;
+if (typeof document !== "undefined" && typeof window !== "undefined") {
+  for (const initialize of [
+    initCodeCopy,
+    initPageCopy,
+    initDocsTabs,
+    initSectionNavigation,
+  ]) {
+    try {
+      initialize();
+    } catch {
+      continue;
+    }
   }
 }

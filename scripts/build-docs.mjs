@@ -7,7 +7,7 @@ import { Marked, Parser } from "marked";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checkOnly = process.argv.includes("--check");
 
-const PAGE_GROUPS = [
+export const PAGE_GROUPS = [
   {
     label: "Getting started",
     pages: [
@@ -84,7 +84,7 @@ const PAGE_GROUPS = [
   },
 ];
 
-const PAGE_REGISTRY = PAGE_GROUPS.flatMap((group) => group.pages.map((page) => ({
+export const PAGE_REGISTRY = PAGE_GROUPS.flatMap((group) => group.pages.map((page) => ({
   ...page,
   group: group.label,
   sourcePath: join(repositoryRoot, page.source),
@@ -411,7 +411,7 @@ function renderPage(pageConfig, page) {
     <title>${escapeHtml(pageConfig.tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=38" />
-    <script src="/copy.js?v=5" defer></script>
+    <script type="module" src="/copy.js?v=6"></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from ${pageConfig.source}. Run npm run docs:build after editing Markdown. -->
@@ -463,25 +463,31 @@ ${body}
 `;
 }
 
-const stalePages = [];
+async function buildDocs() {
+  const stalePages = [];
 
-for (const pageConfig of PAGE_REGISTRY) {
-  const source = await readFile(pageConfig.sourcePath, "utf8");
-  const page = readPage(source, pageConfig.source, pageConfig.route);
-  const output = renderPage(pageConfig, page);
+  for (const pageConfig of PAGE_REGISTRY) {
+    const source = await readFile(pageConfig.sourcePath, "utf8");
+    const page = readPage(source, pageConfig.source, pageConfig.route);
+    const output = renderPage(pageConfig, page);
 
-  if (checkOnly) {
-    const current = await readFile(pageConfig.outputPath, "utf8").catch(() => "");
-    if (current.replaceAll("\r\n", "\n") !== output) {
-      stalePages.push(pageConfig.source);
+    if (checkOnly) {
+      const current = await readFile(pageConfig.outputPath, "utf8").catch(() => "");
+      if (current.replaceAll("\r\n", "\n") !== output) {
+        stalePages.push(pageConfig.source);
+      }
+    } else {
+      await writeFile(pageConfig.outputPath, output, "utf8");
     }
-  } else {
-    await writeFile(pageConfig.outputPath, output, "utf8");
   }
+
+  if (stalePages.length > 0) {
+    throw new Error(`Generated docs are stale: ${stalePages.join(", ")}. Run npm run docs:build.`);
+  }
+
+  console.log(`${checkOnly ? "Checked" : "Built"} ${PAGE_REGISTRY.length} documentation pages.`);
 }
 
-if (stalePages.length > 0) {
-  throw new Error(`Generated docs are stale: ${stalePages.join(", ")}. Run npm run docs:build.`);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await buildDocs();
 }
-
-console.log(`${checkOnly ? "Checked" : "Built"} ${PAGE_REGISTRY.length} documentation pages.`);
