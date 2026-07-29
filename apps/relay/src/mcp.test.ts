@@ -11,9 +11,12 @@ const expectedTools = [
   "edit_file",
   "get_command",
   "list_devices",
+  "list_files",
   "logout",
   "read_file",
+  "read_file_range",
   "run_command",
+  "search_text",
   "write_file",
 ];
 
@@ -212,4 +215,31 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     logoutUrl,
     instructions: `In the Glossa terminal, press l and confirm, or run glossa logout. Stop any other Glossa sessions with q or Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. Choose the same intended Google account for both authorizations.`,
   });
+});
+
+test("structured repository tools require a current worker", async (context) => {
+  const accountId = "00000000-0000-4000-8000-000000000001";
+  const deviceId = "00000000-0000-4000-8000-000000000002";
+  const workerId = "00000000-0000-4000-8000-000000000003";
+  const state = new RouterState();
+  state.register(accountId, deviceId, "Test PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-structured-read-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "list_files",
+    arguments: { deviceId: workerId },
+  });
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /worker_update_required/);
+  assert.match(JSON.stringify(result.content), /Update and reconnect/);
 });

@@ -27,6 +27,35 @@ export class LocalWorker {
         case "read_file":
           value = await this.files.readText(job.path);
           break;
+        case "list_files":
+          value = await this.files.listFiles({
+            ...(job.path ? { path: job.path } : {}),
+            ...(job.recursive === undefined ? {} : { recursive: job.recursive }),
+            ...(job.cursor ? { cursor: job.cursor } : {}),
+            ...(job.limit === undefined ? {} : { limit: job.limit }),
+            timeoutMs: job.timeoutMs,
+          });
+          break;
+        case "search_text":
+          value = await this.files.searchText({
+            query: job.query,
+            ...(job.path ? { path: job.path } : {}),
+            ...(job.caseSensitive === undefined
+              ? {}
+              : { caseSensitive: job.caseSensitive }),
+            ...(job.maxResults === undefined ? {} : { maxResults: job.maxResults }),
+            ...(job.extensions ? { extensions: job.extensions } : {}),
+            timeoutMs: job.timeoutMs,
+          });
+          break;
+        case "read_file_range":
+          value = await this.files.readTextRange(
+            job.path,
+            job.startLine,
+            job.lineCount,
+            job.timeoutMs,
+          );
+          break;
         case "write_file":
           value = await this.files.writeText(
             job.path,

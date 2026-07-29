@@ -19,6 +19,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
     {
       commandProgress: true,
       concurrentJobs: true,
+      structuredReads: true,
       workspaceLabel: "frontend",
     },
   );
@@ -27,8 +28,10 @@ test("routes multiple workers enrolled on one computer independently", async () 
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
   assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, firstWorkerId), true);
+  assert.equal(state.supportsStructuredReads(accountId, firstWorkerId), true);
   assert.equal(state.supportsCommandProgress(accountId, secondWorkerId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, secondWorkerId), false);
+  assert.equal(state.supportsStructuredReads(accountId, secondWorkerId), false);
   assert.deepEqual(state.listDevices(accountId), [
     {
       deviceId: firstWorkerId,

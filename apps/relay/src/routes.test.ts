@@ -186,15 +186,21 @@ test("uses worker credentials without repeating device authentication", async (c
   const current = await register({
     workerId,
     workspaceLabel: "frontend",
-    capabilities: { commandProgress: true, concurrentJobs: true },
+    capabilities: {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+    },
   });
   assert.equal(legacy.workerId, deviceId);
   assert.equal(current.workerId, workerId);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
   assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
+  assert.equal(state.supportsStructuredReads(accountId, deviceId), false);
   assert.equal(state.supportsCommandProgress(accountId, workerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
+  assert.equal(state.supportsStructuredReads(accountId, workerId), true);
   assert.equal(
     state.listDevices(accountId).find((entry) => entry.deviceId === workerId)
       ?.workspaceLabel,
@@ -207,6 +213,7 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.deepEqual(current.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
   const workerAuthorization = `Worker ${String(current.workerToken)}`;
 
@@ -280,7 +287,19 @@ test("uses worker credentials without repeating device authentication", async (c
     body: JSON.stringify({ workerId, result }),
   });
   assert.equal(posted.status, 202);
+  assert.deepEqual(await posted.json(), { accepted: true });
   assert.deepEqual(await pending, result);
+
+  const repeated = await fetch(`${origin}/device/result`, {
+    method: "POST",
+    headers: {
+      authorization: workerAuthorization,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ workerId, result }),
+  });
+  assert.equal(repeated.status, 202);
+  assert.deepEqual(await repeated.json(), { accepted: false });
   assert.equal(deviceAuthentications, 2);
   assert.equal(deviceTouches, 0);
 

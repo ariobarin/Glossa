@@ -30,6 +30,9 @@ const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
 const workerJobTypeSchema = z.enum([
   "read_file",
+  "list_files",
+  "search_text",
+  "read_file_range",
   "write_file",
   "edit_file",
   "run_command",
@@ -44,6 +47,7 @@ const registerSchema = z.union([
       .object({
         commandProgress: z.literal(true).optional(),
         concurrentJobs: z.literal(true).optional(),
+        structuredReads: z.literal(true).optional(),
       })
       .strict()
       .optional(),
@@ -54,7 +58,7 @@ const pollSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     generation: z.string().uuid(),
-    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(6).optional(),
+    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(9).optional(),
     waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
   }).strict(),
   z.object({ generation: z.string().uuid() }).strict(),
@@ -471,6 +475,9 @@ export function buildRoutes(
         concurrentJobs:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.concurrentJobs === true,
+        structuredReads:
+          "capabilities" in parsed.data &&
+          parsed.data.capabilities?.structuredReads === true,
         ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
           ? { workspaceLabel: parsed.data.workspaceLabel }
           : {}),
@@ -484,6 +491,7 @@ export function buildRoutes(
       capabilities: {
         commandProgress: state.supportsCommandProgress(device.accountId, workerId),
         concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
+        structuredReads: state.supportsStructuredReads(device.accountId, workerId),
       },
       ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
         ? { workspaceLabel: parsed.data.workspaceLabel }
@@ -591,7 +599,7 @@ export function buildRoutes(
       : requestedWorkerId;
     const result = "result" in parsed.data ? parsed.data.result : parsed.data;
     const accepted = state.complete(accountId, workerId, result);
-    response.status(accepted ? 202 : 410).json({ accepted });
+    response.status(202).json({ accepted });
   });
 
   router.post("/device/heartbeat", async (request, response) => {

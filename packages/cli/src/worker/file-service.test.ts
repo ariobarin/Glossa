@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, mkdir, opendir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { MAX_READ_FILE_RANGE_BYTES, MAX_SEARCH_TEXT_SNIPPET_CHARS } from "@glossa/protocol";
+import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
 import { PathPolicy, validateRelativePath } from "./path-policy.js";
 
@@ -22,6 +24,10 @@ test("rejects Windows absolute and parent paths", () => {
     code: "path_traversal",
   });
   assert.equal(validateRelativePath("src\\index.ts"), "src\\index.ts");
+  if (process.platform !== "win32") {
+    assert.equal(validateRelativePath("./C:\\notes.txt"), "./C:\\notes.txt");
+    assert.equal(validateRelativePath("./..\\notes.txt"), "./..\\notes.txt");
+  }
 });
 
 test("blocks linked directory traversal", async (context) => {
@@ -159,4 +165,639 @@ test("writes atomically and rejects stale revisions", async (context) => {
   const second = await files.writeText("note.txt", "second", first.sha256);
   assert.equal(second.bytes, 6);
   assert.equal(await readFile(path.join(root, "note.txt"), "utf8"), "second");
+});
+
+test("lists deterministic files with cursor pagination and skips links", async (context) => {
+  const fixture = await temporaryDirectory(context);
+  const root = path.join(fixture, "root");
+  const outside = path.join(fixture, "outside");
+  await mkdir(path.join(root, "src"), { recursive: true });
+  await mkdir(path.join(root, "node_modules"), { recursive: true });
+  await mkdir(outside);
+  await writeFile(path.join(root, "a.txt"), "a", "utf8");
+  await writeFile(path.join(root, "z.txt"), "z", "utf8");
+  await writeFile(path.join(root, "src", "b.ts"), "b", "utf8");
+  await writeFile(path.join(root, "src", "types.d.ts"), "d", "utf8");
+  await writeFile(path.join(root, "node_modules", "ignored.js"), "ignored", "utf8");
+  await writeFile(path.join(outside, "secret.txt"), "secret", "utf8");
+  await symlink(outside, path.join(root, "linked"), "junction");
+
+  const files = new FileService(await PathPolicy.create(root));
+  const first = await files.listFiles({ recursive: true, limit: 3 });
+  assert.deepEqual(first.entries, [
+    { path: "a.txt", type: "file", bytes: 1 },
+    { path: "node_modules", type: "directory" },
+    { path: "src", type: "directory" },
+  ]);
+  assert.equal(first.truncated, true);
+  assert.equal(first.nextCursor, "src");
+  assert.equal(first.skippedLinks, 1);
+
+  const second = await files.listFiles({
+    recursive: true,
+    cursor: first.nextCursor,
+    limit: 10,
+  });
+  assert.deepEqual(second.entries, [
+    { path: "src/b.ts", type: "file", bytes: 1 },
+    { path: "src/types.d.ts", type: "file", bytes: 1 },
+    { path: "z.txt", type: "file", bytes: 1 },
+  ]);
+  assert.equal(second.truncated, false);
+  assert.equal(second.nextCursor, undefined);
+  assert.equal(second.entries.some((entry) => entry.path.includes("ignored")), false);
+  assert.equal(second.entries.some((entry) => entry.path.includes("secret")), false);
+
+  await assert.rejects(files.listFiles({ limit: 201 }), { code: "invalid_limit" });
+});
+
+test("searches literal text with compound suffixes and bounded snippets", async (context) => {
+  const root = await temporaryDirectory(context);
+  await mkdir(path.join(root, "src"));
+  await mkdir(path.join(root, "node_modules"));
+  await writeFile(
+    path.join(root, "src", "types.d.ts"),
+    "header\n?xTOKEN literal .* end\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(root, "long.ts"),
+    `${"a".repeat(300)}NEEDLE${"b".repeat(300)}`,
+    "utf8",
+  );
+  await writeFile(path.join(root, "one.ts"), "hit", "utf8");
+  await writeFile(path.join(root, "two.ts"), "hit", "utf8");
+  await writeFile(path.join(root, "binary.bin"), Buffer.from([0xff, 0xfe]));
+  await writeFile(path.join(root, "node_modules", "hidden.ts"), "hit", "utf8");
+
+  const files = new FileService(await PathPolicy.create(root));
+  const compound = await files.searchText({
+    query: "token",
+    extensions: [".d.ts"],
+  });
+  assert.deepEqual(compound.matches, [
+    {
+      path: "src/types.d.ts",
+      line: 2,
+      column: 3,
+      text: "?xTOKEN literal .* end",
+      lineTruncated: false,
+    },
+  ]);
+
+  const literal = await files.searchText({
+    query: ".*",
+    extensions: [".d.ts"],
+    caseSensitive: true,
+  });
+  assert.equal(literal.matches[0]?.path, "src/types.d.ts");
+  assert.equal(literal.matches[0]?.column, 17);
+
+  const bounded = await files.searchText({
+    query: "needle",
+    extensions: [".ts"],
+  });
+  const longMatch = bounded.matches.find((match) => match.path === "long.ts");
+  assert.ok(longMatch);
+  assert.equal(longMatch.lineTruncated, true);
+  assert.ok(longMatch.text.length <= MAX_SEARCH_TEXT_SNIPPET_CHARS);
+  assert.match(longMatch.text, /^\.\.\./);
+  assert.match(longMatch.text, /\.\.\.$/);
+  assert.match(longMatch.text, /NEEDLE/i);
+
+  const limited = await files.searchText({ query: "hit", maxResults: 1 });
+  assert.equal(limited.matches.length, 1);
+  assert.equal(limited.truncated, true);
+  assert.equal(limited.matches.some((match) => match.path.includes("node_modules")), false);
+
+  const binary = await files.searchText({ query: "text", extensions: [".bin"] });
+  assert.equal(binary.matches.length, 0);
+  assert.equal(binary.skippedFiles, 1);
+
+  await assert.rejects(files.searchText({ query: "bad\nquery" }), {
+    code: "invalid_search",
+  });
+  await assert.rejects(files.searchText({ query: "x", maxResults: 101 }), {
+    code: "invalid_limit",
+  });
+});
+
+test("reads bounded complete line ranges with continuation metadata", async (context) => {
+  const root = await temporaryDirectory(context);
+  const files = new FileService(await PathPolicy.create(root));
+  await writeFile(path.join(root, "range.txt"), "one\r\ntwo\r\nthree\r\nfour\r\n", "utf8");
+
+  const range = await files.readTextRange("range.txt", 2, 2);
+  assert.equal(range.content, "two\nthree");
+  assert.equal(range.startLine, 2);
+  assert.equal(range.endLine, 3);
+  assert.equal(range.totalLines, 4);
+  assert.equal(range.nextLine, 4);
+  assert.equal(range.contentBytes, Buffer.byteLength(range.content, "utf8"));
+  assert.equal(range.sha256, (await files.readText("range.txt")).sha256);
+
+  const half = "x".repeat(MAX_READ_FILE_RANGE_BYTES / 2);
+  await writeFile(path.join(root, "bounded.txt"), `${half}\n${half}\n`, "utf8");
+  const bounded = await files.readTextRange("bounded.txt", 1, 2);
+  assert.equal(bounded.content, half);
+  assert.equal(bounded.endLine, 1);
+  assert.equal(bounded.nextLine, 2);
+  assert.ok(bounded.contentBytes <= MAX_READ_FILE_RANGE_BYTES);
+
+  await writeFile(
+    path.join(root, "wide.txt"),
+    "x".repeat(MAX_READ_FILE_RANGE_BYTES + 1),
+    "utf8",
+  );
+  await assert.rejects(files.readTextRange("wide.txt"), { code: "line_too_large" });
+  await assert.rejects(files.readTextRange("range.txt", 0, 1), {
+    code: "invalid_range",
+  });
+  await assert.rejects(files.readTextRange("range.txt", 1, 501), {
+    code: "invalid_limit",
+  });
+  await assert.rejects(files.readTextRange("range.txt", 9, 1), {
+    code: "line_out_of_range",
+  });
+});
+
+test("paginates recursive listings in global path order", async (context) => {
+  const root = await temporaryDirectory(context);
+  await mkdir(path.join(root, "a"));
+  await writeFile(path.join(root, "a", "z.txt"), "z", "utf8");
+  await writeFile(path.join(root, "a.b"), "b", "utf8");
+  const files = new FileService(await PathPolicy.create(root));
+
+  const first = await files.listFiles({ recursive: true, limit: 2 });
+  assert.deepEqual(first.entries.map((entry) => entry.path), ["a", "a.b"]);
+  assert.equal(first.nextCursor, "a.b");
+
+  const second = await files.listFiles({
+    recursive: true,
+    cursor: first.nextCursor,
+    limit: 2,
+  });
+  assert.deepEqual(second.entries.map((entry) => entry.path), ["a/z.txt"]);
+  assert.equal(second.truncated, false);
+});
+
+test(
+  "keeps encoded POSIX descendants monotonic across cursor pages",
+  { skip: process.platform === "win32" },
+  async (context) => {
+    const root = await temporaryDirectory(context);
+    await mkdir(path.join(root, "dir"));
+    await writeFile(path.join(root, "dir", "a\\b.txt"), "needle", "utf8");
+    const files = new FileService(await PathPolicy.create(root));
+
+    const first = await files.listFiles({ recursive: true, limit: 1 });
+    assert.deepEqual(first.entries.map((entry) => entry.path), ["dir"]);
+    assert.equal(first.nextCursor, "dir");
+    assert.equal(first.truncated, true);
+
+    const second = await files.listFiles({
+      recursive: true,
+      cursor: first.nextCursor,
+      limit: 1,
+    });
+    assert.deepEqual(
+      second.entries.map((entry) => entry.path),
+      ["./dir/a\\b.txt"],
+    );
+    assert.equal(second.truncated, false);
+    assert.equal(second.nextCursor, undefined);
+  },
+);
+
+test(
+  "preserves discovered POSIX filenames with literal backslashes",
+  { skip: process.platform === "win32" },
+  async (context) => {
+    const root = await temporaryDirectory(context);
+    const relativePaths = ["dir\\name.txt", "C:\\notes.txt", "..\\notes.txt"];
+    for (const relativePath of relativePaths) {
+      await writeFile(path.join(root, relativePath), "needle", "utf8");
+    }
+    const files = new FileService(await PathPolicy.create(root));
+
+    const returnedPaths = relativePaths.map((relativePath) => `./${relativePath}`);
+    const listed = await files.listFiles();
+    assert.deepEqual(
+      listed.entries.map((entry) => entry.path).sort(),
+      [...returnedPaths].sort(),
+    );
+    const searched = await files.searchText({ query: "needle" });
+    assert.deepEqual(
+      searched.matches.map((match) => match.path).sort(),
+      [...returnedPaths].sort(),
+    );
+    for (const returnedPath of returnedPaths) {
+      assert.equal((await files.readText(returnedPath)).content, "needle");
+      assert.equal(
+        (await files.readTextRange(returnedPath)).content,
+        "needle",
+      );
+      assert.equal(
+        (await files.searchText({ path: returnedPath, query: "needle" }))
+          .matches[0]?.path,
+        returnedPath,
+      );
+    }
+
+    const editedPath = returnedPaths[0]!;
+    const original = await files.readText(editedPath);
+    const edited = await files.editText(
+      editedPath,
+      [{ oldText: "needle", newText: "updated" }],
+      original.sha256,
+    );
+    assert.ok(edited.diff.startsWith(
+      "--- a/./dir\\name.txt\n+++ b/./dir\\name.txt\n",
+    ));
+    assert.equal((await files.readText(editedPath)).content, "updated");
+  },
+);
+
+test("applies a local deadline to structured scans", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "note.txt"), "note", "utf8");
+  let observedDeadline = 0;
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      now: () => 1_000,
+      beforeDeadline: async <T>(
+        operation: Promise<T>,
+        deadlineAt: number,
+      ): Promise<T> => {
+        void operation.catch(() => undefined);
+        observedDeadline = deadlineAt;
+        throw new WorkerError(
+          "scan_timeout",
+          "The structured repository operation exceeded its local deadline.",
+        );
+      },
+    },
+  );
+
+  await assert.rejects(files.listFiles({ timeoutMs: 500 }), {
+    code: "scan_timeout",
+  });
+  assert.equal(observedDeadline, 1_500);
+});
+
+test("retains timed out filesystem work until it settles", async (context) => {
+  const root = await temporaryDirectory(context);
+  let resolveOpen!: (handle: Awaited<ReturnType<typeof opendir>>) => void;
+  let markOpenStarted!: () => void;
+  let closed = false;
+  let settled = false;
+  const openStarted = new Promise<void>((resolve) => {
+    markOpenStarted = resolve;
+  });
+  const lateHandle = {
+    async read() {
+      return null;
+    },
+    async close() {
+      closed = true;
+    },
+  } as unknown as Awaited<ReturnType<typeof opendir>>;
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      openDirectory: async () => {
+        markOpenStarted();
+        return await new Promise((resolve) => {
+          resolveOpen = resolve;
+        });
+      },
+    },
+  );
+
+  const pending = files.listFiles({ timeoutMs: 5 });
+  void pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  await openStarted;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(settled, false);
+
+  resolveOpen(lateHandle);
+  await assert.rejects(pending, { code: "scan_timeout" });
+  assert.equal(closed, true);
+});
+
+test("returns a full page before expanding the overflow directory", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "a.txt"), "a", "utf8");
+  await mkdir(path.join(root, "b"));
+  await writeFile(path.join(root, "b", "child.txt"), "child", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    { maxRepositoryScanEntries: 2 },
+  );
+
+  const page = await files.listFiles({ recursive: true, limit: 1 });
+  assert.deepEqual(page.entries, [{ path: "a.txt", type: "file", bytes: 1 }]);
+  assert.equal(page.truncated, true);
+  assert.equal(page.nextCursor, "a.txt");
+  assert.equal(page.scannedEntries, 2);
+});
+test("returns a final-slot directory before scanning descendants", async (context) => {
+  const root = await temporaryDirectory(context);
+  await mkdir(path.join(root, "a"));
+  await writeFile(path.join(root, "a", "one.txt"), "one", "utf8");
+  await writeFile(path.join(root, "a", "two.txt"), "two", "utf8");
+  await writeFile(path.join(root, "a", "three.txt"), "three", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    { maxRepositoryScanEntries: 3 },
+  );
+
+  const page = await files.listFiles({ recursive: true, limit: 1 });
+  assert.deepEqual(page.entries, [{ path: "a", type: "directory" }]);
+  assert.equal(page.truncated, true);
+  assert.equal(page.nextCursor, "a");
+  assert.equal(page.scannedEntries, 2);
+});
+test("allows EOF exactly at the recursive scan ceiling", async (context) => {
+  const root = await temporaryDirectory(context);
+  await mkdir(path.join(root, "a"));
+  await writeFile(path.join(root, "a", "unavailable.txt"), "gone", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      maxRepositoryScanEntries: 2,
+      lstatPath: async (target) => {
+        if (path.basename(target) === "unavailable.txt") {
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        }
+        return await lstat(target);
+      },
+    },
+  );
+
+  const page = await files.listFiles({ recursive: true, limit: 1 });
+  assert.deepEqual(page.entries, [{ path: "a", type: "directory" }]);
+  assert.equal(page.truncated, false);
+  assert.equal(page.nextCursor, undefined);
+  assert.equal(page.scannedEntries, 2);
+});
+test("enforces the scan ceiling while streaming one directory", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "a.txt"), "a", "utf8");
+  await writeFile(path.join(root, "b.txt"), "b", "utf8");
+  await writeFile(path.join(root, "c.txt"), "c", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    { maxRepositoryScanEntries: 2 },
+  );
+
+  await assert.rejects(files.listFiles(), { code: "scan_limit" });
+  const search = await files.searchText({ query: "a" });
+  assert.equal(search.truncated, true);
+  assert.equal(search.scannedFiles, 0);
+  assert.equal(search.scannedBytes, 0);
+});
+
+test("does not read beyond the remaining search byte budget", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "a.txt"), "aaaa", "utf8");
+  await writeFile(path.join(root, "b.txt"), "bbbb", "utf8");
+  const reads: string[] = [];
+  const maximums: number[] = [];
+  const expectedSizes: number[] = [];
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      maxSearchBytes: 5,
+      readFileBytes: async (target, maximumBytes, expectedBytes) => {
+        reads.push(path.basename(target));
+        maximums.push(maximumBytes);
+        expectedSizes.push(expectedBytes);
+        return await readFile(target);
+      },
+    },
+  );
+
+  const result = await files.searchText({ query: "a" });
+  assert.deepEqual(reads, ["a.txt"]);
+  assert.deepEqual(maximums, [5]);
+  assert.deepEqual(expectedSizes, [4]);
+  assert.equal(result.scannedFiles, 1);
+  assert.equal(result.scannedBytes, 4);
+  assert.equal(result.truncated, true);
+});
+
+test("skips child directories that disappear during traversal", async (context) => {
+  const root = await temporaryDirectory(context);
+  const vanishing = path.join(root, "vanishing");
+  await writeFile(path.join(root, "available.txt"), "needle", "utf8");
+  await mkdir(vanishing);
+  await writeFile(path.join(vanishing, "hidden.txt"), "needle", "utf8");
+  const policy = await PathPolicy.create(root);
+  const service = () => new FileService(
+    policy,
+    {
+      lstatPath: async (target) => {
+        const targetStat = await lstat(target);
+        if (path.basename(target) === "vanishing") {
+          await rm(target, { force: true, recursive: true });
+        }
+        return targetStat;
+      },
+    },
+  );
+
+  const listed = await service().listFiles({ recursive: true });
+  assert.deepEqual(
+    listed.entries.map((entry) => entry.path),
+    ["available.txt"],
+  );
+
+  await mkdir(vanishing);
+  await writeFile(path.join(vanishing, "hidden.txt"), "needle", "utf8");
+  const searched = await service().searchText({ query: "needle" });
+  assert.deepEqual(
+    searched.matches.map((match) => match.path),
+    ["available.txt"],
+  );
+  assert.equal(searched.skippedFiles, 1);
+  assert.equal(searched.truncated, false);
+});
+test("skips directories replaced by links during traversal", async (context) => {
+  const fixture = await temporaryDirectory(context);
+  const root = path.join(fixture, "root");
+  const outside = path.join(fixture, "outside");
+  const changing = path.join(root, "changing");
+  await mkdir(root);
+  await mkdir(outside);
+  await mkdir(changing);
+  await writeFile(path.join(root, "available.txt"), "available", "utf8");
+  await writeFile(path.join(outside, "secret.txt"), "secret", "utf8");
+  let swapped = false;
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      lstatPath: async (target) => {
+        const targetStat = await lstat(target);
+        if (!swapped && path.basename(target) === "changing") {
+          swapped = true;
+          await rm(target, { force: true, recursive: true });
+          await symlink(outside, target, "junction");
+        }
+        return targetStat;
+      },
+    },
+  );
+
+  const listed = await files.listFiles({ recursive: true });
+  assert.deepEqual(
+    listed.entries.map((entry) => entry.path),
+    ["available.txt"],
+  );
+  assert.equal(listed.skippedLinks, 1);
+});
+
+test("counts files replaced by links as skipped links during search", async (context) => {
+  const fixture = await temporaryDirectory(context);
+  const root = path.join(fixture, "root");
+  const outside = path.join(fixture, "outside.txt");
+  const changing = path.join(root, "changing.txt");
+  await mkdir(root);
+  await writeFile(path.join(root, "available.txt"), "needle", "utf8");
+  await writeFile(changing, "needle", "utf8");
+  await writeFile(outside, "needle", "utf8");
+  let swapped = false;
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      lstatPath: async (target) => {
+        const targetStat = await lstat(target);
+        if (!swapped && path.basename(target) === "changing.txt") {
+          swapped = true;
+          await rm(target, { force: true });
+          await symlink(outside, target, "file");
+        }
+        return targetStat;
+      },
+    },
+  );
+
+  const search = await files.searchText({ query: "needle" });
+  assert.deepEqual(search.matches.map((match) => match.path), ["available.txt"]);
+  assert.equal(search.skippedLinks, 1);
+  assert.equal(search.skippedFiles, 0);
+  assert.equal(search.truncated, false);
+});
+
+test("skips files that become unavailable during search", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "available.txt"), "needle", "utf8");
+  await writeFile(path.join(root, "unavailable.txt"), "needle", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      readFileBytes: async (target) => {
+        if (path.basename(target) === "unavailable.txt") {
+          throw Object.assign(new Error("denied"), { code: "EACCES" });
+        }
+        return await readFile(target);
+      },
+    },
+  );
+
+  const search = await files.searchText({ query: "needle" });
+  assert.deepEqual(search.matches.map((match) => match.path), ["available.txt"]);
+  assert.equal(search.skippedFiles, 1);
+  assert.equal(search.truncated, false);
+});
+
+test("skips unreadable child directories during recursive reads", async (context) => {
+  const root = await temporaryDirectory(context);
+  await mkdir(path.join(root, "protected"));
+  await writeFile(path.join(root, "available.txt"), "needle", "utf8");
+  await writeFile(path.join(root, "protected", "hidden.txt"), "needle", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      openDirectory: async (directory) => {
+        if (path.basename(directory) === "protected") {
+          throw Object.assign(new Error("denied"), { code: "EACCES" });
+        }
+        return await opendir(directory);
+      },
+    },
+  );
+
+  const paged = await files.listFiles({ recursive: true, limit: 1 });
+  assert.deepEqual(
+    paged.entries.map((entry) => entry.path),
+    ["available.txt"],
+  );
+  assert.equal(paged.truncated, false);
+  assert.equal(paged.nextCursor, undefined);
+
+  const listed = await files.listFiles({ recursive: true });
+  assert.deepEqual(
+    listed.entries.map((entry) => entry.path),
+    ["available.txt"],
+  );
+  const search = await files.searchText({ query: "needle" });
+  assert.deepEqual(search.matches.map((match) => match.path), ["available.txt"]);
+  assert.equal(search.skippedFiles, 1);
+});
+
+test("skips overflow directories replaced by files", async (context) => {
+  const root = await temporaryDirectory(context);
+  const changing = path.join(root, "changing");
+  await writeFile(path.join(root, "available.txt"), "available", "utf8");
+  await mkdir(changing);
+  await writeFile(path.join(changing, "hidden.txt"), "hidden", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      lstatPath: async (target) => {
+        const targetStat = await lstat(target);
+        if (path.basename(target) === "changing") {
+          await rm(target, { force: true, recursive: true });
+          await writeFile(target, "now a file", "utf8");
+        }
+        return targetStat;
+      },
+    },
+  );
+
+  const page = await files.listFiles({ recursive: true, limit: 1 });
+  assert.deepEqual(
+    page.entries.map((entry) => entry.path),
+    ["available.txt"],
+  );
+  assert.equal(page.truncated, false);
+  assert.equal(page.nextCursor, undefined);
+});
+test("skips entries whose metadata becomes unavailable during listing", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "available.txt"), "available", "utf8");
+  await writeFile(path.join(root, "unavailable.txt"), "unavailable", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      lstatPath: async (target) => {
+        if (path.basename(target) === "unavailable.txt") {
+          throw Object.assign(new Error("denied"), { code: "EACCES" });
+        }
+        return await lstat(target);
+      },
+    },
+  );
+
+  const listed = await files.listFiles();
+  assert.deepEqual(listed.entries.map((entry) => entry.path), ["available.txt"]);
 });

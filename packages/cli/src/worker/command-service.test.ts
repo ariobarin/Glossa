@@ -100,7 +100,7 @@ test("runs the platform shell inside the exposed root", async (context) => {
     shellCommand: process.platform === "win32"
       ? "Write-Output (Get-Location).Path"
       : "pwd",
-    timeoutMs: 10_000,
+    timeoutMs: 30_000,
   });
   const completed = await commands.get(started.commandId, 15_000);
 

@@ -29,10 +29,18 @@ export function validateRelativePath(value: string): string {
   if (value.includes("\0")) {
     throw new WorkerError("invalid_path", "Paths cannot contain null bytes.");
   }
-  if (path.isAbsolute(value) || path.win32.isAbsolute(value) || path.posix.isAbsolute(value)) {
+  const explicitNativePosixPath =
+    process.platform !== "win32" && value.startsWith("./");
+  if (
+    path.isAbsolute(value) ||
+    path.posix.isAbsolute(value) ||
+    (!explicitNativePosixPath && path.win32.isAbsolute(value))
+  ) {
     throw new WorkerError("absolute_path", "Absolute paths are not allowed.");
   }
-  const segments = value.split(/[\\/]+/);
+  const segments = explicitNativePosixPath
+    ? value.split(/\/+/).filter(Boolean)
+    : value.split(/[\\/]+/);
   if (segments.includes("..")) {
     throw new WorkerError("path_traversal", "Parent path traversal is not allowed.");
   }
@@ -79,6 +87,24 @@ export class PathPolicy {
 
   async resolveExisting(relativePath: string): Promise<string> {
     const lexical = this.resolveLexical(relativePath);
+    await this.rejectLinkedComponents(lexical);
+    const canonical = await realpath(lexical).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        throw new WorkerError("path_not_found", "The requested path does not exist.");
+      }
+      throw error;
+    });
+    if (!isWithin(this.root, canonical)) {
+      throw new WorkerError("path_escape", "The requested path escapes the exposed root.");
+    }
+    return canonical;
+  }
+
+  async resolveDiscoveredExisting(candidate: string): Promise<string> {
+    const lexical = path.resolve(candidate);
+    if (!isWithin(this.root, lexical)) {
+      throw new WorkerError("path_escape", "The requested path escapes the exposed root.");
+    }
     await this.rejectLinkedComponents(lexical);
     const canonical = await realpath(lexical).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") {
