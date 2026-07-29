@@ -38,7 +38,9 @@ Glossa opens Google sign-in automatically when needed using OAuth Device Authori
 
 OAuth and device credentials use the operating-system credential store. If it is unavailable, Glossa warns before using a restricted credential file.
 
-Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. The live session display shows the connection, authority, and recent activity.
+Glossa signs in automatically and exposes the current directory. Pass a directory
+to expose a different workspace. Plain terminal output shows connection changes,
+authority, and recent activity.
 
 The live session reports meaningful connection changes and one result for each
 write, command start, or cancellation. Press Ctrl+C to disconnect.

@@ -54,7 +54,9 @@ test("rejects malformed retained commands and removed flags", () => {
 });
 
 test("rejects retired command names instead of treating them as paths", () => {
-  for (const command of ["doctor", "login", "start", "update"]) {
+  for (
+    const command of ["completions", "doctor", "login", "start", "update"]
+  ) {
     assert.throws(
       () => parseInvocation([command]),
       (error: unknown) =>

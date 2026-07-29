@@ -8,7 +8,13 @@ export type CliInvocation =
   | { command: "help" }
   | { command: "version" };
 
-const retiredCommands = new Set(["doctor", "login", "start", "update"]);
+const retiredCommands = new Set([
+  "completions",
+  "doctor",
+  "login",
+  "start",
+  "update",
+]);
 
 function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
