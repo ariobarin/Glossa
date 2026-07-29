@@ -34,7 +34,7 @@ Users do not operate networking, identity, or database infrastructure.
 
 ### MCP client identity
 
-The authorization server handles discovery, login, consent, and access tokens. The relay validates issuer, audience, expiry, and the `glossa:access` scope. It atomically creates an account for a new authenticated subject and rejects accounts marked disabled.
+The authorization server handles discovery, login, consent, and access tokens. The relay validates issuer, audience, expiry, and the `glossa:access` scope. It atomically creates an account for a new authenticated subject and rejects accounts marked disabled. Already-admitted accounts use a lock-only `SELECT FOR NO KEY UPDATE`, avoiding a new account row version on every authenticated request while retaining the original queue ordering and serialization with direct operator updates to `disabled_at`. The admission upsert runs only for a new subject, a legacy active account whose admission timestamp is absent, or a concurrent-create race.
 
 The managed service accepts only Auth0 subjects from the Google social connection. The relay enforces the configured subject prefix in addition to JWT validation, so enabling another connection in Auth0 does not grant it Glossa access. Self-hosted relays explicitly select their own allowed Auth0 subject prefix.
 
