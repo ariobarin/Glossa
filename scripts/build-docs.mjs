@@ -195,7 +195,7 @@ function renderPage(page, route, sourceLabel) {
     <meta name="theme-color" content="#111016" />
     <title>${escapeHtml(tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=37" />
+    <link rel="stylesheet" href="/styles.css?v=38" />
     <script src="/copy.js?v=4" defer></script>
   </head>
   <body class="docs-shell">

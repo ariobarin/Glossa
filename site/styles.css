@@ -235,6 +235,7 @@ p {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
+.landing-shell .site-header,
 .docs-shell .site-header {
   position: sticky;
   z-index: 50;
@@ -915,6 +916,7 @@ p {
     gap: 10px;
   }
 
+  .landing-shell .site-header,
   .docs-shell .site-header {
     padding-inline: 14px;
   }
