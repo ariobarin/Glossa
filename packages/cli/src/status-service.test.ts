@@ -121,3 +121,32 @@ test("omits revoked devices from status and workspace counts", async () => {
   assert.deepEqual(status.devices, devices);
   assert.equal(status.activeWorkers, 1);
 });
+
+test("shares one in-flight status refresh", async () => {
+  let validateCalls = 0;
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const service = new WorkspaceStatusService(credentials, endpoints, {
+    validCredentials: async (value) => {
+      validateCalls += 1;
+      await blocked;
+      return value;
+    },
+    loadUserProfile: async (value) => ({
+      credentials: value,
+      profile: { sub: "account-1", email: "dev@example.com" },
+    }),
+    listDevices: async () => devices,
+  });
+
+  const first = service.refresh();
+  const second = service.refresh();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(validateCalls, 1);
+  release();
+
+  assert.deepEqual(await first, await second);
+  assert.equal(validateCalls, 1);
+});

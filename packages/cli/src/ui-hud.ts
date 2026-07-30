@@ -10,8 +10,7 @@ export interface HudActivity {
   tool: WorkerJob["type"];
   body: string;
   requestId: string;
-  phase: "running" | "finished";
-  ok?: boolean;
+  state: "working" | "returned" | "failed";
 }
 
 export interface HudDevice {
@@ -134,8 +133,11 @@ export function applyHudEvent(
     tool: event.job.type,
     body: compactJobBody(event.job),
     requestId,
-    phase: event.phase === "started" ? "running" : "finished",
-    ...(event.phase === "finished" ? { ok: event.ok } : {}),
+    state: event.phase === "started"
+      ? "working"
+      : event.ok
+        ? "returned"
+        : "failed",
   };
   const activities = [...state.activities];
   if (existingIndex >= 0) activities[existingIndex] = activity;
@@ -177,7 +179,7 @@ function connectionLabel(state: HudState): string {
 
 function headerLabel(state: HudState): string {
   const running = [...state.activities].reverse().find(
-    (activity) => activity.phase === "running",
+    (activity) => activity.state === "working",
   );
   return running?.tool ?? connectionLabel(state);
 }
@@ -230,10 +232,10 @@ function renderSession(
 }
 
 function activityGlyph(activity: HudActivity, color: boolean): string {
-  if (activity.phase === "running") {
+  if (activity.state === "working") {
     return style(color, PALETTE.muted, "◌");
   }
-  return activity.ok === false
+  return activity.state === "failed"
     ? style(color, PALETTE.coral, "×")
     : style(color, PALETTE.purpleReadable, "●");
 }
@@ -540,6 +542,7 @@ export async function runSessionHud(
   };
 
   const loadStatus = async (): Promise<void> => {
+    if (state.statusLoading) return;
     if (state.connection !== "connected" && state.connection !== "retrying") {
       state = { ...state, notice: "Status is available after Glossa connects." };
       render();

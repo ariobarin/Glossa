@@ -53,13 +53,12 @@ test("shows the active tool in the header and updates one history entry", () => 
 
   const finished = applyHudEvent(running, {
     type: "activity",
-    phase: "finished",
+    phase: "returned",
     job,
     ok: true,
   });
   assert.equal(finished.activities.length, 1);
-  assert.equal(finished.activities[0]!.phase, "finished");
-  assert.equal(finished.activities[0]!.ok, true);
+  assert.equal(finished.activities[0]!.state, "returned");
 });
 
 test("activity view shows tool names and compact input bodies", () => {

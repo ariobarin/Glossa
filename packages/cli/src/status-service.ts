@@ -39,6 +39,7 @@ function activeWorkerCount(devices: RelayDevice[]): number | null {
 
 export class WorkspaceStatusService {
   #credentials: StoredCredentials;
+  #inFlight: Promise<StatusDetails> | undefined;
 
   constructor(
     credentials: StoredCredentials,
@@ -49,6 +50,17 @@ export class WorkspaceStatusService {
   }
 
   async refresh(signal?: AbortSignal): Promise<StatusDetails> {
+    if (this.#inFlight) return await this.#inFlight;
+    const pending = this.#load(signal);
+    this.#inFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#inFlight === pending) this.#inFlight = undefined;
+    }
+  }
+
+  async #load(signal?: AbortSignal): Promise<StatusDetails> {
     const validate = this.dependencies.validCredentials ?? validCredentials;
     const devicesForAccount = this.dependencies.listDevices ?? listDevices;
     const profileForAccount =

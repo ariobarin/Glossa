@@ -30,7 +30,7 @@ export type ManagedSessionEvent =
   | { type: "session"; root: string; deviceName: string }
   | { type: "status"; status: RemoteWorkerStatus }
   | { type: "activity"; phase: "started"; job: WorkerJob }
-  | { type: "activity"; phase: "finished"; job: WorkerJob; ok: boolean }
+  | { type: "activity"; phase: "returned"; job: WorkerJob; ok: boolean }
   | { type: "notice"; message: string };
 
 export interface ManagedSessionOptions {
@@ -51,6 +51,23 @@ function report(
   if (!options.quiet) console.error(message);
 }
 
+function activityResultLabel(
+  job: WorkerJob,
+  result: WorkerResult,
+): string {
+  if (!result.ok) return `${job.type} failed`;
+  if (
+    job.type === "run_command" &&
+    result.value &&
+    typeof result.value === "object" &&
+    "status" in result.value &&
+    result.value.status === "running"
+  ) {
+    return "run_command started";
+  }
+  return `${job.type} completed`;
+}
+
 export function visibleWorker(
   worker: WorkerHandler,
   options: ManagedSessionOptions,
@@ -62,14 +79,14 @@ export function visibleWorker(
         const result = await worker.handle(job);
         report(
           options,
-          { type: "activity", phase: "finished", job, ok: result.ok },
-          `${job.type} ${result.ok ? "succeeded" : "failed"} (${job.requestId}).`,
+          { type: "activity", phase: "returned", job, ok: result.ok },
+          `${activityResultLabel(job, result)} (${job.requestId}).`,
         );
         return result;
       } catch (error) {
         report(
           options,
-          { type: "activity", phase: "finished", job, ok: false },
+          { type: "activity", phase: "returned", job, ok: false },
           `${job.type} failed (${job.requestId}).`,
         );
         throw error;

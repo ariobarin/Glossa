@@ -273,7 +273,7 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
   );
 });
 
-test("reports the actual job as it starts and finishes", async () => {
+test("reports the actual job while working and when returned", async () => {
   const jobs: WorkerJob[] = [
     {
       type: "write_file",
@@ -314,6 +314,13 @@ test("reports the actual job as it starts and finishes", async () => {
     const worker = visibleWorker(
       {
         async handle(job) {
+          if (job.type === "run_command") {
+            return {
+              requestId: job.requestId,
+              ok: true,
+              value: { status: "running" },
+            };
+          }
           return { requestId: job.requestId, ok: true };
         },
       },
@@ -334,7 +341,7 @@ test("reports the actual job as it starts and finishes", async () => {
     });
     assert.deepEqual(events[index * 2 + 1], {
       type: "activity",
-      phase: "finished",
+      phase: "returned",
       job,
       ok: true,
     });
@@ -342,16 +349,16 @@ test("reports the actual job as it starts and finishes", async () => {
   assert.deepEqual(
     messages.map((message) => message.replace(/ \(.+\)\.$/, "")),
     [
-      "write_file succeeded",
-      "edit_file succeeded",
-      "run_command succeeded",
-      "cancel_command succeeded",
-      "read_file succeeded",
+      "write_file completed",
+      "edit_file completed",
+      "run_command started",
+      "cancel_command completed",
+      "read_file completed",
     ],
   );
 });
 
-test("finishes a visible activity when its worker throws", async () => {
+test("returns a failed activity when its worker throws", async () => {
   const job: WorkerJob = {
     type: "read_file",
     requestId: "00000000-0000-4000-8000-000000000007",
@@ -376,7 +383,7 @@ test("finishes a visible activity when its worker throws", async () => {
 
   assert.deepEqual(events, [
     { type: "activity", phase: "started", job },
-    { type: "activity", phase: "finished", job, ok: false },
+    { type: "activity", phase: "returned", job, ok: false },
   ]);
 });
 
