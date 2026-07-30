@@ -207,7 +207,7 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
       return pathSummary(workspacePath(job.path), [
         ...(job.recursive ? ["recursive"] : []),
         ...(job.limit ? [`limit ${job.limit}`] : []),
-        ...(job.cursor ? ["continued"] : []),
+        ...(job.cursor ? [`after ${quoteActivityInput(job.cursor)}`] : []),
       ]);
     case "search_text":
       return {

@@ -345,6 +345,23 @@ test("activity summaries quote targets and normalize empty paths", () => {
     truncation: "middle",
   });
 
+  const continuedPath = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "list_files",
+      requestId: "request-continued-path",
+      path: "src",
+      cursor: "src/a · recursive\n\u200b",
+      timeoutMs: 8_000,
+    },
+  });
+  assert.deepEqual(continuedPath.activities[0]!.summary, {
+    target: 'path "src"',
+    details: ['after "src/a · recursive\\n\\u200b"'],
+    truncation: "middle",
+  });
+
   const delimiterShell = applyHudEvent(connectedState(), {
     type: "activity",
     phase: "started",
