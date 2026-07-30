@@ -78,6 +78,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - device IDs, ephemeral worker IDs, connection generations, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs
 - request waiters
+- one account-scoped latest-running-command compatibility route per worker, cleared on completion, reconnect, or disconnect
 - recent nonces and bounded rate-limit counters
 
 ### Worker
@@ -99,7 +100,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request;
-- later command calls carry both IDs, so relay restarts do not lose a command routing lookup;
+- current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
 - `get_command` may wait up to 15 seconds and can wake as soon as command output or status changes;
 - `cancel_command` uses a separate bounded request;
 - structured repository reads use a worker-local deadline of at most half the relay request window and 8 seconds; after expiry, the read lane stays occupied until the active filesystem operation settles and any late directory handle is closed;

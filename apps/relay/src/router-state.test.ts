@@ -299,3 +299,35 @@ test("does not deliver a queued job after its request times out", async () => {
     null,
   );
 });
+
+
+test("keeps one bounded legacy command route per worker", () => {
+  const state = new RouterState();
+  state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  const firstCommandId = "00000000-0000-4000-8000-000000000020";
+  const secondCommandId = "00000000-0000-4000-8000-000000000021";
+
+  state.rememberCommand(accountId, firstWorkerId, firstCommandId);
+  assert.equal(
+    state.workerForCommand(accountId, firstCommandId),
+    firstWorkerId,
+  );
+  assert.equal(
+    state.workerForCommand("00000000-0000-4000-8000-000000000099", firstCommandId),
+    null,
+  );
+
+  state.rememberCommand(accountId, firstWorkerId, secondCommandId);
+  assert.equal(state.workerForCommand(accountId, firstCommandId), null);
+  assert.equal(
+    state.workerForCommand(accountId, secondCommandId),
+    firstWorkerId,
+  );
+
+  state.forgetCommand(accountId, secondCommandId);
+  assert.equal(state.workerForCommand(accountId, secondCommandId), null);
+
+  state.rememberCommand(accountId, firstWorkerId, secondCommandId);
+  state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  assert.equal(state.workerForCommand(accountId, secondCommandId), null);
+});
