@@ -899,7 +899,11 @@ function registerTools(
           },
         );
         if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommand(accountId, commandId);
+          state.forgetCommandForWorker(
+            accountId,
+            routedDeviceId,
+            commandId,
+          );
         }
         return commandSuccess(result, routedDeviceId, (command) => {
           if (command.status !== "running") {
@@ -949,7 +953,11 @@ function registerTools(
           },
         );
         if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommand(accountId, commandId);
+          state.forgetCommandForWorker(
+            accountId,
+            routedDeviceId,
+            commandId,
+          );
         }
         return commandSuccess(result, routedDeviceId, (command) => {
           if (command.status !== "running") {

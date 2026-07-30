@@ -370,6 +370,22 @@ export class RouterState {
     }
   }
 
+  forgetCommandForWorker(
+    accountId: string,
+    workerId: string,
+    commandId: string,
+  ): void {
+    const route = this.#commandRoutes.get(commandId);
+    if (
+      !route ||
+      route.accountId !== accountId ||
+      route.workerId !== workerId
+    ) {
+      return;
+    }
+    this.forgetCommand(accountId, commandId);
+  }
+
   listDevices(accountId: string): Array<{
     deviceId: string;
     name: string;

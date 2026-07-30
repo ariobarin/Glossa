@@ -324,6 +324,12 @@ test("keeps one bounded legacy command route per worker", () => {
     firstWorkerId,
   );
 
+  state.forgetCommandForWorker(accountId, secondWorkerId, secondCommandId);
+  assert.equal(
+    state.workerForCommand(accountId, secondCommandId),
+    firstWorkerId,
+  );
+
   state.forgetCommand(accountId, secondCommandId);
   assert.equal(state.workerForCommand(accountId, secondCommandId), null);
 

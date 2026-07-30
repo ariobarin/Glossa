@@ -295,10 +295,22 @@ test("routes cached command schemas without deviceId", async (context) => {
   const workerId = "00000000-0000-4000-8000-000000000011";
   const commandId = "00000000-0000-4000-8000-000000000012";
   const canceledCommandId = "00000000-0000-4000-8000-000000000013";
+  const otherDeviceId = "00000000-0000-4000-8000-000000000014";
+  const otherWorkerId = "00000000-0000-4000-8000-000000000015";
   const session = state.register(accountId, deviceId, "Test PC", workerId, {
     commandProgress: true,
     concurrentJobs: true,
   });
+  const otherSession = state.register(
+    accountId,
+    otherDeviceId,
+    "Other PC",
+    otherWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+    },
+  );
   const server = createMcpServer(testConfig(), state, accountId);
   const client = new Client({ name: "glossa-legacy-command-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -336,6 +348,39 @@ test("routes cached command schemas without deviceId", async (context) => {
     status: "running",
     sequence: 1,
   });
+
+  for (const toolName of ["get_command", "cancel_command"]) {
+    const misroutedCall = client.callTool({
+      name: toolName,
+      arguments: { deviceId: otherWorkerId, commandId },
+    });
+    const misroutedJob = await state.poll(
+      accountId,
+      otherDeviceId,
+      otherWorkerId,
+      otherSession.generation,
+      100,
+    );
+    assert.equal(misroutedJob?.type, toolName);
+    assert.ok(misroutedJob);
+    assert.equal(
+      state.complete(accountId, otherWorkerId, {
+        requestId: misroutedJob.requestId,
+        ok: false,
+        error: {
+          code: "command_not_found",
+          message: "The command was not found.",
+        },
+      }),
+      true,
+    );
+    const misroutedResult = await misroutedCall;
+    assert.equal(misroutedResult.isError, true);
+    assert.match(
+      JSON.stringify(misroutedResult.content),
+      /command_not_found/,
+    );
+  }
 
   const getCall = client.callTool({
     name: "get_command",
