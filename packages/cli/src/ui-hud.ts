@@ -1,6 +1,7 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
 import {
+  DEFAULT_COMMAND_FAST_WAIT_MS,
   DEFAULT_COMMAND_TIMEOUT_MS,
   type WorkerJob,
 } from "@glossa/protocol";
@@ -240,6 +241,10 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
           ...(job.timeoutMs === DEFAULT_COMMAND_TIMEOUT_MS
             ? []
             : [`timeout ${job.timeoutMs} ms`]),
+          ...(job.waitMs === undefined ||
+              job.waitMs === DEFAULT_COMMAND_FAST_WAIT_MS
+            ? []
+            : [`wait ${job.waitMs} ms`]),
         ],
         truncation: "middle",
       };

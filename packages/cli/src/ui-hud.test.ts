@@ -158,6 +158,46 @@ test("activity summaries include only non-default command timeouts", () => {
   assert.deepEqual(customTimeout.activities[0]!.summary.details, ["timeout 1 ms"]);
 });
 
+test("activity summaries include only non-default command start waits", () => {
+  const defaultWait = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-default-wait",
+      argv: ["node", "script.js"],
+      timeoutMs: 900_000,
+      waitMs: 750,
+    },
+  });
+  const noWait = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-no-wait",
+      argv: ["node", "script.js"],
+      timeoutMs: 900_000,
+      waitMs: 0,
+    },
+  });
+  const longWait = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-long-wait",
+      argv: ["node", "script.js"],
+      timeoutMs: 900_000,
+      waitMs: 5_000,
+    },
+  });
+
+  assert.deepEqual(defaultWait.activities[0]!.summary.details, []);
+  assert.deepEqual(noWait.activities[0]!.summary.details, ["wait 0 ms"]);
+  assert.deepEqual(longWait.activities[0]!.summary.details, ["wait 5000 ms"]);
+});
+
 test("bounds stored command summaries while preserving endpoints", () => {
   const state = applyHudEvent(connectedState(), {
     type: "activity",
