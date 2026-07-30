@@ -149,6 +149,42 @@ test("status devices use a compact readable row in narrow terminals", () => {
   assert.doesNotMatch(output, /Device\s+Workers\s+Platform\s+Last seen/);
 });
 
+test("status accents active worker counts but keeps offline devices muted", () => {
+  const output = renderHud(
+    {
+      ...connectedState(),
+      view: "status",
+      status: {
+        account: "dev@example.com",
+        relay: "https://relay.example",
+        activeWorkers: 1,
+        devices: [
+          {
+            id: "device-1",
+            name: "Active laptop",
+            platform: "win32-x64",
+            lastSeen: "just now",
+            status: "1 active worker",
+          },
+          {
+            id: "device-2",
+            name: "Offline laptop",
+            platform: "win32-x64",
+            lastSeen: "2h ago",
+            status: "offline",
+          },
+        ],
+      },
+    },
+    80,
+    true,
+    24,
+  );
+
+  assert.match(output, /\u001b\[38;2;173;152;255m1 active worker/);
+  assert.match(output, /\u001b\[38;2;170;164;181moffline/);
+});
+
 test("status shows every selectable device or an explicit overflow", () => {
   const devices = Array.from({ length: 12 }, (_, index) => ({
     id: `device-${index + 1}`,
@@ -290,4 +326,94 @@ test("rerenders on terminal resize and removes its listener on exit", async () =
   assert.equal(input.isRaw, false);
   assert.match(rendered, /\u001b\[\?1049h/);
   assert.match(rendered, /\u001b\[\?1049l/);
+});
+
+test("resize cannot revoke a device hidden after prompting", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 58;
+  output.rows = 22;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  const devices = Array.from({ length: 12 }, (_, index) => ({
+    id: `device-${index + 1}`,
+    name: `Device ${index + 1}`,
+    platform: "win32-x64",
+    lastSeen: "just now",
+    status: "offline",
+  }));
+  const revoked: string[] = [];
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent) => {
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+            legacyRelay: false,
+          },
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => ({
+        account: "dev@example.com",
+        relay: "https://relay.example",
+        activeWorkers: 0,
+        devices,
+      }),
+      revokeDevice: async (deviceId) => {
+        revoked.push(deviceId);
+      },
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  input.emit("keypress", "s", { name: "s" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  input.emit("keypress", "r", { name: "r" });
+  output.rows = 14;
+  output.emit("resize");
+  input.emit("keypress", "3", { name: "3" });
+  input.emit("keypress", "y", { name: "y" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(revoked, []);
+  assert.match(rendered, /Increase the terminal height to choose a device/);
+
+  output.rows = 22;
+  output.emit("resize");
+  input.emit("keypress", "r", { name: "r" });
+  input.emit("keypress", "1", { name: "1" });
+  output.rows = 14;
+  output.emit("resize");
+  input.emit("keypress", "y", { name: "y" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(revoked, []);
+
+  input.emit("keypress", "q", { name: "q" });
+  assert.equal(await run, "quit");
 });

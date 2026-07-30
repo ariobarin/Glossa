@@ -288,6 +288,9 @@ function renderDeviceRows(
   color: boolean,
 ): string[] {
   const number = String(index + 1).padStart(2);
+  const statusTone = device.status.includes("active")
+    ? PALETTE.purpleReadable
+    : PALETTE.muted;
   if (usable < 64) {
     const prefix = `${number}  `;
     const details = `${device.name} · ${device.status} · ${device.platform} · ${device.lastSeen}`;
@@ -295,7 +298,7 @@ function renderDeviceRows(
       `${style(color, `${PALETTE.purpleReadable};1`, number)}  ${
         style(
           color,
-          PALETTE.muted,
+          statusTone,
           truncate(details, Math.max(1, usable - prefix.length)),
         )
       }`,
@@ -313,7 +316,7 @@ function renderDeviceRows(
     `${style(color, `${PALETTE.purpleReadable};1`, number)}  ${
       style(color, PALETTE.ink, tableCell(device.name, nameWidth))
     }  ${
-      style(color, PALETTE.purpleReadable, tableCell(device.status, statusWidth))
+      style(color, statusTone, tableCell(device.status, statusWidth))
     }  ${
       style(color, PALETTE.muted, tableCell(device.platform, platformWidth))
     }  ${style(color, PALETTE.muted, tableCell(device.lastSeen, lastSeenWidth))}`,
@@ -616,6 +619,25 @@ function statusDeviceCapacity(
   return visible;
 }
 
+function terminalStatusDeviceCapacity(
+  state: HudState,
+  width: number,
+  height: number,
+): number {
+  const marginLength = width >= 24 ? 4 : 0;
+  const usable = Math.max(8, width - marginLength);
+  const terminalHeight = Math.max(6, height);
+  const bodyBudget = Math.max(
+    0,
+    terminalHeight -
+      renderHeader(state, usable, false).length -
+      renderOverlay(state, usable, false).length -
+      1 -
+      renderFooter(state, usable, false).length,
+  );
+  return statusDeviceCapacity(state, bodyBudget, usable);
+}
+
 export async function runSessionHud(
   actions: HudUiActions,
   input: ReadStream = process.stdin,
@@ -641,6 +663,34 @@ export async function runSessionHud(
       output.rows ?? 24,
     );
     output.write(`${color ? ANSI_BASE : ""}\u001b[H\u001b[2J${view}`);
+  };
+
+  const resize = (): void => {
+    if (
+      state.prompt?.type === "revoke-select" ||
+      state.prompt?.type === "revoke-confirm"
+    ) {
+      const deviceCount = terminalStatusDeviceCapacity(
+        state,
+        output.columns ?? 80,
+        output.rows ?? 24,
+      );
+      const selectedDeviceIsHidden = state.prompt.type === "revoke-confirm" &&
+        state.prompt.deviceIndex >= deviceCount;
+      if (deviceCount === 0 || selectedDeviceIsHidden) {
+        state = {
+          ...state,
+          prompt: undefined,
+          notice: "Increase the terminal height to choose a device.",
+        };
+      } else if (state.prompt.type === "revoke-select") {
+        state = {
+          ...state,
+          prompt: { type: "revoke-select", deviceCount },
+        };
+      }
+    }
+    render();
   };
 
   const loadStatus = async (): Promise<void> => {
@@ -695,7 +745,7 @@ export async function runSessionHud(
   input.setRawMode(true);
   input.resume();
   output.write("\u001b[?1049h\u001b[?25l");
-  output.on("resize", render);
+  output.on("resize", resize);
   render();
 
   const stop = (action: HudExitAction = "quit"): void => {
@@ -788,22 +838,10 @@ export async function runSessionHud(
               prompt: { type: "revoke-select", deviceCount: 0 },
               notice: undefined,
             };
-            const width = output.columns ?? 80;
-            const marginLength = width >= 24 ? 4 : 0;
-            const usable = Math.max(8, width - marginLength);
-            const terminalHeight = Math.max(6, output.rows ?? 24);
-            const bodyBudget = Math.max(
-              0,
-              terminalHeight -
-                renderHeader(promptState, usable, false).length -
-                renderOverlay(promptState, usable, false).length -
-                1 -
-                renderFooter(promptState, usable, false).length,
-            );
-            const deviceCount = statusDeviceCapacity(
+            const deviceCount = terminalStatusDeviceCapacity(
               promptState,
-              bodyBudget,
-              usable,
+              output.columns ?? 80,
+              output.rows ?? 24,
             );
             state = deviceCount === 0
               ? {
@@ -842,7 +880,7 @@ export async function runSessionHud(
     await session;
     return exitAction;
   } finally {
-    output.removeListener("resize", render);
+    output.removeListener("resize", resize);
     process.removeListener("SIGINT", stopFromSignal);
     process.removeListener("SIGTERM", stopFromSignal);
     input.setRawMode(wasRaw);
