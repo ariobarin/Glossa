@@ -84,6 +84,7 @@ for (const page of pages) {
   if (generatedPages.has(page.name)) {
     requireAll(page.html, [
       '<body class="docs-shell">',
+      '<div class="docs-page">',
       '<nav class="docs-sidebar" aria-label="Documentation">',
     ], page.name);
     if (!/<script type="module" src="\/copy\.js(?:\?[^"]*)?"><\/script>/.test(page.html)) {

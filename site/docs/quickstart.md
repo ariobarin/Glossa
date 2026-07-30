@@ -50,7 +50,8 @@ Confirm Glossa is available:
 glossa --version
 ```
 
-To update Glossa, run the same npm or direct installer command again.
+To update Glossa, stop every running Glossa session, then run the same npm or
+direct installer command again.
 
 ## Step 2: Start a workspace
 
