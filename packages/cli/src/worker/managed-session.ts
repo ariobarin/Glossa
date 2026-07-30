@@ -31,7 +31,7 @@ export type ManagedSessionEvent =
   | { type: "status"; status: RemoteWorkerStatus }
   | { type: "activity"; phase: "started"; job: WorkerJob }
   | { type: "activity"; phase: "returned"; job: WorkerJob; ok: boolean }
-  | { type: "notice"; message: string };
+  | { type: "notice"; message: string; persistAfterExit?: boolean };
 
 export interface ManagedSessionOptions {
   signal?: AbortSignal;
@@ -279,7 +279,11 @@ async function connectRemoteWorker(
         shouldShowConnectHint(endpoints.relayOrigin)
       ) {
         void announceConnectHint(connectHintStore(), (message) => {
-          report(options, { type: "notice", message }, message);
+          report(
+            options,
+            { type: "notice", message, persistAfterExit: true },
+            message,
+          );
         }).catch(() => undefined);
       }
       connectionState = status.state;

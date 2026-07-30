@@ -457,7 +457,7 @@ p {
 }
 
 .docs-content h2 {
-  scroll-margin-top: 32px;
+  scroll-margin-top: 84px;
   position: relative;
   margin: 0 0 18px;
   font-family: var(--serif);
@@ -468,7 +468,7 @@ p {
 }
 
 .docs-content h3 {
-  scroll-margin-top: 32px;
+  scroll-margin-top: 84px;
   position: relative;
   margin: 30px 0 14px;
   color: var(--ink);
@@ -885,6 +885,11 @@ p {
   .site-header {
     min-height: 56px;
     padding-inline: 14px;
+  }
+
+  .docs-content h2,
+  .docs-content h3 {
+    scroll-margin-top: 72px;
   }
 
   .header-links {

@@ -19,6 +19,7 @@ import {
   type StatusDetails,
 } from "./status-service.js";
 import {
+  retainPostExitNotice,
   runSessionHud,
   type HudExitAction,
   type HudStatus,
@@ -114,6 +115,7 @@ async function runWorkspace(
   const endpoints = loadRelayEndpoints();
   let credentials = (await authenticatedSession()).credentials;
   const statusService = new WorkspaceStatusService(credentials, endpoints);
+  let postExitNotice: string | undefined;
   const exitAction: HudExitAction = await runSessionHud({
     workspace: root,
     run: async (signal, onEvent) => {
@@ -121,7 +123,10 @@ async function runWorkspace(
         credentials,
         ...(label ? { workspaceLabel: label } : {}),
         signal,
-        onEvent,
+        onEvent: (event) => {
+          postExitNotice = retainPostExitNotice(postExitNotice, event);
+          onEvent(event);
+        },
         quiet: true,
         handleProcessSignals: false,
       });
@@ -139,6 +144,7 @@ async function runWorkspace(
       );
     },
   });
+  if (postExitNotice) console.error(postExitNotice);
   if (exitAction === "logout") await logoutFromGlossa();
 }
 

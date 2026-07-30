@@ -67,6 +67,15 @@ export interface HudUiActions {
   revokeDevice(deviceId: string, signal: AbortSignal): Promise<void>;
 }
 
+export function retainPostExitNotice(
+  current: string | undefined,
+  event: ManagedSessionEvent,
+): string | undefined {
+  return event.type === "notice" && event.persistAfterExit
+    ? event.message
+    : current;
+}
+
 export function initialHudState(workspace: string): HudState {
   return {
     workspace,
@@ -244,13 +253,19 @@ function renderActivity(
   state: HudState,
   usable: number,
   color: boolean,
+  bodyBudget: number,
 ): string[] {
   const lines = ["", sectionTitle("Recent activity", color)];
   if (state.activities.length === 0) {
     lines.push("", style(color, PALETTE.muted, "No activity yet."));
     return lines;
   }
-  for (const activity of state.activities.slice(-8)) {
+  const visibleEntryCount = Math.min(
+    8,
+    Math.max(0, Math.floor((bodyBudget - lines.length) / 3)),
+  );
+  if (visibleEntryCount === 0) return lines;
+  for (const activity of state.activities.slice(-visibleEntryCount)) {
     lines.push(
       "",
       `${activityGlyph(activity, color)} ${style(color, `${PALETTE.ink};1`, truncate(activity.tool, Math.max(1, usable - 2)))}`,
@@ -568,7 +583,7 @@ export function renderHud(
     usable,
   );
   const body = state.view === "activity"
-    ? renderActivity(state, usable, color)
+    ? renderActivity(state, usable, color, bodyBudget)
     : state.view === "status"
       ? renderStatus(state, usable, color, visibleDeviceCount)
       : state.view === "help"

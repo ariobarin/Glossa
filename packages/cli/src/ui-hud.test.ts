@@ -5,6 +5,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import {
   applyHudEvent,
   initialHudState,
+  retainPostExitNotice,
   renderHud,
   runSessionHud,
   type HudState,
@@ -33,6 +34,25 @@ test("keeps the default screen sparse and anchors controls at the bottom", () =>
   assert.doesNotMatch(output, /account permissions/i);
   assert.doesNotMatch(output, /latest activity/i);
   assert.match(lines.at(-1)!, /Q Quit/);
+});
+
+test("retains only notices intended for terminal history", () => {
+  const hint = "Follow the quickstart.";
+  assert.equal(
+    retainPostExitNotice(undefined, {
+      type: "notice",
+      message: hint,
+      persistAfterExit: true,
+    }),
+    hint,
+  );
+  assert.equal(
+    retainPostExitNotice(hint, {
+      type: "notice",
+      message: "Temporary compatibility warning.",
+    }),
+    hint,
+  );
 });
 
 test("shows the active tool in the header and updates one history entry", () => {
@@ -83,6 +103,26 @@ test("activity view shows tool names and compact input bodies", () => {
   assert.match(output, /"path":"README\.md"/);
   assert.doesNotMatch(output, /request-2/);
   assert.doesNotMatch(output, /tool call (started|completed)/i);
+});
+
+test("activity clipping keeps the newest complete entries", () => {
+  const activities = Array.from({ length: 8 }, (_, index) => ({
+    tool: "read_file" as const,
+    body: `{"path":"file-${index + 1}.txt"}`,
+    requestId: `request-${index + 1}`,
+    state: "returned" as const,
+  }));
+  const output = renderHud(
+    { ...connectedState(), view: "activity", activities },
+    70,
+    false,
+    24,
+  );
+
+  assert.doesNotMatch(output, /file-[12]\.txt/);
+  for (let index = 3; index <= 8; index += 1) {
+    assert.match(output, new RegExp(`file-${index}\\.txt`));
+  }
 });
 
 test("status metrics share one-line formatting and contain active devices only", () => {
