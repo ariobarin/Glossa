@@ -132,6 +132,43 @@ test("activity summaries preserve command endpoints as width changes", () => {
   assert.doesNotMatch(wide, /do not show this/);
 });
 
+test("activity summaries preserve search boundaries and command ids", () => {
+  const searched = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "search_text",
+      requestId: "request-long-search",
+      query: "q".repeat(256),
+      path: "p".repeat(100),
+      timeoutMs: 8_000,
+    },
+  });
+  const commandId = "12345678-1234-4234-8234-123456789abc";
+  const commanded = applyHudEvent(searched, {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "get_command",
+      requestId: "request-command-id",
+      commandId,
+    },
+  });
+  const output = renderHud(
+    { ...commanded, view: "activity" },
+    70,
+    false,
+    18,
+  );
+
+  assert.match(output, /query "q+…q*" in path "p+…p*"/);
+  assert.equal(
+    commanded.activities[1]!.summary.target,
+    `command ${commandId}`,
+  );
+  assert.match(output, /command 12345678.*123456789abc/);
+});
+
 test("activity summaries include only non-default command timeouts", () => {
   const defaultTimeout = applyHudEvent(connectedState(), {
     type: "activity",

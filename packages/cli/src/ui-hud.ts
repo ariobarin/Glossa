@@ -12,6 +12,7 @@ import {
 
 export interface HudActivitySummary {
   target: string;
+  targetSegments?: [leading: string, separator: string, trailing: string];
   details: string[];
   truncation: "end" | "middle";
 }
@@ -209,11 +210,12 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         ...(job.limit ? [`limit ${job.limit}`] : []),
         ...(job.cursor ? [`after ${quoteActivityInput(job.cursor)}`] : []),
       ]);
-    case "search_text":
+    case "search_text": {
+      const leading = `query ${quoteActivityInput(job.query)}`;
+      const trailing = `path ${quoteActivityInput(workspacePath(job.path))}`;
       return {
-        target: `query ${quoteActivityInput(job.query)} in path ${
-          quoteActivityInput(workspacePath(job.path))
-        }`,
+        target: `${leading} in ${trailing}`,
+        targetSegments: [leading, " in ", trailing],
         details: [
           ...(job.extensions?.length
             ? [
@@ -227,6 +229,7 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         ],
         truncation: "middle",
       };
+    }
     case "read_file_range": {
       let range: string | undefined;
       if (job.startLine && job.lineCount) {
@@ -266,32 +269,59 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
       };
     case "get_command":
       return {
-        target: `command ${job.commandId.slice(0, 8)}`,
+        target: `command ${job.commandId}`,
         details: [
           ...(job.waitMs ? [`wait ${job.waitMs} ms`] : []),
           ...(job.afterSequence === undefined
             ? []
             : [`after sequence ${job.afterSequence}`]),
         ],
-        truncation: "end",
+        truncation: "middle",
       };
     case "cancel_command":
       return {
-        target: `command ${job.commandId.slice(0, 8)}`,
+        target: `command ${job.commandId}`,
         details: [],
-        truncation: "end",
+        truncation: "middle",
       };
     default:
       return assertNever(job);
   }
 }
 
+function fitTargetSegments(
+  segments: [leading: string, separator: string, trailing: string],
+  width: number,
+): [leading: string, separator: string, trailing: string] | undefined {
+  const [leading, separator, trailing] = segments;
+  if (leading.length + separator.length + trailing.length <= width) {
+    return segments;
+  }
+  const available = width - separator.length;
+  if (available < 2) return undefined;
+  const leadingWidth = Math.floor(available / 2);
+  return [
+    truncateMiddle(leading, leadingWidth),
+    separator,
+    truncateMiddle(trailing, available - leadingWidth),
+  ];
+}
+
 function boundActivitySummary(summary: HudActivitySummary): HudActivitySummary {
+  const targetSegments = summary.targetSegments
+    ? fitTargetSegments(
+        summary.targetSegments,
+        MAX_STORED_ACTIVITY_TARGET_CHARS,
+      )
+    : undefined;
   return {
     ...summary,
-    target: summary.truncation === "middle"
-      ? truncateMiddle(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS)
-      : truncate(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS),
+    ...(targetSegments ? { targetSegments } : {}),
+    target: targetSegments
+      ? targetSegments.join("")
+      : summary.truncation === "middle"
+        ? truncateMiddle(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS)
+        : truncate(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS),
   };
 }
 
@@ -443,6 +473,10 @@ function renderActivitySummary(
   usable: number,
 ): string {
   if (summary.target.length > usable) {
+    if (summary.targetSegments) {
+      const segments = fitTargetSegments(summary.targetSegments, usable);
+      if (segments) return segments.join("");
+    }
     return summary.truncation === "middle"
       ? truncateMiddle(summary.target, usable)
       : truncate(summary.target, usable);
