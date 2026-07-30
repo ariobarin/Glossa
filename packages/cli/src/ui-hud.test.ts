@@ -69,7 +69,7 @@ test("shows the active tool in the header and updates one history entry", () => 
   });
   assert.match(renderHud(running, 70, false, 18), /Glossa\s+run_command/);
   assert.equal(running.activities.length, 1);
-  assert.match(running.activities[0]!.body, /npm/);
+  assert.match(running.activities[0]!.summary.target, /npm/);
 
   const finished = applyHudEvent(running, {
     type: "activity",
@@ -81,34 +81,100 @@ test("shows the active tool in the header and updates one history entry", () => 
   assert.equal(finished.activities[0]!.state, "returned");
 });
 
-test("activity view shows tool names and compact input bodies", () => {
+test("activity view summarizes file writes without exposing content", () => {
   const withActivity = applyHudEvent(connectedState(), {
     type: "activity",
     phase: "started",
     job: {
       type: "write_file",
       requestId: "request-2",
-      path: "README.md",
-      content: "updated",
+      path: "packages/cli/src/ui-hud.ts",
+      content: "secret payload",
+      expectedSha256: "a".repeat(64),
     },
   });
   const output = renderHud(
     { ...withActivity, view: "activity" },
-    54,
+    70,
     false,
     18,
   );
 
   assert.match(output, /write_file/);
-  assert.match(output, /"path":"README\.md"/);
+  assert.match(output, /packages\/cli\/src\/ui-hud\.ts · 14 B · guarded/);
+  assert.doesNotMatch(output, /secret payload|content|[a-f0-9]{64}/);
   assert.doesNotMatch(output, /request-2/);
   assert.doesNotMatch(output, /tool call (started|completed)/i);
+});
+
+test("activity summaries preserve command endpoints as width changes", () => {
+  const withActivity = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-3",
+      argv: ["npm", "run", "check", "--workspace", "@ariobarin/glossa"],
+      stdin: "do not show this",
+      timeoutMs: 30_000,
+    },
+  });
+  const state = { ...withActivity, view: "activity" as const };
+  const narrow = renderHud(state, 40, false, 18);
+  const wide = renderHud(state, 100, false, 18);
+
+  assert.match(narrow, /npm.*@ariobarin\/glossa/);
+  assert.doesNotMatch(narrow, /stdin|do not show this/);
+  assert.match(
+    wide,
+    /npm run check --workspace @ariobarin\/glossa · stdin 16 B/,
+  );
+  assert.doesNotMatch(wide, /do not show this/);
+});
+
+test("activity summaries hide edit text and escape terminal controls", () => {
+  const edited = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "edit_file",
+      requestId: "request-4",
+      path: "packages/cli/src/ui-hud.ts",
+      edits: [{ oldText: "private secret", newText: "replacement" }],
+      expectedSha256: "b".repeat(64),
+    },
+  });
+  const commanded = applyHudEvent(edited, {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-5",
+      argv: ["node", "script.js\n\u001b[2J", "target.ts"],
+      timeoutMs: 30_000,
+    },
+  });
+  const output = renderHud(
+    { ...commanded, view: "activity" },
+    90,
+    false,
+    22,
+  );
+
+  assert.match(output, /packages\/cli\/src\/ui-hud\.ts · 1 edit · guarded/);
+  assert.doesNotMatch(output, /private secret|replacement|oldText|newText/);
+  assert.match(output, /script\.js\\n\\u001b\[2J/);
+  assert.doesNotMatch(output, /\u001b/);
 });
 
 test("activity clipping keeps the newest complete entries", () => {
   const activities = Array.from({ length: 8 }, (_, index) => ({
     tool: "read_file" as const,
-    body: `{"path":"file-${index + 1}.txt"}`,
+    summary: {
+      target: `file-${index + 1}.txt`,
+      details: [],
+      truncation: "middle" as const,
+    },
     requestId: `request-${index + 1}`,
     state: "returned" as const,
   }));

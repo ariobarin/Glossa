@@ -6,9 +6,15 @@ import {
   type ManagedSessionEvent,
 } from "./worker/managed-session.js";
 
+export interface HudActivitySummary {
+  target: string;
+  details: string[];
+  truncation: "end" | "middle";
+}
+
 export interface HudActivity {
   tool: WorkerJob["type"];
-  body: string;
+  summary: HudActivitySummary;
   requestId: string;
   state: "working" | "returned" | "failed";
 }
@@ -99,12 +105,150 @@ function truncate(value: string, width: number): string {
   return `${value.slice(0, width - 1)}…`;
 }
 
-function compactJobBody(job: WorkerJob): string {
-  const entries = Object.entries(job).filter(([key]) =>
-    key !== "type" && key !== "requestId"
-  );
-  const body = JSON.stringify(Object.fromEntries(entries));
-  return truncate(body, 360);
+function truncateMiddle(value: string, width: number): string {
+  if (width <= 0) return "";
+  if (value.length <= width) return value;
+  if (width === 1) return "…";
+  const visible = width - 1;
+  const leading = Math.max(1, Math.floor(visible * 0.45));
+  const trailing = visible - leading;
+  return `${value.slice(0, leading)}…${
+    trailing > 0 ? value.slice(-trailing) : ""
+  }`;
+}
+
+function escapeInline(value: string, quote = false): string {
+  let escaped = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    if (quote && character === "\\") escaped += "\\\\";
+    else if (quote && character === '"') escaped += '\\"';
+    else if (character === "\n") escaped += "\\n";
+    else if (character === "\r") escaped += "\\r";
+    else if (character === "\t") escaped += "\\t";
+    else if (character === "\b") escaped += "\\b";
+    else if (character === "\f") escaped += "\\f";
+    else if (
+      codePoint < 0x20 ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+    ) {
+      escaped += `\\u${codePoint.toString(16).padStart(4, "0")}`;
+    } else escaped += character;
+  }
+  return escaped;
+}
+
+function quoteInline(value: string): string {
+  return `"${escapeInline(value, true)}"`;
+}
+
+function commandArgument(value: string): string {
+  return value.length === 0 || /[\s"']/u.test(value)
+    ? quoteInline(value)
+    : escapeInline(value);
+}
+
+function formatByteCount(value: string): string {
+  const bytes = Buffer.byteLength(value, "utf8");
+  if (bytes < 1024) return `${bytes} B`;
+  const kibibytes = bytes / 1024;
+  if (kibibytes < 1024) {
+    return `${kibibytes.toFixed(kibibytes < 10 ? 1 : 0)} KiB`;
+  }
+  return `${(kibibytes / 1024).toFixed(1)} MiB`;
+}
+
+function pathSummary(
+  path: string,
+  details: string[] = [],
+): HudActivitySummary {
+  return {
+    target: escapeInline(path),
+    details,
+    truncation: "middle",
+  };
+}
+
+function assertNever(_value: never): never {
+  throw new Error("Unsupported activity type.");
+}
+
+function summarizeJob(job: WorkerJob): HudActivitySummary {
+  switch (job.type) {
+    case "read_file":
+      return pathSummary(job.path);
+    case "list_files":
+      return pathSummary(job.path ?? ".", [
+        ...(job.recursive ? ["recursive"] : []),
+        ...(job.limit ? [`limit ${job.limit}`] : []),
+        ...(job.cursor ? ["continued"] : []),
+      ]);
+    case "search_text":
+      return {
+        target: `${quoteInline(job.query)} in ${escapeInline(job.path ?? ".")}`,
+        details: [
+          ...(job.extensions?.length
+            ? [
+                `extensions ${
+                  job.extensions.map((extension) => escapeInline(extension)).join(", ")
+                }`,
+              ]
+            : []),
+          ...(job.caseSensitive ? ["case-sensitive"] : []),
+          ...(job.maxResults ? [`limit ${job.maxResults}`] : []),
+        ],
+        truncation: "middle",
+      };
+    case "read_file_range": {
+      let range: string | undefined;
+      if (job.startLine && job.lineCount) {
+        range = `lines ${job.startLine}–${job.startLine + job.lineCount - 1}`;
+      } else if (job.startLine) range = `from line ${job.startLine}`;
+      else if (job.lineCount) range = `first ${job.lineCount} lines`;
+      return pathSummary(job.path, range ? [range] : []);
+    }
+    case "write_file":
+      return pathSummary(job.path, [
+        formatByteCount(job.content),
+        ...(job.expectedSha256 ? ["guarded"] : []),
+      ]);
+    case "edit_file":
+      return pathSummary(job.path, [
+        `${job.edits.length} ${job.edits.length === 1 ? "edit" : "edits"}`,
+        ...(job.expectedSha256 ? ["guarded"] : []),
+      ]);
+    case "run_command":
+      return {
+        target: job.argv
+          ? job.argv.map(commandArgument).join(" ")
+          : escapeInline(job.shellCommand ?? ""),
+        details: job.stdin === undefined
+          ? []
+          : [`stdin ${formatByteCount(job.stdin)}`],
+        truncation: "middle",
+      };
+    case "get_command":
+      return {
+        target: `command ${job.commandId.slice(0, 8)}`,
+        details: [
+          ...(job.waitMs ? [`wait ${job.waitMs} ms`] : []),
+          ...(job.afterSequence === undefined
+            ? []
+            : [`after sequence ${job.afterSequence}`]),
+        ],
+        truncation: "end",
+      };
+    case "cancel_command":
+      return {
+        target: `command ${job.commandId.slice(0, 8)}`,
+        details: [],
+        truncation: "end",
+      };
+    default:
+      return assertNever(job);
+  }
 }
 
 export function applyHudEvent(
@@ -140,7 +284,7 @@ export function applyHudEvent(
   );
   const activity: HudActivity = {
     tool: event.job.type,
-    body: compactJobBody(event.job),
+    summary: summarizeJob(event.job),
     requestId,
     state: event.phase === "started"
       ? "working"
@@ -250,6 +394,24 @@ function activityGlyph(activity: HudActivity, color: boolean): string {
     : style(color, PALETTE.purpleReadable, "●");
 }
 
+function renderActivitySummary(
+  summary: HudActivitySummary,
+  usable: number,
+): string {
+  if (summary.target.length > usable) {
+    return summary.truncation === "middle"
+      ? truncateMiddle(summary.target, usable)
+      : truncate(summary.target, usable);
+  }
+  const visibleDetails: string[] = [];
+  for (const detail of summary.details) {
+    const candidate = [summary.target, ...visibleDetails, detail].join(" · ");
+    if (candidate.length > usable) break;
+    visibleDetails.push(detail);
+  }
+  return [summary.target, ...visibleDetails].join(" · ");
+}
+
 function renderActivity(
   state: HudState,
   usable: number,
@@ -270,7 +432,7 @@ function renderActivity(
     lines.push(
       "",
       `${activityGlyph(activity, color)} ${style(color, `${PALETTE.ink};1`, truncate(activity.tool, Math.max(1, usable - 2)))}`,
-      style(color, PALETTE.muted, truncate(activity.body, usable)),
+      style(color, PALETTE.muted, renderActivitySummary(activity.summary, usable)),
     );
   }
   return lines;
