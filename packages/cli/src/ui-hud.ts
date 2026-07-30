@@ -160,12 +160,16 @@ function formatByteCount(value: string): string {
   return `${(kibibytes / 1024).toFixed(1)} MiB`;
 }
 
+function workspacePath(path: string | undefined): string {
+  return path || ".";
+}
+
 function pathSummary(
   path: string,
   details: string[] = [],
 ): HudActivitySummary {
   return {
-    target: escapeInline(path),
+    target: `path ${quoteInline(path)}`,
     details,
     truncation: "middle",
   };
@@ -180,14 +184,14 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
     case "read_file":
       return pathSummary(job.path);
     case "list_files":
-      return pathSummary(job.path ?? ".", [
+      return pathSummary(workspacePath(job.path), [
         ...(job.recursive ? ["recursive"] : []),
         ...(job.limit ? [`limit ${job.limit}`] : []),
         ...(job.cursor ? ["continued"] : []),
       ]);
     case "search_text":
       return {
-        target: `${quoteInline(job.query)} in ${escapeInline(job.path ?? ".")}`,
+        target: `query ${quoteInline(job.query)} in path ${quoteInline(workspacePath(job.path))}`,
         details: [
           ...(job.extensions?.length
             ? [
@@ -223,7 +227,7 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
       return {
         target: job.argv
           ? `argv [${job.argv.map(quoteInline).join(", ")}]`
-          : `shell ${escapeInline(job.shellCommand ?? "")}`,
+          : `shell ${quoteInline(job.shellCommand ?? "")}`,
         details: job.stdin === undefined
           ? []
           : [`stdin ${formatByteCount(job.stdin)}`],

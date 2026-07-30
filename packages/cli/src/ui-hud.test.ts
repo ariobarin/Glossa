@@ -101,7 +101,7 @@ test("activity view summarizes file writes without exposing content", () => {
   );
 
   assert.match(output, /write_file/);
-  assert.match(output, /packages\/cli\/src\/ui-hud\.ts · 14 B · guarded/);
+  assert.match(output, /path "packages\/cli\/src\/ui-hud\.ts" · 14 B · guarded/);
   assert.doesNotMatch(output, /secret payload|content|[a-f0-9]{64}/);
   assert.doesNotMatch(output, /request-2/);
   assert.doesNotMatch(output, /tool call (started|completed)/i);
@@ -151,8 +151,8 @@ test("activity summaries distinguish literal escapes from controls", () => {
       path: "literal\n.txt",
     },
   });
-  assert.equal(literalPath.activities[0]!.summary.target, "literal\\\\n.txt");
-  assert.equal(controlPath.activities[0]!.summary.target, "literal\\n.txt");
+  assert.equal(literalPath.activities[0]!.summary.target, 'path "literal\\\\n.txt"');
+  assert.equal(controlPath.activities[0]!.summary.target, 'path "literal\\n.txt"');
   assert.notEqual(
     literalPath.activities[0]!.summary.target,
     controlPath.activities[0]!.summary.target,
@@ -193,8 +193,101 @@ test("activity summaries distinguish literal escapes from controls", () => {
       timeoutMs: 30_000,
     },
   });
-  assert.equal(literalShell.activities[0]!.summary.target, "shell printf \\\\n");
-  assert.equal(controlShell.activities[0]!.summary.target, "shell printf \\n");
+  assert.equal(literalShell.activities[0]!.summary.target, 'shell "printf \\\\n"');
+  assert.equal(controlShell.activities[0]!.summary.target, 'shell "printf \\n"');
+});
+
+test("activity summaries quote targets and normalize empty paths", () => {
+  const delimiterPath = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "list_files",
+      requestId: "request-delimiter-path",
+      path: "src · recursive",
+      timeoutMs: 8_000,
+    },
+  });
+  const recursivePath = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "list_files",
+      requestId: "request-recursive-path",
+      path: "src",
+      recursive: true,
+      timeoutMs: 8_000,
+    },
+  });
+  assert.deepEqual(delimiterPath.activities[0]!.summary, {
+    target: 'path "src · recursive"',
+    details: [],
+    truncation: "middle",
+  });
+  assert.deepEqual(recursivePath.activities[0]!.summary, {
+    target: 'path "src"',
+    details: ["recursive"],
+    truncation: "middle",
+  });
+
+  const delimiterShell = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-delimiter-shell",
+      shellCommand: "echo · stdin 1 B",
+      timeoutMs: 30_000,
+    },
+  });
+  const stdinShell = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-stdin-shell",
+      shellCommand: "echo",
+      stdin: "x",
+      timeoutMs: 30_000,
+    },
+  });
+  assert.deepEqual(delimiterShell.activities[0]!.summary, {
+    target: 'shell "echo · stdin 1 B"',
+    details: [],
+    truncation: "middle",
+  });
+  assert.deepEqual(stdinShell.activities[0]!.summary, {
+    target: 'shell "echo"',
+    details: ["stdin 1 B"],
+    truncation: "middle",
+  });
+
+  const emptyList = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "list_files",
+      requestId: "request-empty-list",
+      path: "",
+      timeoutMs: 8_000,
+    },
+  });
+  const emptySearch = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "search_text",
+      requestId: "request-empty-search",
+      query: "needle",
+      path: "",
+      timeoutMs: 8_000,
+    },
+  });
+  assert.equal(emptyList.activities[0]!.summary.target, 'path "."');
+  assert.equal(
+    emptySearch.activities[0]!.summary.target,
+    'query "needle" in path "."',
+  );
 });
 
 test("activity summaries hide edit text and escape terminal controls", () => {
@@ -226,7 +319,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
     22,
   );
 
-  assert.match(output, /packages\/cli\/src\/ui-hud\.ts · 1 edit · guarded/);
+  assert.match(output, /path "packages\/cli\/src\/ui-hud\.ts" · 1 edit · guarded/);
   assert.doesNotMatch(output, /private secret|replacement|oldText|newText/);
   assert.match(output, /script\.js\\n\\u001b\[2J\\u202e/);
   assert.match(output, /\\u2066target\.ts\\u2069/);
