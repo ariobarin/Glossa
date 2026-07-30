@@ -8,7 +8,7 @@
     <title>Security | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=39" />
-    <script type="module" src="/copy.js?v=6"></script>
+    <script type="module" src="/copy.js?v=7"></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from site/pages/security.md. Run npm run docs:build after editing Markdown. -->
@@ -66,8 +66,9 @@
         <div class="docs-kicker">Safety</div>
         <div class="docs-title-row">
           <h1>Your worker controls workspace access.</h1>
-          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page link">Copy page</button>
+          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
+        <script type="application/json" data-page-markdown>"# Your worker controls workspace access.\n\nGlossa does not copy your selected folder into the hosted relay. The local worker reads files and runs commands. Requested file contents, command details, and command results are transmitted through the relay to the connected client.\n\n> **Command access is powerful.** Commands run with the full environment and permissions of the operating-system account that launched Glossa. File boundaries do not turn shell commands into a sandbox.\n\n## What you authorize\n\n- You choose one local directory when you start Glossa.\n- Connected clients can read and modify files inside that root.\n- Connected clients can run commands with the worker account's authority.\n- Press Ctrl+C in the worker terminal to start disconnecting. The worker is disconnected when the process exits.\n\n## What the relay stores\n\nThe hosted relay keeps only account, device, routing, and metadata-only audit records needed to operate the service. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.\n\n## How boundaries are enforced\n\n- Path containment and process controls are enforced on the local worker.\n- Every relay resource is scoped to the authenticated account.\n- The relay database stores only salted hashes of random device secrets.\n- The worker keeps its recoverable device secret in the operating-system credential store, or uses a warned local file fallback whose access controls depend on the operating system.\n- Hosted logs contain operational metadata rather than request or response content.\n\n## Use Glossa safely\n\n- Start with a folder you can safely test.\n- Never expose your home directory, a filesystem root, or a folder containing credentials.\n- Run the worker under a dedicated operating-system account when you need a stronger boundary.\n- Use a container or virtual machine when operating-system isolation is required.\n\n## Report a security issue\n\nDo not publish credentials, private source code, exploit details, or personal data. Follow the private-contact process on the [support page](/support).\n\nMaintainers and reviewers can read the complete [threat model and controls](/docs/security).\n"</script>
         <p class="docs-summary">Glossa does not copy your selected folder into the hosted relay. The local worker reads files and runs commands. Requested file contents, command details, and command results are transmitted through the relay to the connected client.</p>
       </header>
 

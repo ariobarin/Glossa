@@ -110,6 +110,14 @@ if (styles.includes(".docs-shell .site-header")) {
 }
 
 const interactions = await readFile(join(siteDirectory, "copy.js"), "utf8");
+assert.ok(
+  interactions.includes("await writeClipboard(markdown)"),
+  "page copy writes the embedded Markdown source",
+);
+assert.ok(
+  !interactions.includes("await writeClipboard(window.location.href)"),
+  "page copy does not write the page URL",
+);
 assert.equal(chooseActiveSection([
   { id: "before", top: -1800, visible: false },
   { id: "install", top: -900, visible: false },
@@ -143,6 +151,8 @@ assert.equal(
 
 const quickstart = pagesByName.get("site/docs/quickstart.html")?.html ?? "";
 requireAll(quickstart, [
+  'data-copy-page aria-label="Copy page">Copy</button>',
+  '<script type="application/json" data-page-markdown>',
   'data-tabs-storage="glossa-install-method-v2" data-tabs-param="install"',
   'data-tabs-storage="glossa-direct-platform-v2" data-tabs-param="platform"',
   'role="tablist" aria-label="Install method"',
