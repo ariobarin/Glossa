@@ -123,6 +123,15 @@ function truncateMiddle(value: string, width: number): string {
   }`;
 }
 
+const INLINE_FORMAT_CHARACTER = /\p{Cf}/u;
+
+function escapeCodePoint(codePoint: number): string {
+  const hexadecimal = codePoint.toString(16);
+  return codePoint <= 0xffff
+    ? `\\u${hexadecimal.padStart(4, "0")}`
+    : `\\u{${hexadecimal}}`;
+}
+
 function escapeInline(value: string, quote = false): string {
   let escaped = "";
   for (const character of value) {
@@ -137,15 +146,11 @@ function escapeInline(value: string, quote = false): string {
     else if (
       codePoint < 0x20 ||
       (codePoint >= 0x7f && codePoint <= 0x9f) ||
-      codePoint === 0x061c ||
-      codePoint === 0x200e ||
-      codePoint === 0x200f ||
-      (codePoint >= 0x202a && codePoint <= 0x202e) ||
-      (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+      INLINE_FORMAT_CHARACTER.test(character) ||
       codePoint === 0x2028 ||
       codePoint === 0x2029
     ) {
-      escaped += `\\u${codePoint.toString(16).padStart(4, "0")}`;
+      escaped += escapeCodePoint(codePoint);
     } else escaped += character;
   }
   return escaped;

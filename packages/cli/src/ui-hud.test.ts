@@ -243,6 +243,20 @@ test("activity summaries distinguish literal escapes from controls", () => {
     controlPath.activities[0]!.summary.target,
   );
 
+  const formatPath = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "read_file",
+      requestId: "request-format-path",
+      path: "fo\u200bo\u2060\u{e0001}.txt",
+    },
+  });
+  assert.equal(
+    formatPath.activities[0]!.summary.target,
+    'path "fo\\u200bo\\u2060\\u{e0001}.txt"',
+  );
+
   const argv = applyHudEvent(connectedState(), {
     type: "activity",
     phase: "started",
