@@ -149,8 +149,8 @@ test("status metrics share one-line formatting and contain active devices only",
   );
 
   assert.match(output.split("\n")[0]!, /Glossa\s+Connected/);
-  assert.match(output, /Active workspaces\s+3/);
-  assert.match(output, /Devices\s+1/);
+  assert.match(output, /3 Active workspaces/);
+  assert.match(output, /1 Devices/);
   assert.match(output, /Device\s+Workers\s+Platform\s+Last seen/);
   assert.match(
     output,
@@ -249,7 +249,7 @@ test("status shows every selectable device or an explicit overflow", () => {
     24,
   );
 
-  assert.match(output, /Devices\s+12/);
+  assert.match(output, /12 Devices/);
   assert.match(output, /Device 8/);
   assert.doesNotMatch(output, /Device 9/);
   assert.match(output, /4 more\. Use glossa devices revoke <id>\./);
