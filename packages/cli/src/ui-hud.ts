@@ -286,10 +286,8 @@ function metric(
     label,
     Math.max(0, usable - visibleValue.length - 1),
   );
-  const gap = " ".repeat(
-    Math.max(1, usable - visibleLabel.length - visibleValue.length),
-  );
-  return `${style(color, PALETTE.muted, visibleLabel)}${gap}${style(color, PALETTE.ink, visibleValue)}`;
+  const gap = visibleLabel ? " " : "";
+  return `${style(color, PALETTE.ink, visibleValue)}${gap}${style(color, PALETTE.muted, visibleLabel)}`;
 }
 
 function tableCell(value: string, width: number): string {
