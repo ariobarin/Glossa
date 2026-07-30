@@ -19,6 +19,13 @@ const expectedTools = [
   "search_text",
   "write_file",
 ];
+const accountId = "00000000-0000-4000-8000-000000000001";
+const product = {
+  name: "Glossa",
+  description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
+};
+const managedDocumentationUrl = "https://glossa.sh/docs/quickstart";
+const selfHostingDocumentationUrl = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
 
 interface JsonSchemaNode {
   description?: unknown;
@@ -51,10 +58,11 @@ function testConfig(publicOrigin = "https://mcp.glossa.sh") {
 }
 
 test("publishes reviewable MCP tool contracts", async (context) => {
+  const state = new RouterState();
   const server = createMcpServer(
     testConfig(),
-    new RouterState(),
-    "00000000-0000-4000-8000-000000000001",
+    state,
+    accountId,
   );
   const client = new Client({ name: "glossa-contract-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -105,7 +113,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("run_command")?.description ?? "", /network access/);
   assert.match(
     byName.get("list_devices")?.description ?? "",
-    /start or reconnect the local worker before retrying/,
+    /deployment-specific start instructions.*then retry/,
   );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_devices")?.outputSchema),
@@ -153,13 +161,15 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   });
   assert.equal(result.isError, undefined);
   assert.deepEqual(result.structuredContent, {
+    product,
+    documentationUrl: managedDocumentationUrl,
     devices: [],
     availability: "offline",
-    message: "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry. See https://glossa.sh/docs/quickstart for the official setup and reconnect steps.",
+    message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open, wait for the workspace to appear, then retry. See https://glossa.sh/docs/quickstart for setup help.",
   });
   assert.match(
     String(result.structuredContent?.message),
-    /Ask the user to start or reconnect the local Glossa worker.*then retry\./,
+    /open a terminal.*run `glossa`.*Keep that terminal open.*then retry\./,
   );
   assert.match(
     String(result.structuredContent?.message),
@@ -169,17 +179,39 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     {
       type: "text",
       text: JSON.stringify({
+        product,
+        documentationUrl: managedDocumentationUrl,
         devices: [],
         availability: "offline",
-        message: "No Glossa workspaces are online. Glossa is the local bridge between ChatGPT and one explicitly exposed workspace. Ask the user to start or reconnect the local Glossa worker in the workspace they want to expose, wait until it appears here, then retry. See https://glossa.sh/docs/quickstart for the official setup and reconnect steps.",
+        message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open, wait for the workspace to appear, then retry. See https://glossa.sh/docs/quickstart for setup help.",
       }),
     },
   ]);
 
+  const onlineWorkerId = "00000000-0000-4000-8000-000000000003";
+  state.register(
+    accountId,
+    "00000000-0000-4000-8000-000000000002",
+    "Test PC",
+    onlineWorkerId,
+  );
+  const onlineResult = await client.callTool({
+    name: "list_devices",
+    arguments: {},
+  });
+  assert.deepEqual(onlineResult.structuredContent, {
+    product,
+    documentationUrl: managedDocumentationUrl,
+    devices: [{ deviceId: onlineWorkerId, name: "Test PC", path: "." }],
+    availability: "online",
+    message: "Glossa workspaces are available.",
+  });
+
+  const selfHostedState = new RouterState();
   const selfHostedServer = createMcpServer(
     testConfig("https://mcp.example.com"),
-    new RouterState(),
-    "00000000-0000-4000-8000-000000000001",
+    selfHostedState,
+    accountId,
   );
   const selfHostedClient = new Client({ name: "glossa-self-hosted-test", version: "1.0.0" });
   const [selfHostedClientTransport, selfHostedServerTransport] = InMemoryTransport.createLinkedPair();
@@ -196,6 +228,15 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const selfHostedMessage = String(
     (selfHostedResult.structuredContent as { message?: unknown }).message,
   );
+  assert.deepEqual(
+    (selfHostedResult.structuredContent as { product?: unknown }).product,
+    product,
+  );
+  assert.equal(
+    (selfHostedResult.structuredContent as { documentationUrl?: unknown })
+      .documentationUrl,
+    selfHostingDocumentationUrl,
+  );
   assert.match(
     selfHostedMessage,
     /https:\/\/github\.com\/ariobarin\/glossa\/blob\/main\/docs\/self-hosting\.md/,
@@ -203,6 +244,37 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.doesNotMatch(
     selfHostedMessage,
     /glossa\.sh\/docs\/quickstart/,
+  );
+  assert.equal(
+    selfHostedMessage,
+    `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${selfHostingDocumentationUrl}. Keep that terminal open, wait for the workspace to appear, then retry.`,
+  );
+  assert.doesNotMatch(selfHostedMessage, /run `glossa`/);
+
+  selfHostedState.register(
+    accountId,
+    "00000000-0000-4000-8000-000000000004",
+    "Self-hosted PC",
+    "00000000-0000-4000-8000-000000000005",
+  );
+  const selfHostedOnlineResult = await selfHostedClient.callTool({
+    name: "list_devices",
+    arguments: {},
+  });
+  assert.equal(
+    (selfHostedOnlineResult.structuredContent as {
+      documentationUrl?: unknown;
+    }).documentationUrl,
+    selfHostingDocumentationUrl,
+  );
+  assert.deepEqual(
+    (selfHostedOnlineResult.structuredContent as { product?: unknown }).product,
+    product,
+  );
+  assert.equal(
+    (selfHostedOnlineResult.structuredContent as { availability?: unknown })
+      .availability,
+    "online",
   );
 
   const logout = await client.callTool({
