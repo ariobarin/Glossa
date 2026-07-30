@@ -45,7 +45,7 @@ Running glossa opens one workspace in an interactive terminal.
 Keys:
   d  recent activity
   s  account and devices
-  r  revoke a device
+  r  revoke a device from status
   l  sign out
   ?  help
   q  disconnect and quit`;

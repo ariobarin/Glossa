@@ -78,7 +78,8 @@ Glossa executes commands with the permissions and environment of the local accou
 - narrow exposed root;
 - temporary exposure by default;
 - treat local session startup as authorization for writes and bounded commands without per-operation confirmation;
-- display the full shell-authority warning before connection;
+- document full shell authority in setup and security guidance before users
+  start a session;
 - show write and command activity locally;
 - visible local status and immediate disconnect;
 - no implicit broad-root exposure.

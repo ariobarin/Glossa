@@ -41,7 +41,8 @@ Get-Content .\install.ps1
 .\install.ps1
 ```
 
-To update Glossa, run the same npm or direct installer command again.
+To update Glossa, stop every running Glossa session, then run the same npm or
+direct installer command again.
 
 ## Start a worker
 

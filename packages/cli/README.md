@@ -31,8 +31,8 @@ glossa
 ```
 
 The hosted commands run the tracked scripts in `site`. They verify native
-release checksums before installing. Rerun the original installation method to
-update Glossa.
+release checksums before installing. Stop every running Glossa session, then
+rerun the original installation method to update Glossa.
 
 Glossa opens Google sign-in automatically when needed using OAuth Device Authorization Flow. Public client and resource identifiers are built in, so testers do not configure OAuth values. Use the same Google account when authorizing Glossa in ChatGPT.
 
@@ -45,6 +45,10 @@ workspace, device, and current connection or tool status.
 Press `d` for compact tool history, `s` for account and device status, or `?`
 for help. The activity view shows each local tool name and a compact form of its
 input. Press `q` or Ctrl+C to disconnect.
+
+Connected clients can modify files inside the exposed workspace and run commands
+with the full environment and permissions of the operating-system account that
+launched Glossa.
 
 Use `glossa status` to show the signed-in account, relay, devices, and active
 workspaces. Use `glossa devices revoke <id>` to revoke a device. Use

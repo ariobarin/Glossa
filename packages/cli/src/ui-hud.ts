@@ -31,7 +31,7 @@ export interface HudStatus {
 type HudView = "session" | "activity" | "status" | "help";
 type HudPrompt =
   | { type: "logout" }
-  | { type: "revoke-select" }
+  | { type: "revoke-select"; deviceCount: number }
   | { type: "revoke-confirm"; deviceIndex: number };
 
 export type HudExitAction = "quit" | "logout";
@@ -281,6 +281,7 @@ function renderStatus(
   state: HudState,
   usable: number,
   color: boolean,
+  visibleDeviceCount: number,
 ): string[] {
   const lines = ["", sectionTitle("Account", color)];
   if (state.statusLoading) {
@@ -311,17 +312,34 @@ function renderStatus(
     return lines;
   }
 
-  state.status.devices.slice(0, 9).forEach((device, index) => {
+  state.status.devices.slice(0, visibleDeviceCount).forEach((device, index) => {
     const statusTone = device.status.includes("active")
       ? PALETTE.purpleReadable
       : PALETTE.muted;
     lines.push(
-      "",
-      `${style(color, `${PALETTE.coral};1`, String(index + 1).padStart(2))}  ${style(color, `${PALETTE.ink};1`, truncate(device.name, Math.max(1, usable - 4)))}`,
-      `    ${style(color, statusTone, truncate(device.status, Math.max(1, usable - 4)))}`,
-      `    ${style(color, PALETTE.muted, truncate(`${device.platform}  •  seen ${device.lastSeen}`, Math.max(1, usable - 4)))}`,
+      style(
+        color,
+        statusTone,
+        truncate(
+          `${String(index + 1).padStart(2)}  ${device.name}  ${device.status}  ${device.platform}  seen ${device.lastSeen}`,
+          usable,
+        ),
+      ),
     );
   });
+  const hiddenCount = state.status.devices.length - visibleDeviceCount;
+  if (hiddenCount > 0) {
+    lines.push(
+      style(
+        color,
+        PALETTE.muted,
+        truncate(
+          `${hiddenCount} more. Use glossa devices revoke <id>.`,
+          usable,
+        ),
+      ),
+    );
+  }
   return lines;
 }
 
@@ -479,13 +497,6 @@ export function renderHud(
   const usable = Math.max(8, width - margin.length * 2);
   const terminalHeight = Math.max(6, height);
   const header = renderHeader(state, usable, color);
-  const body = state.view === "activity"
-    ? renderActivity(state, usable, color)
-    : state.view === "status"
-      ? renderStatus(state, usable, color)
-      : state.view === "help"
-        ? renderHelp(usable, color)
-        : renderSession(state, usable, color);
   const overlay = renderOverlay(state, usable, color);
   const footer = [
     style(color, PALETTE.line, "─".repeat(usable)),
@@ -495,6 +506,17 @@ export function renderHud(
     0,
     terminalHeight - header.length - overlay.length - footer.length,
   );
+  const visibleDeviceCount = statusDeviceCapacity(
+    state,
+    bodyBudget,
+  );
+  const body = state.view === "activity"
+    ? renderActivity(state, usable, color)
+    : state.view === "status"
+      ? renderStatus(state, usable, color, visibleDeviceCount)
+      : state.view === "help"
+        ? renderHelp(usable, color)
+        : renderSession(state, usable, color);
   const visibleBody = body.slice(0, bodyBudget);
   const padding = Array.from(
     {
@@ -512,6 +534,31 @@ export function renderHud(
   const lines = [...header, ...visibleBody, ...padding, ...overlay, ...footer]
     .slice(-terminalHeight);
   return lines.map((line) => line ? `${margin}${line}` : "").join("\n");
+}
+
+function statusDeviceCapacity(
+  state: HudState,
+  bodyBudget: number,
+): number {
+  if (
+    state.view !== "status" ||
+    !state.status ||
+    state.statusLoading ||
+    state.status.devices.length === 0
+  ) {
+    return 0;
+  }
+  const statusPreambleLines = 10;
+  const available = Math.max(0, bodyBudget - statusPreambleLines);
+  let visible = Math.min(9, state.status.devices.length, available);
+  if (
+    state.status.devices.length > visible &&
+    visible > 0 &&
+    available - visible < 1
+  ) {
+    visible -= 1;
+  }
+  return visible;
 }
 
 export async function runSessionHud(
@@ -622,7 +669,7 @@ export async function runSessionHud(
             if (
               Number.isInteger(deviceIndex) &&
               deviceIndex >= 0 &&
-              deviceIndex < (state.status?.devices.length ?? 0)
+              deviceIndex < state.prompt.deviceCount
             ) {
               state = {
                 ...state,
@@ -681,11 +728,36 @@ export async function runSessionHud(
           if ((state.status?.devices.length ?? 0) === 0) {
             state = { ...state, notice: "There are no devices to revoke." };
           } else {
-            state = {
+            const promptState: HudState = {
               ...state,
-              prompt: { type: "revoke-select" },
+              prompt: { type: "revoke-select", deviceCount: 0 },
               notice: undefined,
             };
+            const width = output.columns ?? 80;
+            const marginLength = width >= 24 ? 4 : 0;
+            const usable = Math.max(8, width - marginLength);
+            const terminalHeight = Math.max(6, output.rows ?? 24);
+            const bodyBudget = Math.max(
+              0,
+              terminalHeight -
+                renderHeader(promptState, usable, false).length -
+                renderOverlay(promptState, usable, false).length -
+                1 -
+                renderFooter(promptState, usable, false).length,
+            );
+            const deviceCount = statusDeviceCapacity(
+              promptState,
+              bodyBudget,
+            );
+            state = deviceCount === 0
+              ? {
+                  ...state,
+                  notice: "Increase the terminal height to choose a device.",
+                }
+              : {
+                  ...promptState,
+                  prompt: { type: "revoke-select", deviceCount },
+                };
           }
           render();
         } else if (key.name === "l") {

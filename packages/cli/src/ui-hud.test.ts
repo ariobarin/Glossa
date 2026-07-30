@@ -114,6 +114,36 @@ test("status metrics share one-line formatting and contain active devices only",
   assert.doesNotMatch(output, /revoked/i);
 });
 
+test("status shows every selectable device or an explicit overflow", () => {
+  const devices = Array.from({ length: 12 }, (_, index) => ({
+    id: `device-${index + 1}`,
+    name: `Device ${index + 1}`,
+    platform: "win32-x64",
+    lastSeen: "just now",
+    status: "offline",
+  }));
+  const output = renderHud(
+    {
+      ...connectedState(),
+      view: "status",
+      status: {
+        account: "dev@example.com",
+        relay: "https://relay.example",
+        activeWorkers: 0,
+        devices,
+      },
+    },
+    70,
+    false,
+    24,
+  );
+
+  assert.match(output, /Devices\s+12/);
+  assert.match(output, /Device 9/);
+  assert.doesNotMatch(output, /Device 10/);
+  assert.match(output, /3 more\. Use glossa devices revoke <id>\./);
+});
+
 test("every view stays within a narrow terminal and retains its footer", () => {
   const state = connectedState();
   const views: HudState[] = [
