@@ -9,7 +9,7 @@ Use the public issue tracker for setup problems, reproducible bugs, documentatio
 - Press `s` in Glossa or run `glossa status` to validate the account, relay access, enrolled devices, and active workers.
 - Remove source code, local paths, account identifiers, tokens, and credentials from any diagnostic details.
 
-<p><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new">Open a GitHub issue</a></p>
+<p class="docs-action-row"><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new">Open a GitHub issue</a></p>
 
 ## Security reports
 
