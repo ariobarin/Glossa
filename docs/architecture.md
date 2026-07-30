@@ -78,7 +78,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - device IDs, ephemeral worker IDs, connection generations, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs
 - request waiters
-- one account-scoped latest-running-command compatibility route per worker, cleared on completion, reconnect, or disconnect
+- one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
 - recent nonces and bounded rate-limit counters
 
 ### Worker
