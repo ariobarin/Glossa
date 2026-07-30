@@ -454,6 +454,16 @@ test("resize cannot revoke a device hidden after prompting", async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.deepEqual(revoked, []);
 
+  output.rows = 22;
+  output.emit("resize");
+  input.emit("keypress", "r", { name: "r" });
+  input.emit("keypress", "1", { name: "1" });
+  input.emit("keypress", "y", { name: "y" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(revoked, ["device-1"]);
+  assert.match(rendered, /Revoked Device 1\./);
+
   input.emit("keypress", "q", { name: "q" });
   assert.equal(await run, "quit");
 });

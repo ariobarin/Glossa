@@ -816,9 +816,14 @@ export async function runSessionHud(
               state = {
                 ...state,
                 busy: false,
-                notice: `Revoked ${device.name}.`,
               };
               await loadStatus();
+              if (controller.signal.aborted) return;
+              state = {
+                ...state,
+                notice: `Revoked ${device.name}.`,
+              };
+              render();
             },
           ).catch((error: unknown) => {
             if (controller.signal.aborted) return;
