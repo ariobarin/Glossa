@@ -236,7 +236,8 @@ async function connectRemoteWorker(
   let connectedBefore = false;
   let labelNoticeShown = false;
   let legacyNoticeShown = false;
-  await new RemoteWorker({
+  let connectHintTask: Promise<void> | undefined;
+  const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
     ...(options.workspaceLabel
@@ -276,19 +277,28 @@ async function connectRemoteWorker(
         status.state === "connected" &&
         !status.reconnected &&
         !compatibilityNotice &&
-        shouldShowConnectHint(endpoints.relayOrigin)
+        shouldShowConnectHint(endpoints.relayOrigin) &&
+        !connectHintTask
       ) {
-        void announceConnectHint(connectHintStore(), (message) => {
-          report(
-            options,
-            { type: "notice", message, persistAfterExit: true },
-            message,
-          );
-        }).catch(() => undefined);
+        connectHintTask = announceConnectHint(
+          connectHintStore(),
+          (message) => {
+            report(
+              options,
+              { type: "notice", message, persistAfterExit: true },
+              message,
+            );
+          },
+        ).then(() => undefined).catch(() => undefined);
       }
       connectionState = status.state;
     },
-  }).run();
+  });
+  try {
+    await remoteWorker.run();
+  } finally {
+    await connectHintTask;
+  }
 }
 
 export function shouldRecoverRejectedDevice(
