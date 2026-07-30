@@ -123,13 +123,78 @@ test("activity summaries preserve command endpoints as width changes", () => {
   const narrow = renderHud(state, 40, false, 18);
   const wide = renderHud(state, 100, false, 18);
 
-  assert.match(narrow, /npm.*@ariobarin\/glossa/);
+  assert.match(narrow, /argv \["npm".*"@ariobarin\/glossa"\]/);
   assert.doesNotMatch(narrow, /stdin|do not show this/);
   assert.match(
     wide,
-    /npm run check --workspace @ariobarin\/glossa · stdin 16 B/,
+    /argv \["npm", "run", "check", "--workspace", "@ariobarin\/glossa"\] · stdin 16 B/,
   );
   assert.doesNotMatch(wide, /do not show this/);
+});
+
+test("activity summaries distinguish literal escapes from controls", () => {
+  const literalPath = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "read_file",
+      requestId: "request-literal-path",
+      path: "literal\\n.txt",
+    },
+  });
+  const controlPath = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "read_file",
+      requestId: "request-control-path",
+      path: "literal\n.txt",
+    },
+  });
+  assert.equal(literalPath.activities[0]!.summary.target, "literal\\\\n.txt");
+  assert.equal(controlPath.activities[0]!.summary.target, "literal\\n.txt");
+  assert.notEqual(
+    literalPath.activities[0]!.summary.target,
+    controlPath.activities[0]!.summary.target,
+  );
+
+  const argv = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-shellish-argv",
+      argv: ["node", "$HOME", "*", "a;id", "two words", "literal\\n", "actual\n"],
+      timeoutMs: 30_000,
+    },
+  });
+  assert.equal(
+    argv.activities[0]!.summary.target,
+    'argv ["node", "$HOME", "*", "a;id", "two words", "literal\\\\n", "actual\\n"]',
+  );
+
+  const literalShell = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-literal-shell",
+      shellCommand: "printf \\n",
+      timeoutMs: 30_000,
+    },
+  });
+  const controlShell = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-control-shell",
+      shellCommand: "printf \n",
+      timeoutMs: 30_000,
+    },
+  });
+  assert.equal(literalShell.activities[0]!.summary.target, "shell printf \\\\n");
+  assert.equal(controlShell.activities[0]!.summary.target, "shell printf \\n");
 });
 
 test("activity summaries hide edit text and escape terminal controls", () => {

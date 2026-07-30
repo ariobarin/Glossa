@@ -121,7 +121,7 @@ function escapeInline(value: string, quote = false): string {
   let escaped = "";
   for (const character of value) {
     const codePoint = character.codePointAt(0)!;
-    if (quote && character === "\\") escaped += "\\\\";
+    if (character === "\\") escaped += "\\\\";
     else if (quote && character === '"') escaped += '\\"';
     else if (character === "\n") escaped += "\\n";
     else if (character === "\r") escaped += "\\r";
@@ -149,11 +149,6 @@ function quoteInline(value: string): string {
   return `"${escapeInline(value, true)}"`;
 }
 
-function commandArgument(value: string): string {
-  return value.length === 0 || /[\s"']/u.test(value)
-    ? quoteInline(value)
-    : escapeInline(value);
-}
 
 function formatByteCount(value: string): string {
   const bytes = Buffer.byteLength(value, "utf8");
@@ -227,8 +222,8 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
     case "run_command":
       return {
         target: job.argv
-          ? job.argv.map(commandArgument).join(" ")
-          : escapeInline(job.shellCommand ?? ""),
+          ? `argv [${job.argv.map(quoteInline).join(", ")}]`
+          : `shell ${escapeInline(job.shellCommand ?? "")}`,
         details: job.stdin === undefined
           ? []
           : [`stdin ${formatByteCount(job.stdin)}`],
