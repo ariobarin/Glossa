@@ -130,7 +130,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       required?: string[];
     };
     assert.ok(inputSchema.properties?.deviceId);
-    assert.ok(inputSchema.required?.includes("deviceId"));
+    assert.equal(inputSchema.required?.includes("deviceId") ?? false, false);
   }
   const getCommandInputSchema = byName.get("get_command")?.inputSchema as {
     properties?: Record<string, unknown>;
@@ -286,6 +286,193 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
     instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. Choose the same intended Google account for both authorizations.`,
+  });
+});
+
+test("routes cached command schemas without deviceId", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000010";
+  const workerId = "00000000-0000-4000-8000-000000000011";
+  const commandId = "00000000-0000-4000-8000-000000000012";
+  const canceledCommandId = "00000000-0000-4000-8000-000000000013";
+  const otherDeviceId = "00000000-0000-4000-8000-000000000014";
+  const otherWorkerId = "00000000-0000-4000-8000-000000000015";
+  const session = state.register(accountId, deviceId, "Test PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
+  const otherSession = state.register(
+    accountId,
+    otherDeviceId,
+    "Other PC",
+    otherWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+    },
+  );
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-legacy-command-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const runCall = client.callTool({
+    name: "run_command",
+    arguments: { deviceId: workerId, argv: ["echo", "ok"] },
+  });
+  const runJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(runJob?.type, "run_command");
+  assert.ok(runJob);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: runJob.requestId,
+      ok: true,
+      value: { commandId, status: "running", sequence: 1 },
+    }),
+    true,
+  );
+  const runResult = await runCall;
+  assert.deepEqual(runResult.structuredContent, {
+    deviceId: workerId,
+    commandId,
+    status: "running",
+    sequence: 1,
+  });
+
+  for (const toolName of ["get_command", "cancel_command"]) {
+    const misroutedCall = client.callTool({
+      name: toolName,
+      arguments: { deviceId: otherWorkerId, commandId },
+    });
+    const misroutedJob = await state.poll(
+      accountId,
+      otherDeviceId,
+      otherWorkerId,
+      otherSession.generation,
+      100,
+    );
+    assert.equal(misroutedJob?.type, toolName);
+    assert.ok(misroutedJob);
+    assert.equal(
+      state.complete(accountId, otherWorkerId, {
+        requestId: misroutedJob.requestId,
+        ok: false,
+        error: {
+          code: "command_not_found",
+          message: "The command was not found.",
+        },
+      }),
+      true,
+    );
+    const misroutedResult = await misroutedCall;
+    assert.equal(misroutedResult.isError, true);
+    assert.match(
+      JSON.stringify(misroutedResult.content),
+      /command_not_found/,
+    );
+  }
+
+  const getCall = client.callTool({
+    name: "get_command",
+    arguments: { commandId },
+  });
+  const getJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(getJob?.type, "get_command");
+  assert.ok(getJob);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: getJob.requestId,
+      ok: true,
+      value: { commandId, status: "succeeded", sequence: 2, exitCode: 0 },
+    }),
+    true,
+  );
+  const getResult = await getCall;
+  assert.deepEqual(getResult.structuredContent, {
+    deviceId: workerId,
+    commandId,
+    status: "succeeded",
+    sequence: 2,
+    exitCode: 0,
+  });
+
+  const expiredRoute = await client.callTool({
+    name: "get_command",
+    arguments: { commandId },
+  });
+  assert.equal(expiredRoute.isError, true);
+  assert.match(JSON.stringify(expiredRoute.content), /command_not_found/);
+
+  const secondRunCall = client.callTool({
+    name: "run_command",
+    arguments: { deviceId: workerId, argv: ["sleep", "10"] },
+  });
+  const secondRunJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(secondRunJob?.type, "run_command");
+  assert.ok(secondRunJob);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: secondRunJob.requestId,
+      ok: true,
+      value: { commandId: canceledCommandId, status: "running", sequence: 1 },
+    }),
+    true,
+  );
+  await secondRunCall;
+
+  const cancelCall = client.callTool({
+    name: "cancel_command",
+    arguments: { commandId: canceledCommandId },
+  });
+  const cancelJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(cancelJob?.type, "cancel_command");
+  assert.ok(cancelJob);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: cancelJob.requestId,
+      ok: true,
+      value: {
+        commandId: canceledCommandId,
+        status: "canceled",
+        sequence: 2,
+      },
+    }),
+    true,
+  );
+  const cancelResult = await cancelCall;
+  assert.deepEqual(cancelResult.structuredContent, {
+    deviceId: workerId,
+    commandId: canceledCommandId,
+    status: "canceled",
+    sequence: 2,
   });
 });
 

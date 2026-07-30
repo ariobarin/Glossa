@@ -25,12 +25,18 @@ import {
 import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
-const deviceIdSchema = z
+const deviceIdFieldSchema = z
+  .string()
+  .uuid()
+  .describe("Online worker identifier returned by list_devices.");
+const deviceIdSchema = z.object({ deviceId: deviceIdFieldSchema }).strict();
+const optionalCommandDeviceIdSchema = z
   .object({
-    deviceId: z
-      .string()
-      .uuid()
-      .describe("Online worker identifier returned by list_devices."),
+    deviceId: deviceIdFieldSchema
+      .optional()
+      .describe(
+        "Online worker identifier returned by run_command. Pass it when available; omission is supported only for compatibility with clients that cached the earlier command schema.",
+      ),
   })
   .strict();
 const readFileInputSchema = readFileRequestSchema.extend(deviceIdSchema.shape);
@@ -44,8 +50,12 @@ const editFileInputSchema = editFileRequestSchema.safeExtend(deviceIdSchema.shap
 const runCommandInputSchema = runCommandRequestSchema.safeExtend(
   deviceIdSchema.shape,
 );
-const getCommandInputSchema = getCommandRequestSchema.extend(deviceIdSchema.shape);
-const cancelCommandInputSchema = cancelCommandRequestSchema.extend(deviceIdSchema.shape);
+const getCommandInputSchema = getCommandRequestSchema.extend(
+  optionalCommandDeviceIdSchema.shape,
+);
+const cancelCommandInputSchema = cancelCommandRequestSchema.extend(
+  optionalCommandDeviceIdSchema.shape,
+);
 const sha256Schema = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
@@ -332,10 +342,10 @@ const commandOutputSchema = workerCommandOutputSchema.extend({
   deviceId: z
     .string()
     .uuid()
-    .describe("Online worker identifier required by get_command and cancel_command."),
+    .describe("Online worker identifier returned for restart-safe get_command and cancel_command follow-ups."),
 });
 
-export const MCP_SERVER_VERSION = "0.1.0-beta.5";
+export const MCP_SERVER_VERSION = "0.1.0-beta.6";
 
 const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
 const MANAGED_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
@@ -453,7 +463,11 @@ function workerSuccess<T extends z.ZodObject>(
   return structuredResult(parsed.data);
 }
 
-function commandSuccess(result: WorkerResult, deviceId: string) {
+function commandSuccess(
+  result: WorkerResult,
+  deviceId: string,
+  onSuccess?: (value: z.infer<typeof workerCommandOutputSchema>) => void,
+) {
   if (!result.ok) return workerError(result);
   const parsed = workerCommandOutputSchema.safeParse(result.value);
   if (!parsed.success) {
@@ -462,6 +476,7 @@ function commandSuccess(result: WorkerResult, deviceId: string) {
       "The worker returned an invalid result.",
     );
   }
+  onSuccess?.(parsed.data);
   return structuredResult({ deviceId, ...parsed.data });
 }
 
@@ -832,7 +847,13 @@ function registerTools(
           deviceId,
           job,
         );
-        return commandSuccess(result, deviceId);
+        return commandSuccess(result, deviceId, (command) => {
+          if (command.status === "running") {
+            state.rememberCommand(accountId, deviceId, command.commandId);
+          } else {
+            state.forgetCommand(accountId, command.commandId);
+          }
+        });
       } catch (error) {
         return routedError(error);
       }
@@ -843,7 +864,7 @@ function registerTools(
     "get_command",
     {
       title: "Get Command",
-      description: "Use after run_command with its deviceId and commandId to read status and captured output so far. Pass the returned sequence as afterSequence with waitMs to return when output or status changes, for up to 15 seconds.",
+      description: "Use after run_command to read status and captured output so far. Pass its deviceId and commandId when available. Clients with a cached earlier schema may omit deviceId while the relay still remembers that running command. Pass the returned sequence as afterSequence with waitMs to return when output or status changes, for up to 15 seconds.",
       inputSchema: getCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
@@ -855,15 +876,40 @@ function registerTools(
       },
     },
     async ({ deviceId, commandId, waitMs, afterSequence }) => {
+      const routedDeviceId =
+        deviceId ?? state.workerForCommand(accountId, commandId);
+      if (!routedDeviceId) {
+        return errorResult(
+          "command_not_found",
+          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
+        );
+      }
       try {
-        const result = await executeJob(state, config, accountId, deviceId, {
-          type: "get_command",
-          requestId: randomUUID(),
-          commandId,
-          ...(waitMs === undefined ? {} : { waitMs }),
-          ...(afterSequence === undefined ? {} : { afterSequence }),
+        const result = await executeJob(
+          state,
+          config,
+          accountId,
+          routedDeviceId,
+          {
+            type: "get_command",
+            requestId: randomUUID(),
+            commandId,
+            ...(waitMs === undefined ? {} : { waitMs }),
+            ...(afterSequence === undefined ? {} : { afterSequence }),
+          },
+        );
+        if (!result.ok && result.error?.code === "command_not_found") {
+          state.forgetCommandForWorker(
+            accountId,
+            routedDeviceId,
+            commandId,
+          );
+        }
+        return commandSuccess(result, routedDeviceId, (command) => {
+          if (command.status !== "running") {
+            state.forgetCommand(accountId, command.commandId);
+          }
         });
-        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
@@ -874,7 +920,7 @@ function registerTools(
     "cancel_command",
     {
       title: "Cancel Command",
-      description: "Use only to stop a command started by run_command, passing its deviceId and commandId. Terminates its process tree but does not revert effects already caused.",
+      description: "Use only to stop a command started by run_command. Pass its deviceId and commandId when available. Clients with a cached earlier schema may omit deviceId while the relay still remembers that running command. Terminates its process tree but does not revert effects already caused.",
       inputSchema: cancelCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
@@ -886,13 +932,38 @@ function registerTools(
       },
     },
     async ({ deviceId, commandId }) => {
+      const routedDeviceId =
+        deviceId ?? state.workerForCommand(accountId, commandId);
+      if (!routedDeviceId) {
+        return errorResult(
+          "command_not_found",
+          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
+        );
+      }
       try {
-        const result = await executeJob(state, config, accountId, deviceId, {
-          type: "cancel_command",
-          requestId: randomUUID(),
-          commandId,
+        const result = await executeJob(
+          state,
+          config,
+          accountId,
+          routedDeviceId,
+          {
+            type: "cancel_command",
+            requestId: randomUUID(),
+            commandId,
+          },
+        );
+        if (!result.ok && result.error?.code === "command_not_found") {
+          state.forgetCommandForWorker(
+            accountId,
+            routedDeviceId,
+            commandId,
+          );
+        }
+        return commandSuccess(result, routedDeviceId, (command) => {
+          if (command.status !== "running") {
+            state.forgetCommand(accountId, command.commandId);
+          }
         });
-        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }

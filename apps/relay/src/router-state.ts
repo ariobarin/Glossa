@@ -14,6 +14,10 @@ function deviceKey(accountId: string, deviceId: string): string {
   return `${accountId}:${deviceId}`;
 }
 
+function workerKey(accountId: string, workerId: string): string {
+  return `${accountId}:${workerId}`;
+}
+
 interface PollWaiter {
   acceptedTypes?: ReadonlySet<WorkerJob["type"]>;
   resolve: (job: WorkerJob | null) => void;
@@ -51,6 +55,11 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
+interface CommandRoute {
+  accountId: string;
+  workerId: string;
+}
+
 function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
   if (
     job.type !== "get_command" ||
@@ -71,6 +80,8 @@ export class RouterState {
   readonly #workerCountsByDevice = new Map<string, number>();
   readonly #deviceSeenPersistedAt = new Map<string, number>();
   readonly #results = new Map<string, ResultWaiter>();
+  readonly #commandRoutes = new Map<string, CommandRoute>();
+  readonly #latestCommandByWorker = new Map<string, string>();
   #lastPrunedAt = 0;
 
   register(
@@ -97,7 +108,10 @@ export class RouterState {
       throw new Error("worker_identity_conflict");
     }
     previous?.pollWaiter?.resolve(null);
-    if (previous) this.#workerSessions.delete(previous.sessionDigest);
+    if (previous) {
+      this.#workerSessions.delete(previous.sessionDigest);
+      this.#forgetWorkerCommand(previous.accountId, previous.workerId);
+    }
     this.#rejectWorkerWaiters(workerId);
     if (!previous) {
       const key = deviceKey(accountId, deviceId);
@@ -324,6 +338,54 @@ export class RouterState {
   }
 
 
+  rememberCommand(
+    accountId: string,
+    workerId: string,
+    commandId: string,
+  ): void {
+    const key = workerKey(accountId, workerId);
+    const previousCommandId = this.#latestCommandByWorker.get(key);
+    if (previousCommandId && previousCommandId !== commandId) {
+      this.#commandRoutes.delete(previousCommandId);
+    }
+    this.#latestCommandByWorker.set(key, commandId);
+    this.#commandRoutes.set(commandId, { accountId, workerId });
+  }
+
+  workerForCommand(accountId: string, commandId: string): string | null {
+    this.#pruneStaleWorkers();
+    const route = this.#commandRoutes.get(commandId);
+    if (!route || route.accountId !== accountId) return null;
+    const worker = this.#workers.get(route.workerId);
+    return worker?.accountId === accountId ? route.workerId : null;
+  }
+
+  forgetCommand(accountId: string, commandId: string): void {
+    const route = this.#commandRoutes.get(commandId);
+    if (!route || route.accountId !== accountId) return;
+    this.#commandRoutes.delete(commandId);
+    const key = workerKey(accountId, route.workerId);
+    if (this.#latestCommandByWorker.get(key) === commandId) {
+      this.#latestCommandByWorker.delete(key);
+    }
+  }
+
+  forgetCommandForWorker(
+    accountId: string,
+    workerId: string,
+    commandId: string,
+  ): void {
+    const route = this.#commandRoutes.get(commandId);
+    if (
+      !route ||
+      route.accountId !== accountId ||
+      route.workerId !== workerId
+    ) {
+      return;
+    }
+    this.forgetCommand(accountId, commandId);
+  }
+
   listDevices(accountId: string): Array<{
     deviceId: string;
     name: string;
@@ -381,6 +443,7 @@ export class RouterState {
 
   #removeWorker(worker: ConnectedWorker): void {
     worker.pollWaiter?.resolve(null);
+    this.#forgetWorkerCommand(worker.accountId, worker.workerId);
     this.#workers.delete(worker.workerId);
     this.#workerSessions.delete(worker.sessionDigest);
     const key = deviceKey(worker.accountId, worker.deviceId);
@@ -392,6 +455,14 @@ export class RouterState {
       this.#deviceSeenPersistedAt.delete(key);
     }
     this.#rejectWorkerWaiters(worker.workerId);
+  }
+
+  #forgetWorkerCommand(accountId: string, workerId: string): void {
+    const key = workerKey(accountId, workerId);
+    const commandId = this.#latestCommandByWorker.get(key);
+    if (!commandId) return;
+    this.#latestCommandByWorker.delete(key);
+    this.#commandRoutes.delete(commandId);
   }
 
   #rejectWorkerWaiters(workerId: string): void {
