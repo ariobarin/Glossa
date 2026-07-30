@@ -52,7 +52,12 @@ Glossa signs in automatically and exposes the current directory. Pass a director
 
 On the first successful managed-relay connection on a computer, Glossa prints the ChatGPT quickstart link once. It records a `connect-hint-shown` marker in the local Glossa config directory so later starts stay quiet.
 
-Starting `glossa` prints the exposed root, connection state, security warning, and write or command activity. Connected clients can modify files inside that root and run commands with the full environment and permissions of the operating-system account that launched Glossa. Press Ctrl+C to disconnect.
+Starting `glossa` opens a responsive terminal interface with the workspace,
+device, and current connection or tool status. Press `d` for compact tool
+history, `s` for account and device status, or `?` for help. Connected clients
+can modify files inside the exposed root and run commands with the full
+environment and permissions of the operating-system account that launched
+Glossa. Press `q` or Ctrl+C to disconnect.
 
 ## ChatGPT
 

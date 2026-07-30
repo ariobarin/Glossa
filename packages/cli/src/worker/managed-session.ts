@@ -26,32 +26,11 @@ import {
   type RemoteWorkerStatus,
 } from "./remote-worker.js";
 
-const visibleActivity = new Set([
-  "write_file",
-  "edit_file",
-  "run_command",
-  "cancel_command",
-]);
-
-function activityLabel(type: WorkerJob["type"], ok: boolean): string {
-  if (type === "run_command") {
-    return ok ? "Command started" : "Command rejected";
-  }
-  if (type === "write_file") {
-    return ok ? "File write completed" : "File write rejected";
-  }
-  if (type === "edit_file") {
-    return ok ? "File edit completed" : "File edit rejected";
-  }
-  return ok
-    ? "Command cancellation completed"
-    : "Command cancellation rejected";
-}
-
 export type ManagedSessionEvent =
   | { type: "session"; root: string; deviceName: string }
   | { type: "status"; status: RemoteWorkerStatus }
-  | { type: "activity"; phase: "finished"; jobType: WorkerJob["type"]; requestId: string; ok: boolean }
+  | { type: "activity"; phase: "started"; job: WorkerJob }
+  | { type: "activity"; phase: "finished"; job: WorkerJob; ok: boolean }
   | { type: "notice"; message: string };
 
 export interface ManagedSessionOptions {
@@ -78,21 +57,23 @@ export function visibleWorker(
 ): WorkerHandler {
   return {
     async handle(job: WorkerJob): Promise<WorkerResult> {
-      const result = await worker.handle(job);
-      if (visibleActivity.has(job.type)) {
+      options.onEvent?.({ type: "activity", phase: "started", job });
+      try {
+        const result = await worker.handle(job);
         report(
           options,
-          {
-            type: "activity",
-            phase: "finished",
-            jobType: job.type,
-            requestId: job.requestId,
-            ok: result.ok,
-          },
-          `${activityLabel(job.type, result.ok)} (${job.requestId}).`,
+          { type: "activity", phase: "finished", job, ok: result.ok },
+          `${job.type} ${result.ok ? "succeeded" : "failed"} (${job.requestId}).`,
         );
+        return result;
+      } catch (error) {
+        report(
+          options,
+          { type: "activity", phase: "finished", job, ok: false },
+          `${job.type} failed (${job.requestId}).`,
+        );
+        throw error;
       }
-      return result;
     },
   };
 }

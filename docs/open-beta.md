@@ -51,7 +51,13 @@ Open a terminal in a disposable directory and run:
 glossa
 ```
 
-Glossa opens Google sign-in automatically when needed. Choose the Google account you want to use for Glossa. When you plan to expose several workspaces at once, start each with an explicit label such as `glossa --label frontend`; the label is sent only as ephemeral routing metadata and is never inferred from the local path. After sign-in, the terminal shows the workspace, connection, activity, and security warning. Press Ctrl+C to disconnect.
+Glossa opens Google sign-in automatically when needed. Choose the Google account
+you want to use for Glossa. When you plan to expose several workspaces at once,
+start each with an explicit label such as `glossa --label frontend`; the label
+is sent only as ephemeral routing metadata and is never inferred from the local
+path. After sign-in, the terminal shows the workspace, device, and current
+connection or tool status. Press `d` for compact tool history, `s` for account
+and device status, or `?` for help. Press `q` or Ctrl+C to disconnect.
 
 Starting Glossa authorizes connected clients to modify files inside the exposed root and run commands with the full environment and permissions of your operating-system account. Do not expose your home directory, a filesystem root, or a folder containing credentials.
 

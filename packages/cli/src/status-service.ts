@@ -80,12 +80,13 @@ export class WorkspaceStatusService {
       devicesRequest,
     ]);
     if (profile) this.#credentials = profile.credentials;
+    const activeDevices = devices.filter((device) => device.revokedAt === null);
 
     return {
       account: profile ? accountLabel(profile.profile) : "Account unavailable",
       relay: this.endpoints.relayOrigin,
-      activeWorkers: activeWorkerCount(devices),
-      devices,
+      activeWorkers: activeWorkerCount(activeDevices),
+      devices: activeDevices,
     };
   }
 }

@@ -39,11 +39,12 @@ Glossa opens Google sign-in automatically when needed using OAuth Device Authori
 OAuth and device credentials use the operating-system credential store. If it is unavailable, Glossa warns before using a restricted credential file.
 
 Glossa signs in automatically and exposes the current directory. Pass a directory
-to expose a different workspace. Plain terminal output shows connection changes,
-authority, and recent activity.
+to expose a different workspace. The responsive terminal interface shows the
+workspace, device, and current connection or tool status.
 
-The live session reports meaningful connection changes and one result for each
-write, command start, or cancellation. Press Ctrl+C to disconnect.
+Press `d` for compact tool history, `s` for account and device status, or `?`
+for help. The activity view shows each local tool name and a compact form of its
+input. Press `q` or Ctrl+C to disconnect.
 
 Use `glossa status` to show the signed-in account, relay, devices, and active
 workspaces. Use `glossa devices revoke <id>` to revoke a device. Use

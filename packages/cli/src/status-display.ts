@@ -13,7 +13,7 @@ export function formatStatus(status: StatusDetails): string[] {
   } else {
     lines.push(`Active workspaces: ${status.activeWorkers}`);
   }
-  if (status.devices.length === 0) lines.push("No devices enrolled.");
+  if (status.devices.length === 0) lines.push("No active devices.");
   else lines.push(...status.devices.map((device) => formatDeviceRow(device)));
   return lines;
 }

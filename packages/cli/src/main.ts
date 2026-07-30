@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 import { loadAuthConfig } from "./auth-config.js";
+import { validCredentials } from "./auth-session.js";
 import {
   signedInSession,
   type SignedInSession,
 } from "./auth-login.js";
 import { parseInvocation, UsageError } from "./cli-options.js";
 import type { StoredCredentials } from "./config-store.js";
+import { deviceStatus, formatRelativeTime } from "./device-format.js";
 import { logoutFromGlossa } from "./logout.js";
 import {
   loadRelayEndpoints,
   revokeDevice,
 } from "./relay-client.js";
 import { formatStatus } from "./status-display.js";
-import { WorkspaceStatusService } from "./status-service.js";
+import {
+  WorkspaceStatusService,
+  type StatusDetails,
+} from "./status-service.js";
+import {
+  runSessionHud,
+  type HudExitAction,
+  type HudStatus,
+} from "./ui-hud.js";
 import { runManagedSession } from "./worker/managed-session.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
 
@@ -30,7 +40,15 @@ Usage:
   glossa --help
   glossa --version
 
-Running glossa exposes one workspace until you press Ctrl+C.`;
+Running glossa opens one workspace in an interactive terminal.
+
+Keys:
+  d  recent activity
+  s  account and devices
+  r  revoke a device
+  l  sign out
+  ?  help
+  q  disconnect and quit`;
 
 async function withLoginSignal<T>(
   action: (signal: AbortSignal) => Promise<T>,
@@ -70,6 +88,19 @@ async function showStatus(): Promise<void> {
   for (const line of formatStatus(status)) console.log(line);
 }
 
+function hudStatus(status: StatusDetails): HudStatus {
+  return {
+    ...status,
+    devices: status.devices.map((device) => ({
+      id: device.id,
+      name: device.name,
+      platform: device.platform ?? "Unknown platform",
+      lastSeen: formatRelativeTime(device.lastSeenAt),
+      status: deviceStatus(device),
+    })),
+  };
+}
+
 async function revokeKnownDevice(deviceId: string): Promise<void> {
   const credentials = await authenticatedCredentials();
   await revokeDevice(loadRelayEndpoints(), credentials, deviceId);
@@ -81,11 +112,34 @@ async function runWorkspace(
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const endpoints = loadRelayEndpoints();
-  const credentials = (await authenticatedSession()).credentials;
-  await runManagedSession(root, endpoints, {
-    credentials,
-    ...(label ? { workspaceLabel: label } : {}),
+  let credentials = (await authenticatedSession()).credentials;
+  const statusService = new WorkspaceStatusService(credentials, endpoints);
+  const exitAction: HudExitAction = await runSessionHud({
+    workspace: root,
+    run: async (signal, onEvent) => {
+      await runManagedSession(root, endpoints, {
+        credentials,
+        ...(label ? { workspaceLabel: label } : {}),
+        signal,
+        onEvent,
+        quiet: true,
+        handleProcessSignals: false,
+      });
+    },
+    loadStatus: async (signal) => {
+      return hudStatus(await statusService.refresh(signal));
+    },
+    revokeDevice: async (deviceId, signal) => {
+      credentials = await validCredentials(credentials, { signal });
+      await revokeDevice(
+        endpoints,
+        credentials,
+        deviceId,
+        async (input, init) => await fetch(input, { ...init, signal }),
+      );
+    },
   });
+  if (exitAction === "logout") await logoutFromGlossa();
 }
 
 async function main(): Promise<void> {

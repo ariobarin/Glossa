@@ -96,3 +96,28 @@ test("reports unavailable active worker counts", async () => {
   assert.equal(status.account, "dev@example.com");
   assert.equal(status.activeWorkers, null);
 });
+
+test("omits revoked devices from status and workspace counts", async () => {
+  const service = new WorkspaceStatusService(credentials, endpoints, {
+    validCredentials: async (value) => value,
+    loadUserProfile: async (value) => ({
+      credentials: value,
+      profile: { sub: "account-1", email: "dev@example.com" },
+    }),
+    listDevices: async () => [
+      ...devices,
+      {
+        id: "device-2",
+        name: "Old laptop",
+        platform: "darwin-arm64",
+        lastSeenAt: "2026-07-20T12:00:00.000Z",
+        revokedAt: "2026-07-21T12:00:00.000Z",
+        activeWorkers: 4,
+      },
+    ],
+  });
+
+  const status = await service.refresh();
+  assert.deepEqual(status.devices, devices);
+  assert.equal(status.activeWorkers, 1);
+});

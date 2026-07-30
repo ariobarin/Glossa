@@ -273,7 +273,7 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
   );
 });
 
-test("reports one finished result for each visible activity", async () => {
+test("reports the actual job as it starts and finishes", async () => {
   const jobs: WorkerJob[] = [
     {
       type: "write_file",
@@ -324,20 +324,60 @@ test("reports one finished result for each visible activity", async () => {
     console.error = originalError;
   }
 
-  assert.equal(events.length, 4);
-  assert.equal(messages.length, 4);
-  for (const event of events) {
-    assert.equal((event as { phase?: string }).phase, "finished");
+  assert.equal(events.length, jobs.length * 2);
+  assert.equal(messages.length, jobs.length);
+  for (const [index, job] of jobs.entries()) {
+    assert.deepEqual(events[index * 2], {
+      type: "activity",
+      phase: "started",
+      job,
+    });
+    assert.deepEqual(events[index * 2 + 1], {
+      type: "activity",
+      phase: "finished",
+      job,
+      ok: true,
+    });
   }
   assert.deepEqual(
     messages.map((message) => message.replace(/ \(.+\)\.$/, "")),
     [
-      "File write completed",
-      "File edit completed",
-      "Command started",
-      "Command cancellation completed",
+      "write_file succeeded",
+      "edit_file succeeded",
+      "run_command succeeded",
+      "cancel_command succeeded",
+      "read_file succeeded",
     ],
   );
+});
+
+test("finishes a visible activity when its worker throws", async () => {
+  const job: WorkerJob = {
+    type: "read_file",
+    requestId: "00000000-0000-4000-8000-000000000007",
+    path: "README.md",
+  };
+  const events: unknown[] = [];
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const worker = visibleWorker(
+      {
+        async handle() {
+          throw new Error("read failed");
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    await assert.rejects(worker.handle(job), /read failed/);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(events, [
+    { type: "activity", phase: "started", job },
+    { type: "activity", phase: "finished", job, ok: false },
+  ]);
 });
 
 test("combines compatibility warnings so later notices cannot replace them", () => {
