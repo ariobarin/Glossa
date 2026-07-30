@@ -41,7 +41,8 @@ Get-Content .\install.ps1
 .\install.ps1
 ```
 
-After Glossa starts, press `u` to update using the original installation method. You can also run `glossa update` directly.
+To update Glossa, stop every running Glossa session, then run the same npm or
+direct installer command again.
 
 ## Start a worker
 
@@ -51,7 +52,13 @@ Open a terminal in a disposable directory and run:
 glossa
 ```
 
-Glossa opens Google sign-in automatically when needed. Choose the Google account you want to use for Glossa. When you plan to expose several workspaces at once, start each with an explicit label such as `glossa --label frontend`; the label is sent only as ephemeral routing metadata and is never inferred from the local path. After sign-in, the session display shows the workspace, connection, activity, and security warning. Press `s` for account and device status, `d` for recent activity, or `q` or Ctrl+C to disconnect. Press `?` to see every key.
+Glossa opens Google sign-in automatically when needed. Choose the Google account
+you want to use for Glossa. When you plan to expose several workspaces at once,
+start each with an explicit label such as `glossa --label frontend`; the label
+is sent only as ephemeral routing metadata and is never inferred from the local
+path. After sign-in, the terminal shows the workspace, device, and current
+connection or tool status. Press `d` for compact tool history, `s` for account
+and device status, or `?` for help. Press `q` or Ctrl+C to disconnect.
 
 Starting Glossa authorizes connected clients to modify files inside the exposed root and run commands with the full environment and permissions of your operating-system account. Do not expose your home directory, a filesystem root, or a folder containing credentials.
 
@@ -83,19 +90,18 @@ Only test writes and commands inside a folder you are comfortable modifying.
 
 ## Troubleshooting
 
-- Run `glossa doctor` for non-destructive local checks of the runtime, current directory, endpoints, and stored credentials. Use `glossa doctor --json` in scripts. JSON `ready` is false when warnings or failures remain, while the process exits nonzero only when a check fails. A stored credential is not a live sign-in check, so start Glossa to validate it when needed.
-- Press `s` in Glossa or run `glossa status` to check the account, relay, enrolled devices, and active workers.
+- Run `glossa status` in another terminal to check the account, relay, enrolled devices, and active workspaces.
 - No Create option: confirm Developer Mode is enabled and your workspace role has access.
 - No online devices: confirm the `glossa` terminal is still running.
 - App setup cannot discover tools: confirm `https://mcp.glossa.sh/healthz` returns `{"ok":true,"service":"glossa-relay"}`.
 - OAuth loops or expires: reopen the custom Glossa app and authorize it again.
-- Wrong Google account: press `l` in Glossa and confirm, or run `glossa logout`. Open Glossa under **Settings > Plugins** in ChatGPT and disconnect it, then reconnect and sign in on both sides with the same Google account. Use **Settings > Apps** if that is the label your workspace shows.
+- Wrong Google account: stop every Glossa worker, run `glossa logout`, then disconnect and reconnect Glossa under **Settings > Plugins** in ChatGPT. Sign in on both sides with the same Google account. Use **Settings > Apps** if that is the label your workspace shows.
 - Account access fails: open a GitHub issue without including tokens, credentials, or local paths.
 
 ## Disconnect
 
-Press `q` or Ctrl+C in the worker terminal. The device remains enrolled for later sessions, but it is offline and cannot access the local workspace while the worker is stopped.
+Press Ctrl+C in the worker terminal. The device remains enrolled for later sessions, but it is offline and cannot access the local workspace while the worker is stopped.
 
-Press `l` and confirm, or run `glossa logout`, to sign out locally and in the browser.
+Run `glossa logout` to sign out locally and in the browser.
 
-Press `s` to list enrolled computers, then `r` to revoke one. The direct forms are `glossa devices` and `glossa devices revoke <id>`.
+Run `glossa status` to list enrolled computers, then use `glossa devices revoke <id>` to remove one you no longer trust.

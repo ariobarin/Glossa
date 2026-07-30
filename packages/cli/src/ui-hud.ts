@@ -1,14 +1,16 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
+import type { WorkerJob } from "@glossa/protocol";
 import {
   statusMessage,
   type ManagedSessionEvent,
 } from "./worker/managed-session.js";
 
 export interface HudActivity {
-  label: string;
+  tool: WorkerJob["type"];
+  body: string;
   requestId: string;
-  ok?: boolean;
+  state: "working" | "returned" | "failed";
 }
 
 export interface HudDevice {
@@ -29,16 +31,21 @@ export interface HudStatus {
 type HudView = "session" | "activity" | "status" | "help";
 type HudPrompt =
   | { type: "logout" }
-  | { type: "update" }
-  | { type: "revoke-select" }
+  | { type: "revoke-select"; deviceCount: number }
   | { type: "revoke-confirm"; deviceIndex: number };
 
-export type HudExitAction = "quit" | "logout" | "update";
+export type HudExitAction = "quit" | "logout";
 
 export interface HudState {
   workspace: string;
   deviceName?: string;
-  connection: "starting" | "connecting" | "connected" | "retrying" | "disconnected" | "error";
+  connection:
+    | "starting"
+    | "connecting"
+    | "connected"
+    | "retrying"
+    | "disconnected"
+    | "error";
   connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
@@ -52,11 +59,21 @@ export interface HudState {
 
 export interface HudUiActions {
   workspace: string;
-  run(signal: AbortSignal, onEvent: (event: ManagedSessionEvent) => void): Promise<void>;
-  peekStatus?(): HudStatus | undefined;
-  subscribeStatus?(listener: (status: HudStatus) => void): () => void;
+  run(
+    signal: AbortSignal,
+    onEvent: (event: ManagedSessionEvent) => void,
+  ): Promise<void>;
   loadStatus(signal: AbortSignal): Promise<HudStatus>;
   revokeDevice(deviceId: string, signal: AbortSignal): Promise<void>;
+}
+
+export function retainPostExitNotice(
+  current: string | undefined,
+  event: ManagedSessionEvent,
+): string | undefined {
+  return event.type === "notice" && event.persistAfterExit
+    ? event.message
+    : current;
 }
 
 export function initialHudState(workspace: string): HudState {
@@ -75,21 +92,25 @@ export function initialHudState(workspace: string): HudState {
   };
 }
 
-function activityLabel(event: Extract<ManagedSessionEvent, { type: "activity" }>): string {
-  const noun =
-    event.jobType === "write_file"
-      ? "File write"
-      : event.jobType === "edit_file"
-        ? "File edit"
-        : event.jobType === "run_command"
-          ? "Command"
-          : "Cancellation";
-  if (event.phase === "requested") return `${noun} requested`;
-  if (event.jobType === "run_command") return `Command ${event.ok ? "started" : "rejected"}`;
-  return `${noun} ${event.ok ? "completed" : "rejected"}`;
+function truncate(value: string, width: number): string {
+  if (width <= 0) return "";
+  if (value.length <= width) return value;
+  if (width === 1) return "…";
+  return `${value.slice(0, width - 1)}…`;
 }
 
-export function applyHudEvent(state: HudState, event: ManagedSessionEvent): HudState {
+function compactJobBody(job: WorkerJob): string {
+  const entries = Object.entries(job).filter(([key]) =>
+    key !== "type" && key !== "requestId"
+  );
+  const body = JSON.stringify(Object.fromEntries(entries));
+  return truncate(body, 360);
+}
+
+export function applyHudEvent(
+  state: HudState,
+  event: ManagedSessionEvent,
+): HudState {
   if (event.type === "session") {
     return { ...state, workspace: event.root, deviceName: event.deviceName };
   }
@@ -104,15 +125,33 @@ export function applyHudEvent(state: HudState, event: ManagedSessionEvent): HudS
     return {
       ...state,
       connection: event.status.state,
-      connectedBefore: state.connectedBefore || event.status.state === "connected",
+      connectedBefore:
+        state.connectedBefore || event.status.state === "connected",
       message: undefined,
     };
   }
-  if (event.type === "notice") return { ...state, message: event.message };
-  const activity: HudActivity = event.phase === "finished"
-    ? { label: activityLabel(event), requestId: event.requestId, ok: event.ok }
-    : { label: activityLabel(event), requestId: event.requestId };
-  return { ...state, activities: [...state.activities.slice(-7), activity] };
+  if (event.type === "notice") {
+    return { ...state, notice: event.message };
+  }
+
+  const requestId = event.job.requestId;
+  const existingIndex = state.activities.findIndex(
+    (activity) => activity.requestId === requestId,
+  );
+  const activity: HudActivity = {
+    tool: event.job.type,
+    body: compactJobBody(event.job),
+    requestId,
+    state: event.phase === "started"
+      ? "working"
+      : event.ok
+        ? "returned"
+        : "failed",
+  };
+  const activities = [...state.activities];
+  if (existingIndex >= 0) activities[existingIndex] = activity;
+  else activities.push(activity);
+  return { ...state, activities: activities.slice(-20) };
 }
 
 const ANSI_BASE = "\u001b[22;38;2;244;241;251;48;2;17;16;22m";
@@ -129,28 +168,6 @@ function style(enabled: boolean, code: string, value: string): string {
   return enabled ? `\u001b[${code}m${value}${ANSI_BASE}` : value;
 }
 
-function truncate(value: string, width: number): string {
-  if (value.length <= width) return value;
-  if (width <= 1) return "…";
-  return `${value.slice(0, width - 1)}…`;
-}
-
-function wrapText(value: string, width: number): string[] {
-  const words = value.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    if (!line) line = word;
-    else if (`${line} ${word}`.length <= width) line += ` ${word}`;
-    else {
-      lines.push(line);
-      line = word;
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
 function sectionTitle(
   label: string,
   color: boolean,
@@ -159,147 +176,241 @@ function sectionTitle(
   return style(color, `${tone};1`, label.toUpperCase());
 }
 
-function renderHeader(view: HudView, usable: number, color: boolean): string[] {
-  const brand = "Glossa";
-  const fullViewLabel = {
-    session: "SESSION",
-    activity: "ACTIVITY",
-    status: "ACCOUNT & DEVICES",
-    help: "KEYBOARD",
-  }[view];
-  const viewLabel = truncate(
-    fullViewLabel,
-    Math.max(4, usable - brand.length - 1),
+function connectionLabel(state: HudState): string {
+  if (state.connection === "connected") return "Connected";
+  if (state.connection === "connecting" || state.connection === "starting") {
+    return "Connecting";
+  }
+  if (state.connection === "retrying") return "Reconnecting";
+  if (state.connection === "error") return "Error";
+  return "Disconnected";
+}
+
+function headerLabel(state: HudState): string {
+  const running = [...state.activities].reverse().find(
+    (activity) => activity.state === "working",
   );
-  const gap = " ".repeat(Math.max(1, usable - brand.length - viewLabel.length));
+  return running?.tool ?? connectionLabel(state);
+}
+
+function renderHeader(
+  state: HudState,
+  usable: number,
+  color: boolean,
+): string[] {
+  const brand = "Glossa";
+  const label = truncate(
+    headerLabel(state),
+    Math.max(1, usable - brand.length - 1),
+  );
+  const gap = " ".repeat(Math.max(1, usable - brand.length - label.length));
+  const tone = state.connection === "error" ? PALETTE.coral : PALETTE.purpleReadable;
   return [
-    `${style(color, `${PALETTE.purple};1`, brand)}${gap}${style(color, `${PALETTE.coral};1`, viewLabel)}`,
+    `${style(color, `${PALETTE.purple};1`, brand)}${gap}${style(color, `${tone};1`, label)}`,
     style(color, PALETTE.line, "─".repeat(usable)),
   ];
 }
 
-function connectionCopy(state: HudState): { glyph: string; label: string; detail: string } {
-  if (state.connection === "connected") {
-    return {
-      glyph: "●",
-      label: "Connected",
-      detail: state.message ?? "ChatGPT can use this workspace.",
-    };
-  }
-  if (state.connection === "connecting" || state.connection === "starting") {
-    return { glyph: "◌", label: "Connecting", detail: "Establishing the managed relay session…" };
-  }
-  if (state.connection === "retrying") {
-    return { glyph: "◌", label: "Reconnecting", detail: state.message ?? "Retrying automatically…" };
-  }
-  if (state.connection === "error") {
-    return { glyph: "×", label: "Error", detail: state.message ?? "The session stopped unexpectedly." };
-  }
-  return { glyph: "○", label: "Disconnected", detail: "The workspace is no longer exposed." };
-}
-
-function renderSession(state: HudState, usable: number, color: boolean): string[] {
-  const copy = connectionCopy(state);
-  const statusTone =
-    state.connection === "connected"
-      ? PALETTE.purpleReadable
-      : state.connection === "error"
-        ? PALETTE.coral
-        : PALETTE.muted;
+function renderSession(
+  state: HudState,
+  usable: number,
+  color: boolean,
+): string[] {
   const lines = [
-    "",
-    style(color, `${statusTone};1`, `${copy.glyph} ${copy.label}`),
-    ...wrapText(copy.detail, usable).map((line) => style(color, PALETTE.muted, line)),
     "",
     sectionTitle("Workspace", color),
     style(color, PALETTE.ink, truncate(state.workspace, usable)),
   ];
   if (state.deviceName) {
     lines.push(
-      style(color, PALETTE.muted, `Device  ${truncate(state.deviceName, Math.max(8, usable - 8))}`),
+      "",
+      sectionTitle("Device", color),
+      style(color, PALETTE.ink, truncate(state.deviceName, usable)),
     );
   }
-  lines.push(
-    "",
-    ...wrapText(
-      "Files and commands use your account permissions.",
-      Math.max(8, usable - 2),
-    ).map((line, index) =>
-      `${index === 0 ? style(color, `${PALETTE.coral};1`, "!") : " "} ${style(color, PALETTE.muted, line)}`
-    ),
-  );
-  const latest = state.activities.at(-1);
-  lines.push(
-    "",
-    sectionTitle("Latest activity", color),
-    latest
-      ? `${style(color, latest.ok === false ? PALETTE.coral : PALETTE.purpleReadable, latest.ok === false ? "×" : "•")} ${style(color, PALETTE.ink, truncate(latest.label, Math.max(8, usable - 2)))}`
-      : style(color, PALETTE.muted, "No tool activity yet."),
-  );
-  return lines;
-}
-
-function renderActivity(state: HudState, usable: number, color: boolean): string[] {
-  const lines = ["", sectionTitle("Recent activity", color)];
-  if (state.activities.length === 0) {
-    lines.push("", style(color, PALETTE.muted, "No tool activity yet."));
-  }
-  for (const activity of state.activities.slice(-8)) {
-    const outcome =
-      activity.ok === false
-        ? style(color, PALETTE.coral, "×")
-        : style(color, activity.ok === true ? PALETTE.purpleReadable : PALETTE.muted, "•");
+  if (
+    state.message &&
+    (state.connection === "retrying" || state.connection === "error")
+  ) {
     lines.push(
       "",
-      `${outcome} ${style(color, PALETTE.ink, truncate(activity.label, Math.max(8, usable - 2)))}`,
-      `  ${style(color, PALETTE.muted, `Request ${activity.requestId.slice(0, 8)}`)}`,
+      style(color, PALETTE.coral, truncate(state.message, usable)),
     );
   }
   return lines;
 }
 
-function renderStatus(state: HudState, usable: number, color: boolean): string[] {
+function activityGlyph(activity: HudActivity, color: boolean): string {
+  if (activity.state === "working") {
+    return style(color, PALETTE.muted, "◌");
+  }
+  return activity.state === "failed"
+    ? style(color, PALETTE.coral, "×")
+    : style(color, PALETTE.purpleReadable, "●");
+}
+
+function renderActivity(
+  state: HudState,
+  usable: number,
+  color: boolean,
+  bodyBudget: number,
+): string[] {
+  const lines = ["", sectionTitle("Recent activity", color)];
+  if (state.activities.length === 0) {
+    lines.push("", style(color, PALETTE.muted, "No activity yet."));
+    return lines;
+  }
+  const visibleEntryCount = Math.min(
+    8,
+    Math.max(0, Math.floor((bodyBudget - lines.length) / 3)),
+  );
+  if (visibleEntryCount === 0) return lines;
+  for (const activity of state.activities.slice(-visibleEntryCount)) {
+    lines.push(
+      "",
+      `${activityGlyph(activity, color)} ${style(color, `${PALETTE.ink};1`, truncate(activity.tool, Math.max(1, usable - 2)))}`,
+      style(color, PALETTE.muted, truncate(activity.body, usable)),
+    );
+  }
+  return lines;
+}
+
+function metric(
+  label: string,
+  value: string,
+  usable: number,
+  color: boolean,
+): string {
+  const visibleValue = truncate(value, Math.max(1, usable - 1));
+  const visibleLabel = truncate(
+    label,
+    Math.max(0, usable - visibleValue.length - 1),
+  );
+  const gap = " ".repeat(
+    Math.max(1, usable - visibleLabel.length - visibleValue.length),
+  );
+  return `${style(color, PALETTE.muted, visibleLabel)}${gap}${style(color, PALETTE.ink, visibleValue)}`;
+}
+
+function tableCell(value: string, width: number): string {
+  return truncate(value, width).padEnd(width);
+}
+
+function renderDeviceRows(
+  device: HudDevice,
+  index: number,
+  usable: number,
+  color: boolean,
+): string[] {
+  const number = String(index + 1).padStart(2);
+  const statusTone = device.status.includes("active")
+    ? PALETTE.purpleReadable
+    : PALETTE.muted;
+  if (usable < 64) {
+    const prefix = `${number}  `;
+    const details = `${device.name} · ${device.status} · ${device.platform} · ${device.lastSeen}`;
+    return [
+      `${style(color, `${PALETTE.purpleReadable};1`, number)}  ${
+        style(
+          color,
+          statusTone,
+          truncate(details, Math.max(1, usable - prefix.length)),
+        )
+      }`,
+    ];
+  }
+
+  const statusWidth = 16;
+  const platformWidth = 12;
+  const lastSeenWidth = Math.min(
+    18,
+    Math.max(10, Math.floor(usable * 0.18)),
+  );
+  const nameWidth = usable - 38 - lastSeenWidth;
+  return [
+    `${style(color, `${PALETTE.purpleReadable};1`, number)}  ${
+      style(color, PALETTE.ink, tableCell(device.name, nameWidth))
+    }  ${
+      style(color, statusTone, tableCell(device.status, statusWidth))
+    }  ${
+      style(color, PALETTE.muted, tableCell(device.platform, platformWidth))
+    }  ${style(color, PALETTE.muted, tableCell(device.lastSeen, lastSeenWidth))}`,
+  ];
+}
+
+function deviceTableHeading(usable: number, color: boolean): string | undefined {
+  if (usable < 64) return undefined;
+  const statusWidth = 16;
+  const platformWidth = 12;
+  const lastSeenWidth = Math.min(
+    18,
+    Math.max(10, Math.floor(usable * 0.18)),
+  );
+  const nameWidth = usable - 38 - lastSeenWidth;
+  return style(
+    color,
+    PALETTE.muted,
+    `    ${tableCell("Device", nameWidth)}  ${
+      tableCell("Workers", statusWidth)
+    }  ${tableCell("Platform", platformWidth)}  ${
+      tableCell("Last seen", lastSeenWidth)
+    }`,
+  );
+}
+
+function renderStatus(
+  state: HudState,
+  usable: number,
+  color: boolean,
+  visibleDeviceCount: number,
+): string[] {
   const lines = ["", sectionTitle("Account", color)];
   if (state.statusLoading) {
-    lines.push("", style(color, PALETTE.muted, "Loading account and devices…"));
+    lines.push("", style(color, PALETTE.muted, "Loading status…"));
     return lines;
   }
   if (!state.status) {
     lines.push("", style(color, PALETTE.muted, "Status is not loaded."));
     return lines;
   }
+
+  const workerCount = state.status.activeWorkers === null
+    ? "Unavailable"
+    : String(state.status.activeWorkers);
   lines.push(
     style(color, PALETTE.ink, truncate(state.status.account, usable)),
     style(color, PALETTE.muted, truncate(state.status.relay, usable)),
     "",
-    sectionTitle("Active workspaces", color, PALETTE.coral),
-    style(
-      color,
-      PALETTE.ink,
-      state.status.activeWorkers === null
-        ? "Unavailable"
-        : String(state.status.activeWorkers),
-    ),
+    sectionTitle("Overview", color),
+    metric("Active workspaces", workerCount, usable, color),
+    metric("Devices", String(state.status.devices.length), usable, color),
     "",
-    sectionTitle(`Devices  ${state.status.devices.length}`, color),
+    sectionTitle("Devices", color),
   );
+
   if (state.status.devices.length === 0) {
-    lines.push("", style(color, PALETTE.muted, "No devices enrolled."));
+    lines.push("", style(color, PALETTE.muted, "No active devices."));
+    return lines;
   }
-  state.status.devices.slice(0, 9).forEach((device, index) => {
-    const statusTone =
-      device.status.includes("active")
-        ? PALETTE.purpleReadable
-        : device.status === "revoked"
-          ? PALETTE.coral
-          : PALETTE.muted;
-    lines.push(
-      "",
-      `${style(color, `${PALETTE.coral};1`, String(index + 1).padStart(2))}  ${style(color, `${PALETTE.ink};1`, truncate(device.name, Math.max(8, usable - 4)))}`,
-      `    ${style(color, statusTone, device.status)}`,
-      `    ${style(color, PALETTE.muted, truncate(`${device.platform}  •  seen ${device.lastSeen}`, Math.max(8, usable - 4)))}`,
-    );
+
+  const heading = deviceTableHeading(usable, color);
+  if (heading) lines.push(heading);
+  state.status.devices.slice(0, visibleDeviceCount).forEach((device, index) => {
+    lines.push(...renderDeviceRows(device, index, usable, color));
   });
+  const hiddenCount = state.status.devices.length - visibleDeviceCount;
+  if (hiddenCount > 0) {
+    lines.push(
+      style(
+        color,
+        PALETTE.muted,
+        truncate(
+          `${hiddenCount} more. Use glossa devices revoke <id>.`,
+          usable,
+        ),
+      ),
+    );
+  }
   return lines;
 }
 
@@ -310,12 +421,10 @@ function helpRows(
   color: boolean,
   tone: string = PALETTE.purpleReadable,
 ): string[] {
-  const indent = " ".repeat(key.length + 2);
-  return wrapText(label, Math.max(8, usable - indent.length)).map((line, index) =>
-    index === 0
-      ? `${style(color, `${tone};1`, key)}  ${line}`
-      : `${indent}${line}`
-  );
+  const available = Math.max(1, usable - key.length - 2);
+  return [
+    `${style(color, `${tone};1`, key)}  ${truncate(label, available)}`,
+  ];
 }
 
 function renderHelp(usable: number, color: boolean): string[] {
@@ -327,24 +436,34 @@ function renderHelp(usable: number, color: boolean): string[] {
     ...helpRows("?", "Close help", usable, color),
     "",
     sectionTitle("Manage", color, PALETTE.coral),
-    ...helpRows("R", "Revoke a device from the status view", usable, color, PALETTE.coral),
+    ...helpRows(
+      "R",
+      "Revoke a device from status",
+      usable,
+      color,
+      PALETTE.coral,
+    ),
     ...helpRows("L", "Sign out", usable, color, PALETTE.coral),
-    ...helpRows("U", "Update Glossa", usable, color, PALETTE.coral),
     "",
     sectionTitle("Session", color),
     ...helpRows("Q", "Disconnect and quit", usable, color, PALETTE.coral),
-    ...helpRows("Ctrl+C", "Disconnect and quit", usable, color, PALETTE.coral),
+    ...helpRows(
+      "Ctrl+C",
+      "Disconnect and quit",
+      usable,
+      color,
+      PALETTE.coral,
+    ),
   ];
 }
 
-function promptText(state: HudState): { message: string; choices?: string } | undefined {
+function promptText(
+  state: HudState,
+): { message: string; choices?: string } | undefined {
   if (state.busy) return { message: "Working…" };
   if (!state.prompt) return undefined;
   if (state.prompt.type === "logout") {
     return { message: "Sign out and disconnect?", choices: "Y confirm  N cancel" };
-  }
-  if (state.prompt.type === "update") {
-    return { message: "Disconnect and update Glossa?", choices: "Y confirm  N cancel" };
   }
   if (state.prompt.type === "revoke-select") {
     return { message: "Choose a device number to revoke.", choices: "Esc cancel" };
@@ -367,9 +486,8 @@ function footerHints(state: HudState): HudHint[] {
     return [
       { key: "R", label: "Revoke", tone: PALETTE.coral },
       { key: "L", label: "Sign out", tone: PALETTE.coral },
-      { key: "U", label: "Update", tone: PALETTE.coral },
       { key: "Esc", label: "Session" },
-      { key: "Q", label: "Disconnect", tone: PALETTE.coral },
+      { key: "Q", label: "Quit", tone: PALETTE.coral },
     ];
   }
   if (state.view === "activity") {
@@ -377,24 +495,29 @@ function footerHints(state: HudState): HudHint[] {
       { key: "D", label: "Session" },
       { key: "S", label: "Status" },
       { key: "?", label: "Help" },
-      { key: "Q", label: "Disconnect", tone: PALETTE.coral },
+      { key: "Q", label: "Quit", tone: PALETTE.coral },
     ];
   }
   if (state.view === "help") {
     return [
       { key: "?", label: "Session" },
-      { key: "Q", label: "Disconnect", tone: PALETTE.coral },
+      { key: "Q", label: "Quit", tone: PALETTE.coral },
     ];
   }
   return [
     { key: "D", label: "Activity" },
     { key: "S", label: "Status" },
     { key: "?", label: "Help" },
-    { key: "Q", label: "Disconnect", tone: PALETTE.coral },
+    { key: "L", label: "Sign out", tone: PALETTE.coral },
+    { key: "Q", label: "Quit", tone: PALETTE.coral },
   ];
 }
 
-function renderFooter(state: HudState, usable: number, color: boolean): string[] {
+function renderFooter(
+  state: HudState,
+  usable: number,
+  color: boolean,
+): string[] {
   const rows: HudHint[][] = [[]];
   let rowLength = 0;
   for (const hint of footerHints(state)) {
@@ -413,41 +536,121 @@ function renderFooter(state: HudState, usable: number, color: boolean): string[]
   );
 }
 
+function renderOverlay(
+  state: HudState,
+  usable: number,
+  color: boolean,
+): string[] {
+  const prompt = promptText(state);
+  const message = prompt?.message ?? state.notice;
+  if (!message) return [];
+  const lines = [
+    style(color, PALETTE.line, "─".repeat(usable)),
+    style(
+      color,
+      prompt ? `${PALETTE.coral};1` : PALETTE.coral,
+      truncate(message, usable),
+    ),
+  ];
+  if (prompt?.choices) {
+    lines.push(style(color, PALETTE.muted, truncate(prompt.choices, usable)));
+  }
+  return lines;
+}
+
 export function renderHud(
   state: HudState,
   width = 80,
   color = !process.env.NO_COLOR,
+  height = 24,
 ): string {
-  const usable = Math.max(20, width - 4);
   const margin = width >= 24 ? "  " : "";
-  const lines = [...renderHeader(state.view, usable, color)];
-  if (state.view === "activity") lines.push(...renderActivity(state, usable, color));
-  else if (state.view === "status") lines.push(...renderStatus(state, usable, color));
-  else if (state.view === "help") lines.push(...renderHelp(usable, color));
-  else lines.push(...renderSession(state, usable, color));
-
-  if (state.notice) {
-    lines.push(
-      "",
-      style(color, PALETTE.line, "─".repeat(usable)),
-      ...wrapText(`! ${state.notice}`, usable).map((line) => style(color, PALETTE.coral, line)),
-    );
-  }
-  const prompt = promptText(state);
-  if (prompt) {
-    lines.push(
-      "",
-      style(color, PALETTE.line, "─".repeat(usable)),
-      style(color, `${PALETTE.coral};1`, truncate(prompt.message, usable)),
-    );
-    if (prompt.choices) lines.push(style(color, PALETTE.muted, prompt.choices));
-  }
-  lines.push(
-    "",
+  const usable = Math.max(8, width - margin.length * 2);
+  const terminalHeight = Math.max(6, height);
+  const header = renderHeader(state, usable, color);
+  const overlay = renderOverlay(state, usable, color);
+  const footer = [
     style(color, PALETTE.line, "─".repeat(usable)),
     ...renderFooter(state, usable, color),
+  ];
+  const bodyBudget = Math.max(
+    0,
+    terminalHeight - header.length - overlay.length - footer.length,
   );
+  const visibleDeviceCount = statusDeviceCapacity(
+    state,
+    bodyBudget,
+    usable,
+  );
+  const body = state.view === "activity"
+    ? renderActivity(state, usable, color, bodyBudget)
+    : state.view === "status"
+      ? renderStatus(state, usable, color, visibleDeviceCount)
+      : state.view === "help"
+        ? renderHelp(usable, color)
+        : renderSession(state, usable, color);
+  const visibleBody = body.slice(0, bodyBudget);
+  const padding = Array.from(
+    {
+      length: Math.max(
+        0,
+        terminalHeight -
+          header.length -
+          visibleBody.length -
+          overlay.length -
+          footer.length,
+      ),
+    },
+    () => "",
+  );
+  const lines = [...header, ...visibleBody, ...padding, ...overlay, ...footer]
+    .slice(-terminalHeight);
   return lines.map((line) => line ? `${margin}${line}` : "").join("\n");
+}
+
+function statusDeviceCapacity(
+  state: HudState,
+  bodyBudget: number,
+  usable: number,
+): number {
+  if (
+    state.view !== "status" ||
+    !state.status ||
+    state.statusLoading ||
+    state.status.devices.length === 0
+  ) {
+    return 0;
+  }
+  const statusPreambleLines = usable >= 64 ? 11 : 10;
+  const available = Math.max(0, bodyBudget - statusPreambleLines);
+  let visible = Math.min(9, state.status.devices.length, available);
+  if (
+    state.status.devices.length > visible &&
+    visible > 0 &&
+    available - visible < 1
+  ) {
+    visible -= 1;
+  }
+  return visible;
+}
+
+function terminalStatusDeviceCapacity(
+  state: HudState,
+  width: number,
+  height: number,
+): number {
+  const marginLength = width >= 24 ? 4 : 0;
+  const usable = Math.max(8, width - marginLength);
+  const terminalHeight = Math.max(6, height);
+  const bodyBudget = Math.max(
+    0,
+    terminalHeight -
+      renderHeader(state, usable, false).length -
+      renderOverlay(state, usable, false).length -
+      1 -
+      renderFooter(state, usable, false).length,
+  );
+  return statusDeviceCapacity(state, bodyBudget, usable);
 }
 
 export async function runSessionHud(
@@ -468,30 +671,61 @@ export async function runSessionHud(
   const color = !process.env.NO_COLOR;
 
   const render = (): void => {
-    const view = renderHud(state, output.columns ?? 80, color);
+    const view = renderHud(
+      state,
+      output.columns ?? 80,
+      color,
+      output.rows ?? 24,
+    );
     output.write(`${color ? ANSI_BASE : ""}\u001b[H\u001b[2J${view}`);
   };
 
+  const resize = (): void => {
+    if (
+      state.prompt?.type === "revoke-select" ||
+      state.prompt?.type === "revoke-confirm"
+    ) {
+      const deviceCount = terminalStatusDeviceCapacity(
+        state,
+        output.columns ?? 80,
+        output.rows ?? 24,
+      );
+      const selectedDeviceIsHidden = state.prompt.type === "revoke-confirm" &&
+        state.prompt.deviceIndex >= deviceCount;
+      if (deviceCount === 0 || selectedDeviceIsHidden) {
+        state = {
+          ...state,
+          prompt: undefined,
+          notice: "Increase the terminal height to choose a device.",
+        };
+      } else if (state.prompt.type === "revoke-select") {
+        state = {
+          ...state,
+          prompt: { type: "revoke-select", deviceCount },
+        };
+      }
+    }
+    render();
+  };
+
   const loadStatus = async (): Promise<void> => {
+    if (state.statusLoading) return;
     if (state.connection !== "connected" && state.connection !== "retrying") {
       state = { ...state, notice: "Status is available after Glossa connects." };
       render();
       return;
     }
-    const cached = state.status ?? actions.peekStatus?.();
     state = {
       ...state,
       view: "status",
-      status: cached,
-      statusLoading: !cached,
+      statusLoading: true,
       prompt: undefined,
       notice: undefined,
     };
     render();
     try {
-      const refreshed = await actions.loadStatus(controller.signal);
+      const status = await actions.loadStatus(controller.signal);
       if (controller.signal.aborted) return;
-      const status = actions.peekStatus?.() ?? refreshed;
       state = { ...state, status, statusLoading: false };
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -504,16 +738,13 @@ export async function runSessionHud(
     render();
   };
 
-  const unsubscribeStatus = actions.subscribeStatus?.((status) => {
-    state = { ...state, status, statusLoading: false };
-    if (state.view === "status") render();
-  }) ?? (() => undefined);
-
   const session = actions.run(controller.signal, (event) => {
     state = applyHudEvent(state, event);
     render();
   }).then(() => {
-    if (!controller.signal.aborted) state = { ...state, connection: "disconnected" };
+    if (!controller.signal.aborted) {
+      state = { ...state, connection: "disconnected" };
+    }
     render();
   }).catch((error: unknown) => {
     if (controller.signal.aborted) return;
@@ -529,6 +760,7 @@ export async function runSessionHud(
   input.setRawMode(true);
   input.resume();
   output.write("\u001b[?1049h\u001b[?25l");
+  output.on("resize", resize);
   render();
 
   const stop = (action: HudExitAction = "quit"): void => {
@@ -542,7 +774,6 @@ export async function runSessionHud(
 
   try {
     await new Promise<void>((resolve) => {
-      stopUi = resolve;
       const onKeypress = (value: string, key: Key): void => {
         if ((key.ctrl && key.name === "c") || key.name === "q") return stop();
         if (state.busy) return;
@@ -558,26 +789,43 @@ export async function runSessionHud(
             if (
               Number.isInteger(deviceIndex) &&
               deviceIndex >= 0 &&
-              deviceIndex < (state.status?.devices.length ?? 0)
+              deviceIndex < state.prompt.deviceCount
             ) {
-              state = { ...state, prompt: { type: "revoke-confirm", deviceIndex } };
+              state = {
+                ...state,
+                prompt: { type: "revoke-confirm", deviceIndex },
+              };
               render();
             }
             return;
           }
           if (key.name !== "y") return;
           if (state.prompt.type === "logout") return stop("logout");
-          if (state.prompt.type === "update") return stop("update");
           const device = state.status?.devices[state.prompt.deviceIndex];
           if (!device) return;
-          state = { ...state, busy: true, prompt: undefined, notice: undefined };
+          state = {
+            ...state,
+            busy: true,
+            prompt: undefined,
+            notice: undefined,
+          };
           render();
-          void actions.revokeDevice(device.id, controller.signal).then(async () => {
-            if (controller.signal.aborted) return;
-            state = { ...state, busy: false, notice: `Revoked ${device.name}.` };
-            render();
-            await loadStatus();
-          }).catch((error: unknown) => {
+          void actions.revokeDevice(device.id, controller.signal).then(
+            async () => {
+              if (controller.signal.aborted) return;
+              state = {
+                ...state,
+                busy: false,
+              };
+              await loadStatus();
+              if (controller.signal.aborted) return;
+              state = {
+                ...state,
+                notice: `Revoked ${device.name}.`,
+              };
+              render();
+            },
+          ).catch((error: unknown) => {
             if (controller.signal.aborted) return;
             state = {
               ...state,
@@ -605,14 +853,33 @@ export async function runSessionHud(
           if ((state.status?.devices.length ?? 0) === 0) {
             state = { ...state, notice: "There are no devices to revoke." };
           } else {
-            state = { ...state, prompt: { type: "revoke-select" }, notice: undefined };
+            const promptState: HudState = {
+              ...state,
+              prompt: { type: "revoke-select", deviceCount: 0 },
+              notice: undefined,
+            };
+            const deviceCount = terminalStatusDeviceCapacity(
+              promptState,
+              output.columns ?? 80,
+              output.rows ?? 24,
+            );
+            state = deviceCount === 0
+              ? {
+                  ...state,
+                  notice: "Increase the terminal height to choose a device.",
+                }
+              : {
+                  ...promptState,
+                  prompt: { type: "revoke-select", deviceCount },
+                };
           }
           render();
         } else if (key.name === "l") {
-          state = { ...state, prompt: { type: "logout" }, notice: undefined };
-          render();
-        } else if (key.name === "u") {
-          state = { ...state, prompt: { type: "update" }, notice: undefined };
+          state = {
+            ...state,
+            prompt: { type: "logout" },
+            notice: undefined,
+          };
           render();
         } else if (value === "?" || key.sequence === "?") {
           state = {
@@ -633,7 +900,7 @@ export async function runSessionHud(
     await session;
     return exitAction;
   } finally {
-    unsubscribeStatus();
+    output.removeListener("resize", resize);
     process.removeListener("SIGINT", stopFromSignal);
     process.removeListener("SIGTERM", stopFromSignal);
     input.setRawMode(wasRaw);

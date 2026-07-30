@@ -147,22 +147,6 @@ jobs:
         run: node packages/cli/scripts/smoke-standalone.mjs "dist/standalone/${{ matrix.asset }}"
       - name: Smoke direct installer
         run: node packages/cli/scripts/smoke-direct-installer.mjs "dist/standalone/${{ matrix.asset }}" "${{ matrix.asset }}"
-      - name: Build standalone update fixture
-        env:
-          GLOSSA_BUN_TARGET: ${{ matrix.target }}
-          GLOSSA_STANDALONE_ASSET: ${{ matrix.asset }}
-          GLOSSA_STANDALONE_OUTPUT_DIR: dist/update-fixture
-          GLOSSA_STANDALONE_VERSION: 0.1.0-beta.999
-        run: ${{ matrix.bun-command }} packages/cli/scripts/build-standalone.ts
-      - name: Sign macOS update fixture
-        if: runner.os == 'macOS'
-        run: |
-          codesign --force --deep --sign - \
-            --entitlements packages/cli/scripts/macos-entitlements.plist \
-            "dist/update-fixture/${{ matrix.asset }}"
-          codesign --verify --deep --strict "dist/update-fixture/${{ matrix.asset }}"
-      - name: Smoke standalone update
-        run: node packages/cli/scripts/smoke-standalone-update.mjs "dist/standalone/${{ matrix.asset }}" "dist/update-fixture/${{ matrix.asset }}" "${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}

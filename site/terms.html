@@ -8,7 +8,7 @@
     <title>Terms | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=39" />
-    <script src="/copy.js?v=4" defer></script>
+    <script type="module" src="/copy.js?v=6"></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from site/pages/terms.md. Run npm run docs:build after editing Markdown. -->
@@ -79,41 +79,51 @@
 <blockquote>
 <p><strong>Command authority:</strong> Starting the Glossa worker authorizes connected clients to modify files within the exposed root and run commands with the full permissions and environment of the operating-system account that launched it. Commands can access networks, developer credentials, and files outside the exposed file root.</p>
 </blockquote>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="eligibility-and-authority"><a class="heading-anchor" href="#eligibility-and-authority" aria-label="Link to Eligibility and authority"></a>Eligibility and authority</h2>
 <p>You must be at least 13, legally able to accept these terms, and authorized to use every computer, account, workspace, credential, and service you expose through Glossa. If you use Glossa for an organization, you represent that you have authority to accept these terms for that organization.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="acceptable-use"><a class="heading-anchor" href="#acceptable-use" aria-label="Link to Acceptable use"></a>Acceptable use</h2>
 <p>You may use Glossa only for lawful activity on systems and data you are authorized to access. You must not use it to compromise accounts or systems, distribute malware, evade access controls, expose another person&#39;s private data, violate third-party terms, or facilitate activity prohibited by applicable law or OpenAI&#39;s usage policies.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="your-responsibilities"><a class="heading-anchor" href="#your-responsibilities" aria-label="Link to Your responsibilities"></a>Your responsibilities</h2>
 <ul>
 <li>Expose only a narrow workspace that is appropriate for the requested task.</li>
-<li>Review the printed root and authority warning before leaving a worker connected.</li>
+<li>Review the exposed root and understand the documented command authority before leaving a worker connected.</li>
 <li>Protect your computer, Glossa credentials, OAuth account, and connected MCP clients.</li>
 <li>Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.</li>
 <li>Stop the worker immediately if activity is unexpected.</li>
 <li>Verify changes, command results, and external side effects before relying on them.</li>
 </ul>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="your-content"><a class="heading-anchor" href="#your-content" aria-label="Link to Your content"></a>Your content</h2>
 <p>You retain your rights in source code, files, command input, and command output processed through Glossa. You grant Glossa permission to transmit and process that content only as needed to perform your requests, secure the service, and comply with law.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="third-party-services"><a class="heading-anchor" href="#third-party-services" aria-label="Link to Third-party services"></a>Third-party services</h2>
 <p>Glossa depends on third-party services including ChatGPT or another MCP client, Auth0, Heroku, Vercel, GitHub, and npm. Their separate terms and policies apply to their services. Glossa is not made by or endorsed by OpenAI.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="availability-and-changes"><a class="heading-anchor" href="#availability-and-changes" aria-label="Link to Availability and changes"></a>Availability and changes</h2>
 <p>Glossa is currently provided as an open beta. Features may change, fail, or be withdrawn. The relay uses process-local routing, so active jobs may be lost during a restart. Glossa may limit or disable access to protect users, the service, or third parties.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="no-warranties"><a class="heading-anchor" href="#no-warranties" aria-label="Link to No warranties"></a>No warranties</h2>
 <p>To the maximum extent permitted by law, Glossa is provided as available and without warranties of uninterrupted operation, fitness for a particular purpose, accuracy, security, or preservation of data. You are responsible for backups and for reviewing actions before and after execution.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="limitation-of-liability"><a class="heading-anchor" href="#limitation-of-liability" aria-label="Link to Limitation of liability"></a>Limitation of liability</h2>
 <p>To the maximum extent permitted by law, the Glossa operator is not liable for indirect, incidental, special, consequential, or exemplary damages, or for lost data, credentials, profits, business, or goodwill arising from use of the service. These limitations do not apply where the law does not permit them.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="suspension-and-termination"><a class="heading-anchor" href="#suspension-and-termination" aria-label="Link to Suspension and termination"></a>Suspension and termination</h2>
 <p>You may stop using Glossa at any time. Glossa may suspend or terminate access for misuse, security risk, legal requirements, or service discontinuation. Provisions that by their nature should survive termination, including responsibility, warranty, and liability terms, will survive.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="changes-and-contact"><a class="heading-anchor" href="#changes-and-contact" aria-label="Link to Changes and contact"></a>Changes and contact</h2>
 <p>These terms may change as the service develops. Updated terms will be posted here with a new revision date. Questions can be submitted through the <a href="/support">support page</a>.</p>
 </section>

@@ -39,12 +39,7 @@ function activeWorkerCount(devices: RelayDevice[]): number | null {
 
 export class WorkspaceStatusService {
   #credentials: StoredCredentials;
-  #account: string | undefined;
-  #accountUnavailable = false;
-  #cached: StatusDetails | undefined;
   #inFlight: Promise<StatusDetails> | undefined;
-  #profileInFlight: Promise<void> | undefined;
-  readonly #listeners = new Set<(status: StatusDetails) => void>();
 
   constructor(
     credentials: StoredCredentials,
@@ -54,41 +49,22 @@ export class WorkspaceStatusService {
     this.#credentials = credentials;
   }
 
-  peek(): StatusDetails | undefined {
-    return this.#cached;
-  }
-
-  subscribe(listener: (status: StatusDetails) => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  }
-
-  async refresh(
-    signal?: AbortSignal,
-    waitForAccount = false,
-  ): Promise<StatusDetails> {
-    let status: StatusDetails;
-    if (this.#inFlight) {
-      status = await this.#inFlight;
-    } else {
-      const pending = this.#load(signal);
-      this.#inFlight = pending;
-      try {
-        status = await pending;
-      } finally {
-        if (this.#inFlight === pending) this.#inFlight = undefined;
-      }
+  async refresh(signal?: AbortSignal): Promise<StatusDetails> {
+    if (this.#inFlight) return await this.#inFlight;
+    const pending = this.#load(signal);
+    this.#inFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#inFlight === pending) this.#inFlight = undefined;
     }
-    if (waitForAccount && this.#profileInFlight) {
-      await this.#profileInFlight;
-      return this.#cached ?? status;
-    }
-    return status;
   }
 
   async #load(signal?: AbortSignal): Promise<StatusDetails> {
     const validate = this.dependencies.validCredentials ?? validCredentials;
     const devicesForAccount = this.dependencies.listDevices ?? listDevices;
+    const profileForAccount =
+      this.dependencies.loadUserProfile ?? loadUserProfile;
     const baseFetch = this.dependencies.fetch ?? fetch;
     const fetchRequest: FetchLike = signal
       ? async (input, init) => await baseFetch(input, { ...init, signal })
@@ -99,65 +75,30 @@ export class WorkspaceStatusService {
       signal ? { signal } : {},
     );
     const requestCredentials = this.#credentials;
-
-    if (!this.#account && !this.#profileInFlight) {
-      this.#accountUnavailable = false;
-      const pending = this.#loadAccount(
-        requestCredentials,
-        fetchRequest,
-        signal,
-      ).catch(() => {
-        if (signal?.aborted) return;
-        this.#accountUnavailable = true;
-        if (this.#cached) {
-          this.#cached = { ...this.#cached, account: "Account unavailable" };
-          this.#publish(this.#cached);
-        }
-      });
-      this.#profileInFlight = pending;
-      void pending.finally(() => {
-        if (this.#profileInFlight === pending) this.#profileInFlight = undefined;
-      });
-    }
-
-    const devices = await devicesForAccount(
+    const profileRequest = profileForAccount(
+      requestCredentials,
+      signal ? { signal, fetch: fetchRequest } : { fetch: fetchRequest },
+    ).catch((error: unknown) => {
+      if (signal?.aborted) throw error;
+      return null;
+    });
+    const devicesRequest = devicesForAccount(
       this.endpoints,
       requestCredentials,
       fetchRequest,
     );
+    const [profile, devices] = await Promise.all([
+      profileRequest,
+      devicesRequest,
+    ]);
+    if (profile) this.#credentials = profile.credentials;
+    const activeDevices = devices.filter((device) => device.revokedAt === null);
 
-    const status = {
-      account: this.#account ??
-        (this.#accountUnavailable ? "Account unavailable" : "Loading account…"),
+    return {
+      account: profile ? accountLabel(profile.profile) : "Account unavailable",
       relay: this.endpoints.relayOrigin,
-      activeWorkers: activeWorkerCount(devices),
-      devices,
+      activeWorkers: activeWorkerCount(activeDevices),
+      devices: activeDevices,
     };
-    this.#cached = status;
-    this.#publish(status);
-    return status;
-  }
-
-  async #loadAccount(
-    credentials: StoredCredentials,
-    fetchRequest: FetchLike,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    const profile = this.dependencies.loadUserProfile ?? loadUserProfile;
-    const result = await profile(
-      credentials,
-      signal ? { signal, fetch: fetchRequest } : { fetch: fetchRequest },
-    );
-    this.#credentials = result.credentials;
-    this.#account = accountLabel(result.profile);
-    this.#accountUnavailable = false;
-    if (this.#cached) {
-      this.#cached = { ...this.#cached, account: this.#account };
-      this.#publish(this.#cached);
-    }
-  }
-
-  #publish(status: StatusDetails): void {
-    for (const listener of this.#listeners) listener(status);
   }
 }

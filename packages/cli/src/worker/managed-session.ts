@@ -26,48 +26,12 @@ import {
   type RemoteWorkerStatus,
 } from "./remote-worker.js";
 
-const visibleActivity = new Set([
-  "write_file",
-  "edit_file",
-  "run_command",
-  "cancel_command",
-]);
-
-function activityLabel(type: WorkerJob["type"], finished: boolean, ok = true): string {
-  if (type === "run_command") {
-    return finished
-      ? ok
-        ? "Command started"
-        : "Command rejected"
-      : "Command requested";
-  }
-  if (type === "write_file") {
-    return finished
-      ? ok
-        ? "File write completed"
-        : "File write rejected"
-      : "File write started";
-  }
-  if (type === "edit_file") {
-    return finished
-      ? ok
-        ? "File edit completed"
-        : "File edit rejected"
-      : "File edit started";
-  }
-  return finished
-    ? ok
-      ? "Command cancellation completed"
-      : "Command cancellation rejected"
-    : "Command cancellation requested";
-}
-
 export type ManagedSessionEvent =
   | { type: "session"; root: string; deviceName: string }
   | { type: "status"; status: RemoteWorkerStatus }
-  | { type: "activity"; phase: "requested"; jobType: WorkerJob["type"]; requestId: string }
-  | { type: "activity"; phase: "finished"; jobType: WorkerJob["type"]; requestId: string; ok: boolean }
-  | { type: "notice"; message: string };
+  | { type: "activity"; phase: "started"; job: WorkerJob }
+  | { type: "activity"; phase: "returned"; job: WorkerJob; ok: boolean }
+  | { type: "notice"; message: string; persistAfterExit?: boolean };
 
 export interface ManagedSessionOptions {
   signal?: AbortSignal;
@@ -87,31 +51,46 @@ function report(
   if (!options.quiet) console.error(message);
 }
 
-function visibleWorker(worker: LocalWorker, options: ManagedSessionOptions): WorkerHandler {
+function activityResultLabel(
+  job: WorkerJob,
+  result: WorkerResult,
+): string {
+  if (!result.ok) return `${job.type} failed`;
+  if (
+    job.type === "run_command" &&
+    result.value &&
+    typeof result.value === "object" &&
+    "status" in result.value &&
+    result.value.status === "running"
+  ) {
+    return "run_command started";
+  }
+  return `${job.type} completed`;
+}
+
+export function visibleWorker(
+  worker: WorkerHandler,
+  options: ManagedSessionOptions,
+): WorkerHandler {
   return {
     async handle(job: WorkerJob): Promise<WorkerResult> {
-      if (visibleActivity.has(job.type)) {
+      options.onEvent?.({ type: "activity", phase: "started", job });
+      try {
+        const result = await worker.handle(job);
         report(
           options,
-          { type: "activity", phase: "requested", jobType: job.type, requestId: job.requestId },
-          `${activityLabel(job.type, false)} (${job.requestId}).`,
+          { type: "activity", phase: "returned", job, ok: result.ok },
+          `${activityResultLabel(job, result)} (${job.requestId}).`,
         );
-      }
-      const result = await worker.handle(job);
-      if (visibleActivity.has(job.type)) {
+        return result;
+      } catch (error) {
         report(
           options,
-          {
-            type: "activity",
-            phase: "finished",
-            jobType: job.type,
-            requestId: job.requestId,
-            ok: result.ok,
-          },
-          `${activityLabel(job.type, true, result.ok)} (${job.requestId}).`,
+          { type: "activity", phase: "returned", job, ok: false },
+          `${job.type} failed (${job.requestId}).`,
         );
+        throw error;
       }
-      return result;
     },
   };
 }
@@ -257,7 +236,8 @@ async function connectRemoteWorker(
   let connectedBefore = false;
   let labelNoticeShown = false;
   let legacyNoticeShown = false;
-  await new RemoteWorker({
+  let connectHintTask: Promise<void> | undefined;
+  const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
     ...(options.workspaceLabel
@@ -297,15 +277,28 @@ async function connectRemoteWorker(
         status.state === "connected" &&
         !status.reconnected &&
         !compatibilityNotice &&
-        shouldShowConnectHint(endpoints.relayOrigin)
+        shouldShowConnectHint(endpoints.relayOrigin) &&
+        !connectHintTask
       ) {
-        void announceConnectHint(connectHintStore(), (message) => {
-          report(options, { type: "notice", message }, message);
-        }).catch(() => undefined);
+        connectHintTask = announceConnectHint(
+          connectHintStore(),
+          (message) => {
+            report(
+              options,
+              { type: "notice", message, persistAfterExit: true },
+              message,
+            );
+          },
+        ).then(() => undefined).catch(() => undefined);
       }
       connectionState = status.state;
     },
-  }).run();
+  });
+  try {
+    await remoteWorker.run();
+  } finally {
+    await connectHintTask;
+  }
 }
 
 export function shouldRecoverRejectedDevice(

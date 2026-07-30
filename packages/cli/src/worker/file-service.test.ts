@@ -674,6 +674,21 @@ test("counts files replaced by links as skipped links during search", async (con
   await writeFile(path.join(root, "available.txt"), "needle", "utf8");
   await writeFile(changing, "needle", "utf8");
   await writeFile(outside, "needle", "utf8");
+  const linkProbe = path.join(root, "link-probe.txt");
+  try {
+    await symlink(outside, linkProbe, "file");
+  } catch (error) {
+    if (
+      process.platform === "win32" &&
+      (error as NodeJS.ErrnoException).code === "EPERM"
+    ) {
+      context.skip("Windows file symlink creation is unavailable.");
+      return;
+    }
+    throw error;
+  } finally {
+    await rm(linkProbe, { force: true });
+  }
   let swapped = false;
   const files = new FileService(
     await PathPolicy.create(root),

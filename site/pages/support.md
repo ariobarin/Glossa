@@ -6,7 +6,7 @@ Use the public issue tracker for setup problems, reproducible bugs, documentatio
 
 - Read the [quickstart](/docs/quickstart) for installation and first use.
 - Confirm the worker terminal is still open and shows the expected workspace root.
-- Press `s` in Glossa or run `glossa status` to validate the account, relay access, enrolled devices, and active workers.
+- Run `glossa status` in another terminal to validate the account, relay access, enrolled devices, and active workers.
 - Remove source code, local paths, account identifiers, tokens, and credentials from any diagnostic details.
 
 <p class="docs-action-row"><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new">Open a GitHub issue</a></p>
@@ -23,4 +23,4 @@ To request account or device deletion, open a minimal issue titled `Account dele
 
 ## Immediate disconnect
 
-Press `q` or Ctrl+C in the worker terminal to end useful workspace access. Press `l` and confirm, or run `glossa logout`, to sign out locally and in the browser. Disconnect the Glossa app or plugin in ChatGPT to revoke client authorization.
+Press Ctrl+C in the worker terminal to end useful workspace access. Run `glossa logout` to sign out locally and in the browser. Disconnect the Glossa app or plugin in ChatGPT to revoke client authorization.

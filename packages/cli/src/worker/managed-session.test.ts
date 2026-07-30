@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { WorkerJob } from "@glossa/protocol";
 import type { StoredCredentials } from "../config-store.js";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
@@ -9,11 +10,12 @@ import {
   reenrollRejectedDevice,
   statusMessage,
   shouldRecoverRejectedDevice,
+  visibleWorker,
   workspaceLabelNotice,
 } from "./managed-session.js";
 import { DeviceRejectedError } from "./remote-worker.js";
 
-test("aborts device enrollment when the UI session stops", async () => {
+test("aborts device enrollment when the managed session stops", async () => {
   const controller = new AbortController();
   const endpoints = {
     relayOrigin: "https://relay.example",
@@ -269,6 +271,120 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
     ),
     "Connection lost: TLS handshake failed Retrying in 2 seconds.",
   );
+});
+
+test("reports the actual job while working and when returned", async () => {
+  const jobs: WorkerJob[] = [
+    {
+      type: "write_file",
+      requestId: "00000000-0000-4000-8000-000000000001",
+      path: "README.md",
+      content: "updated",
+    },
+    {
+      type: "edit_file",
+      requestId: "00000000-0000-4000-8000-000000000002",
+      path: "README.md",
+      edits: [{ oldText: "old", newText: "new" }],
+    },
+    {
+      type: "run_command",
+      requestId: "00000000-0000-4000-8000-000000000003",
+      argv: ["node", "--version"],
+      timeoutMs: 1_000,
+    },
+    {
+      type: "cancel_command",
+      requestId: "00000000-0000-4000-8000-000000000004",
+      commandId: "00000000-0000-4000-8000-000000000005",
+    },
+    {
+      type: "read_file",
+      requestId: "00000000-0000-4000-8000-000000000006",
+      path: "README.md",
+    },
+  ];
+  const events: unknown[] = [];
+  const messages: string[] = [];
+  const originalError = console.error;
+  console.error = (message?: unknown) => {
+    messages.push(String(message));
+  };
+  try {
+    const worker = visibleWorker(
+      {
+        async handle(job) {
+          if (job.type === "run_command") {
+            return {
+              requestId: job.requestId,
+              ok: true,
+              value: { status: "running" },
+            };
+          }
+          return { requestId: job.requestId, ok: true };
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    for (const job of jobs) await worker.handle(job);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(events.length, jobs.length * 2);
+  assert.equal(messages.length, jobs.length);
+  for (const [index, job] of jobs.entries()) {
+    assert.deepEqual(events[index * 2], {
+      type: "activity",
+      phase: "started",
+      job,
+    });
+    assert.deepEqual(events[index * 2 + 1], {
+      type: "activity",
+      phase: "returned",
+      job,
+      ok: true,
+    });
+  }
+  assert.deepEqual(
+    messages.map((message) => message.replace(/ \(.+\)\.$/, "")),
+    [
+      "write_file completed",
+      "edit_file completed",
+      "run_command started",
+      "cancel_command completed",
+      "read_file completed",
+    ],
+  );
+});
+
+test("returns a failed activity when its worker throws", async () => {
+  const job: WorkerJob = {
+    type: "read_file",
+    requestId: "00000000-0000-4000-8000-000000000007",
+    path: "README.md",
+  };
+  const events: unknown[] = [];
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const worker = visibleWorker(
+      {
+        async handle() {
+          throw new Error("read failed");
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    await assert.rejects(worker.handle(job), /read failed/);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(events, [
+    { type: "activity", phase: "started", job },
+    { type: "activity", phase: "returned", job, ok: false },
+  ]);
 });
 
 test("combines compatibility warnings so later notices cannot replace them", () => {

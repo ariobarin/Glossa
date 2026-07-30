@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseInvocation, UsageError } from "./cli-options.js";
 
-test("uses the TUI as the default workspace entrypoint", () => {
+test("uses the default invocation as the workspace entrypoint", () => {
   assert.deepEqual(parseInvocation([]), { command: "workspace" });
   assert.deepEqual(parseInvocation(["."]), {
     command: "workspace",
@@ -16,6 +16,10 @@ test("uses the TUI as the default workspace entrypoint", () => {
     command: "workspace",
     path: "--help",
   });
+  assert.deepEqual(parseInvocation(["--", "doctor"]), {
+    command: "workspace",
+    path: "doctor",
+  });
   assert.deepEqual(parseInvocation(["--label", "frontend", "."]), {
     command: "workspace",
     path: ".",
@@ -28,40 +32,13 @@ test("uses the TUI as the default workspace entrypoint", () => {
   });
 });
 
-test("keeps useful direct CLI actions", () => {
-  assert.deepEqual(parseInvocation(["status"]), {
-    command: "status",
-    json: false,
-  });
-  assert.deepEqual(parseInvocation(["status", "--json"]), {
-    command: "status",
-    json: true,
-  });
-  assert.deepEqual(parseInvocation(["doctor"]), {
-    command: "doctor",
-    json: false,
-  });
-  assert.deepEqual(parseInvocation(["doctor", "--json"]), {
-    command: "doctor",
-    json: true,
-  });
-  assert.deepEqual(parseInvocation(["devices"]), {
-    command: "devices",
-    action: "list",
-    json: false,
-  });
-  assert.deepEqual(parseInvocation(["devices", "--json"]), {
-    command: "devices",
-    action: "list",
-    json: true,
-  });
+test("keeps the reduced direct CLI actions", () => {
+  assert.deepEqual(parseInvocation(["status"]), { command: "status" });
   assert.deepEqual(parseInvocation(["devices", "revoke", "device-1"]), {
     command: "devices",
     action: "revoke",
     deviceId: "device-1",
   });
-  assert.deepEqual(parseInvocation(["update"]), { command: "update" });
-  assert.deepEqual(parseInvocation(["login"]), { command: "login" });
   assert.deepEqual(parseInvocation(["logout"]), { command: "logout" });
 });
 
@@ -70,14 +47,19 @@ test("keeps standard metadata options", () => {
   assert.deepEqual(parseInvocation(["-h"]), { command: "help" });
   assert.deepEqual(parseInvocation(["--version"]), { command: "version" });
   assert.deepEqual(parseInvocation(["-v"]), { command: "version" });
-  assert.deepEqual(parseInvocation(["status", "--help"]), { command: "help" });
 });
 
-test("rejects malformed direct commands", () => {
+test("rejects malformed retained commands and removed flags", () => {
   assert.throws(() => parseInvocation(["one", "two"]), UsageError);
-  assert.throws(() => parseInvocation(["status", "--yaml"]), UsageError);
-  assert.throws(() => parseInvocation(["doctor", "--yaml"]), UsageError);
+  assert.throws(() => parseInvocation(["status", "--json"]), UsageError);
+  assert.throws(() => parseInvocation(["status", "--help"]), UsageError);
+  assert.throws(() => parseInvocation(["devices"]), UsageError);
+  assert.throws(() => parseInvocation(["devices", "--json"]), UsageError);
   assert.throws(() => parseInvocation(["devices", "revoke"]), UsageError);
+  assert.throws(
+    () => parseInvocation(["devices", "revoke", "device-1", "--json"]),
+    UsageError,
+  );
   assert.throws(() => parseInvocation(["logout", "--browser"]), UsageError);
   assert.throws(() => parseInvocation(["--label"]), UsageError);
   assert.throws(
@@ -92,4 +74,17 @@ test("rejects malformed direct commands", () => {
     () => parseInvocation(["--label", "bad\nlabel"]),
     UsageError,
   );
+});
+
+test("rejects retired command names instead of treating them as paths", () => {
+  for (
+    const command of ["completions", "doctor", "login", "start", "update"]
+  ) {
+    assert.throws(
+      () => parseInvocation([command]),
+      (error: unknown) =>
+        error instanceof UsageError &&
+        error.message === `The ${command} command is no longer available.`,
+    );
+  }
 });

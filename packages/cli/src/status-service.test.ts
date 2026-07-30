@@ -51,7 +51,7 @@ test("loads profile and devices in parallel", async () => {
     },
   });
 
-  const pending = service.refresh(undefined, true);
+  const pending = service.refresh();
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(profileStarted, true);
   assert.equal(devicesStarted, true);
@@ -62,67 +62,91 @@ test("loads profile and devices in parallel", async () => {
   assert.equal(status.activeWorkers, 1);
 });
 
-test("returns relay status before the account profile finishes", async () => {
-  let releaseProfile!: () => void;
-  const profileBlocked = new Promise<void>((resolve) => {
-    releaseProfile = resolve;
-  });
-  let accountUpdated!: () => void;
-  const accountUpdate = new Promise<void>((resolve) => {
-    accountUpdated = resolve;
-  });
+test("keeps status useful when the account profile is unavailable", async () => {
   const service = new WorkspaceStatusService(credentials, endpoints, {
     validCredentials: async (value) => value,
-    loadUserProfile: async (value) => {
-      await profileBlocked;
-      return {
-        credentials: value,
-        profile: { sub: "account-1", email: "dev@example.com" },
-      };
+    loadUserProfile: async () => {
+      throw new Error("profile unavailable");
     },
     listDevices: async () => devices,
   });
-  service.subscribe((status) => {
-    if (status.account === "dev@example.com") accountUpdated();
-  });
 
   const status = await service.refresh();
-  assert.equal(status.account, "Loading account…");
+  assert.equal(status.account, "Account unavailable");
+  assert.equal(status.relay, endpoints.relayOrigin);
   assert.equal(status.activeWorkers, 1);
-
-  releaseProfile();
-  await accountUpdate;
-  assert.equal(service.peek()?.account, "dev@example.com");
 });
 
-test("caches account data and deduplicates concurrent refreshes", async () => {
-  let profileCalls = 0;
-  let deviceCalls = 0;
+test("reports unavailable active worker counts", async () => {
   const service = new WorkspaceStatusService(credentials, endpoints, {
     validCredentials: async (value) => value,
     loadUserProfile: async (value) => {
-      profileCalls += 1;
       return {
         credentials: value,
         profile: { sub: "account-1", email: "dev@example.com" },
       };
     },
-    listDevices: async () => {
-      deviceCalls += 1;
-      return devices;
-    },
+    listDevices: async () => devices.map((device) => ({
+      ...device,
+      activeWorkers: null,
+    })),
   });
 
-  const [first, same] = await Promise.all([
-    service.refresh(undefined, true),
-    service.refresh(undefined, true),
-  ]);
-  assert.equal(first, same);
-  assert.equal(service.peek(), first);
-  assert.equal(profileCalls, 1);
-  assert.equal(deviceCalls, 1);
+  const status = await service.refresh();
+  assert.equal(status.account, "dev@example.com");
+  assert.equal(status.activeWorkers, null);
+});
 
-  await service.refresh();
-  assert.equal(profileCalls, 1);
-  assert.equal(deviceCalls, 2);
+test("omits revoked devices from status and workspace counts", async () => {
+  const service = new WorkspaceStatusService(credentials, endpoints, {
+    validCredentials: async (value) => value,
+    loadUserProfile: async (value) => ({
+      credentials: value,
+      profile: { sub: "account-1", email: "dev@example.com" },
+    }),
+    listDevices: async () => [
+      ...devices,
+      {
+        id: "device-2",
+        name: "Old laptop",
+        platform: "darwin-arm64",
+        lastSeenAt: "2026-07-20T12:00:00.000Z",
+        revokedAt: "2026-07-21T12:00:00.000Z",
+        activeWorkers: 4,
+      },
+    ],
+  });
+
+  const status = await service.refresh();
+  assert.deepEqual(status.devices, devices);
+  assert.equal(status.activeWorkers, 1);
+});
+
+test("shares one in-flight status refresh", async () => {
+  let validateCalls = 0;
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const service = new WorkspaceStatusService(credentials, endpoints, {
+    validCredentials: async (value) => {
+      validateCalls += 1;
+      await blocked;
+      return value;
+    },
+    loadUserProfile: async (value) => ({
+      credentials: value,
+      profile: { sub: "account-1", email: "dev@example.com" },
+    }),
+    listDevices: async () => devices,
+  });
+
+  const first = service.refresh();
+  const second = service.refresh();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(validateCalls, 1);
+  release();
+
+  assert.deepEqual(await first, await second);
+  assert.equal(validateCalls, 1);
 });

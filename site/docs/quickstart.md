@@ -13,37 +13,36 @@ Make sure you have:
 
 ## Step 1: Install Glossa
 
-<div class="docs-switcher" data-docs-tabs data-tabs-storage="glossa-install-method-v2">
-  <p class="docs-switcher-label">Install with</p>
-  <div class="docs-tabs docs-tabs-wide" role="tablist" aria-label="Install method">
-    <button id="install-npm-tab" type="button" role="tab" aria-selected="true" aria-controls="install-npm" data-docs-tab="npm">npm (Recommended)</button>
-    <button id="install-direct-tab" type="button" role="tab" aria-selected="false" aria-controls="install-direct" data-docs-tab="direct" tabindex="-1">Direct installer</button>
-  </div>
-  <div id="install-npm" class="docs-tab-panel" role="tabpanel" aria-labelledby="install-npm-tab" data-docs-tab-panel="npm">
-    <p>Install the beta on Windows, macOS, or Linux:</p>
-    <pre><code class="language-shell">npm install --global @ariobarin/glossa@beta</code></pre>
-  </div>
-  <div id="install-direct" class="docs-tab-panel" role="tabpanel" aria-labelledby="install-direct-tab" data-docs-tab-panel="direct" hidden>
-    <p>Install a self-contained executable without Node.js or npm.</p>
-    <div class="docs-switcher docs-switcher-nested" data-docs-tabs data-tabs-storage="glossa-direct-platform-v2">
-      <p class="docs-switcher-label">Platform</p>
-      <div class="docs-tabs" role="tablist" aria-label="Direct installer platform">
-        <button id="direct-windows-tab" type="button" role="tab" aria-selected="true" aria-controls="direct-windows" data-docs-tab="windows">Windows</button>
-        <button id="direct-macos-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-macos" data-docs-tab="macos" tabindex="-1">macOS</button>
-        <button id="direct-linux-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-linux" data-docs-tab="linux" tabindex="-1">Linux</button>
-      </div>
-      <div id="direct-windows" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-windows-tab" data-docs-tab-panel="windows">
-        <pre><code class="language-powershell">irm https://glossa.sh/install | iex</code></pre>
-      </div>
-      <div id="direct-macos" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-macos-tab" data-docs-tab-panel="macos" hidden>
-        <pre><code class="language-shell">curl -fsSL https://glossa.sh/install.sh | sh</code></pre>
-      </div>
-      <div id="direct-linux" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-linux-tab" data-docs-tab-panel="linux" hidden>
-        <pre><code class="language-shell">curl -fsSL https://glossa.sh/install.sh | sh</code></pre>
-      </div>
-    </div>
-  </div>
-</div>
+:::docs-tabs {"id":"install","storage":"glossa-install-method-v2","param":"install","label":"Install with","ariaLabel":"Install method","wide":true}
+:::docs-tab {"value":"npm","label":"npm (Recommended)","selected":true}
+Install the beta on Windows, macOS, or Linux:
+
+```shell
+npm install --global @ariobarin/glossa@beta
+```
+:::docs-tab-end
+:::docs-tab {"value":"direct","label":"Direct installer"}
+Install a self-contained executable without Node.js or npm.
+
+:::docs-tabs {"id":"direct","storage":"glossa-direct-platform-v2","param":"platform","label":"Platform","ariaLabel":"Direct installer platform","nested":true}
+:::docs-tab {"value":"windows","label":"Windows","selected":true}
+```powershell
+irm https://glossa.sh/install | iex
+```
+:::docs-tab-end
+:::docs-tab {"value":"macos","label":"macOS"}
+```shell
+curl -fsSL https://glossa.sh/install.sh | sh
+```
+:::docs-tab-end
+:::docs-tab {"value":"linux","label":"Linux"}
+```shell
+curl -fsSL https://glossa.sh/install.sh | sh
+```
+:::docs-tab-end
+:::docs-tabs-end
+:::docs-tab-end
+:::docs-tabs-end
 
 Confirm Glossa is available:
 
@@ -51,7 +50,8 @@ Confirm Glossa is available:
 glossa --version
 ```
 
-After Glossa starts, press `u` to install the newest beta. You can also run `glossa update` directly.
+To update Glossa, stop every running Glossa session, then run the same npm or
+direct installer command again.
 
 ## Step 2: Start a workspace
 
@@ -81,7 +81,7 @@ https://mcp.glossa.sh/mcp
 
 ## Step 4: Verify the connection
 
-Press `s` in Glossa to check the account, relay, enrolled device, and active worker. Press Esc to return to the workspace view. You can also run `glossa status` in another terminal.
+Run `glossa status` in another terminal to check the account, relay, enrolled device, and active worker.
 
 ### Try a read
 

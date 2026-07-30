@@ -8,7 +8,7 @@
     <title>Security | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=39" />
-    <script src="/copy.js?v=4" defer></script>
+    <script type="module" src="/copy.js?v=6"></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from docs/security.md. Run npm run docs:build after editing Markdown. -->
@@ -72,10 +72,12 @@
       </header>
 
       <article class="docs-content">
+
 <section class="doc-section">
 <h2 id="warning"><a class="heading-anchor" href="#warning" aria-label="Link to Warning"></a>Warning</h2>
 <p>Glossa executes commands with the permissions and environment of the local account that launched it. File-tool root checks do not sandbox shell commands. A command may access credentials, developer tools, networks, or other files available to that account.</p>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="trust-assumptions"><a class="heading-anchor" href="#trust-assumptions" aria-label="Link to Trust assumptions"></a>Trust assumptions</h2>
 <ul>
 <li>The Glossa operator controls the hosted relay and identity provider.</li>
@@ -84,7 +86,8 @@
 <li>There is no hostile multi-tenant execution on one worker.</li>
 <li>TLS termination and OAuth token validation are correctly configured.</li>
 </ul>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="primary-assets"><a class="heading-anchor" href="#primary-assets" aria-label="Link to Primary assets"></a>Primary assets</h2>
 <ul>
 <li>Local source code.</li>
@@ -94,7 +97,8 @@
 <li>Account/device ownership relationships.</li>
 <li>Command results and file contents in transit.</li>
 </ul>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="primary-threats-and-controls"><a class="heading-anchor" href="#primary-threats-and-controls" aria-label="Link to Primary threats and controls"></a>Primary threats and controls</h2>
 <h3 id="cross-account-routing"><a class="heading-anchor" href="#cross-account-routing" aria-label="Link to Cross-account routing"></a>Cross-account routing</h3>
 <p><strong>Threat:</strong> an authenticated account guesses another device or job ID.</p>
@@ -141,7 +145,8 @@
 <li>narrow exposed root;</li>
 <li>temporary exposure by default;</li>
 <li>treat local session startup as authorization for writes and bounded commands without per-operation confirmation;</li>
-<li>display the full shell-authority warning before connection;</li>
+<li>document full shell authority in setup and security guidance before users
+start a session;</li>
 <li>show write and command activity locally;</li>
 <li>visible local status and immediate disconnect;</li>
 <li>no implicit broad-root exposure.</li>
@@ -193,7 +198,8 @@
 <li>minimize dependencies and privileges;</li>
 <li>use managed platform patching, secret scanning, exact dependencies, and rapid device revocation.</li>
 </ul>
-</section><section class="doc-section">
+</section>
+<section class="doc-section">
 <h2 id="data-retention"><a class="heading-anchor" href="#data-retention" aria-label="Link to Data retention"></a>Data retention</h2>
 <p>Durably retain only what is needed for account/device operation and security:</p>
 <ul>

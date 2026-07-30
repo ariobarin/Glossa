@@ -21,7 +21,7 @@ You may use Glossa only for lawful activity on systems and data you are authoriz
 ## Your responsibilities
 
 - Expose only a narrow workspace that is appropriate for the requested task.
-- Review the printed root and authority warning before leaving a worker connected.
+- Review the exposed root and understand the documented command authority before leaving a worker connected.
 - Protect your computer, Glossa credentials, OAuth account, and connected MCP clients.
 - Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
 - Stop the worker immediately if activity is unexpected.

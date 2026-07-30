@@ -13,7 +13,7 @@ test("status gives a next step when no workspaces are active", () => {
     "Signed in as dev@example.com.",
     "Relay connected: connected",
     "No active workspaces. Run glossa from the project folder you want to expose.",
-    "No devices enrolled.",
+    "No active devices.",
   ]);
 });
 
