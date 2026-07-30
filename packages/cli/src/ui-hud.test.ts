@@ -249,12 +249,12 @@ test("activity summaries distinguish literal escapes from controls", () => {
     job: {
       type: "read_file",
       requestId: "request-format-path",
-      path: "fo\u200bo\u2060\u{e0001}.txt",
+      path: "fo\u200bo\u2060\u{e0001}\ufe0f\u034f.txt",
     },
   });
   assert.equal(
     formatPath.activities[0]!.summary.target,
-    'path "fo\\u200bo\\u2060\\u{e0001}.txt"',
+    'path "fo\\u200bo\\u2060\\u{e0001}\\ufe0f\\u034f.txt"',
   );
 
   const argv = applyHudEvent(connectedState(), {

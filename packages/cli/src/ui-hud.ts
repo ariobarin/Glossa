@@ -123,7 +123,7 @@ function truncateMiddle(value: string, width: number): string {
   }`;
 }
 
-const INLINE_FORMAT_CHARACTER = /\p{Cf}/u;
+const INLINE_DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
 
 function escapeCodePoint(codePoint: number): string {
   const hexadecimal = codePoint.toString(16);
@@ -146,7 +146,7 @@ function escapeInline(value: string, quote = false): string {
     else if (
       codePoint < 0x20 ||
       (codePoint >= 0x7f && codePoint <= 0x9f) ||
-      INLINE_FORMAT_CHARACTER.test(character) ||
+      INLINE_DEFAULT_IGNORABLE.test(character) ||
       codePoint === 0x2028 ||
       codePoint === 0x2029
     ) {
@@ -160,6 +160,13 @@ function quoteInline(value: string): string {
   return `"${escapeInline(value, true)}"`;
 }
 
+function boundInlineInput(value: string): string {
+  return truncateMiddle(value, MAX_STORED_ACTIVITY_TARGET_CHARS);
+}
+
+function quoteActivityInput(value: string): string {
+  return quoteInline(boundInlineInput(value));
+}
 
 function formatByteCount(value: string): string {
   const bytes = Buffer.byteLength(value, "utf8");
@@ -180,7 +187,7 @@ function pathSummary(
   details: string[] = [],
 ): HudActivitySummary {
   return {
-    target: `path ${quoteInline(path)}`,
+    target: `path ${quoteActivityInput(path)}`,
     details,
     truncation: "middle",
   };
@@ -202,7 +209,9 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
       ]);
     case "search_text":
       return {
-        target: `query ${quoteInline(job.query)} in path ${quoteInline(workspacePath(job.path))}`,
+        target: `query ${quoteActivityInput(job.query)} in path ${
+          quoteActivityInput(workspacePath(job.path))
+        }`,
         details: [
           ...(job.extensions?.length
             ? [
@@ -237,8 +246,8 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
     case "run_command":
       return {
         target: job.argv
-          ? `argv [${job.argv.map(quoteInline).join(", ")}]`
-          : `shell ${quoteInline(job.shellCommand ?? "")}`,
+          ? `argv [${job.argv.map(quoteActivityInput).join(", ")}]`
+          : `shell ${quoteActivityInput(job.shellCommand ?? "")}`,
         details: [
           ...(job.stdin === undefined
             ? []
