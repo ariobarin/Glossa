@@ -98,6 +98,8 @@ export function initialHudState(workspace: string): HudState {
   };
 }
 
+const MAX_STORED_ACTIVITY_TARGET_CHARS = 512;
+
 function truncate(value: string, width: number): string {
   if (width <= 0) return "";
   if (value.length <= width) return value;
@@ -255,6 +257,15 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
   }
 }
 
+function boundActivitySummary(summary: HudActivitySummary): HudActivitySummary {
+  return {
+    ...summary,
+    target: summary.truncation === "middle"
+      ? truncateMiddle(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS)
+      : truncate(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS),
+  };
+}
+
 export function applyHudEvent(
   state: HudState,
   event: ManagedSessionEvent,
@@ -288,7 +299,7 @@ export function applyHudEvent(
   );
   const activity: HudActivity = {
     tool: event.job.type,
-    summary: summarizeJob(event.job),
+    summary: boundActivitySummary(summarizeJob(event.job)),
     requestId,
     state: event.phase === "started"
       ? "working"
@@ -410,7 +421,7 @@ function renderActivitySummary(
   const visibleDetails: string[] = [];
   for (const detail of summary.details) {
     const candidate = [summary.target, ...visibleDetails, detail].join(" · ");
-    if (candidate.length > usable) break;
+    if (candidate.length > usable) continue;
     visibleDetails.push(detail);
   }
   return [summary.target, ...visibleDetails].join(" · ");

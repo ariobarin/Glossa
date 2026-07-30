@@ -132,6 +132,25 @@ test("activity summaries preserve command endpoints as width changes", () => {
   assert.doesNotMatch(wide, /do not show this/);
 });
 
+test("bounds stored command summaries while preserving endpoints", () => {
+  const state = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-large-command",
+      argv: ["node", "a".repeat(100_000), "final-target.ts"],
+      timeoutMs: 30_000,
+    },
+  });
+  const target = state.activities[0]!.summary.target;
+
+  assert.ok(target.length <= 512);
+  assert.match(target, /^argv \["node", "a+/);
+  assert.match(target, /…/);
+  assert.match(target, /"final-target\.ts"\]$/);
+});
+
 test("activity summaries distinguish literal escapes from controls", () => {
   const literalPath = applyHudEvent(connectedState(), {
     type: "activity",
@@ -288,6 +307,32 @@ test("activity summaries quote targets and normalize empty paths", () => {
     emptySearch.activities[0]!.summary.target,
     'query "needle" in path "."',
   );
+});
+
+test("activity summaries skip oversized details and keep later metadata", () => {
+  const withActivity = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "search_text",
+      requestId: "request-long-extensions",
+      query: "needle",
+      path: ".",
+      extensions: Array.from({ length: 20 }, () => ".verylongextension"),
+      caseSensitive: true,
+      maxResults: 5,
+      timeoutMs: 8_000,
+    },
+  });
+  const output = renderHud(
+    { ...withActivity, view: "activity" },
+    70,
+    false,
+    18,
+  );
+
+  assert.doesNotMatch(output, /extensions/);
+  assert.match(output, /case-sensitive · limit 5/);
 });
 
 test("activity summaries hide edit text and escape terminal controls", () => {
