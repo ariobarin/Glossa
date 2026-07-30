@@ -155,6 +155,7 @@ export function applyHudEvent(
 }
 
 const ANSI_BASE = "\u001b[22;38;2;244;241;251;48;2;17;16;22m";
+const RESIZE_RENDER_DELAY_MS = 16;
 const PALETTE = {
   ink: "38;2;244;241;251",
   muted: "38;2;170;164;181",
@@ -666,9 +667,14 @@ export async function runSessionHud(
   let state = initialHudState(actions.workspace);
   let exitAction: HudExitAction = "quit";
   let stopUi: (() => void) | undefined;
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   const color = !process.env.NO_COLOR;
 
   const render = (): void => {
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+      resizeTimer = undefined;
+    }
     const view = renderHud(
       state,
       output.columns ?? 80,
@@ -703,7 +709,12 @@ export async function runSessionHud(
         };
       }
     }
-    render();
+    if (!resizeTimer) {
+      resizeTimer = setTimeout(() => {
+        resizeTimer = undefined;
+        if (!controller.signal.aborted) render();
+      }, RESIZE_RENDER_DELAY_MS);
+    }
   };
 
   const loadStatus = async (): Promise<void> => {
@@ -898,6 +909,7 @@ export async function runSessionHud(
     await session;
     return exitAction;
   } finally {
+    if (resizeTimer) clearTimeout(resizeTimer);
     output.removeListener("resize", resize);
     process.removeListener("SIGINT", stopFromSignal);
     process.removeListener("SIGTERM", stopFromSignal);
