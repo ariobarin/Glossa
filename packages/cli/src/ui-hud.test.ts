@@ -103,7 +103,7 @@ test("status metrics share one-line formatting and contain active devices only",
         }],
       },
     },
-    54,
+    80,
     false,
     22,
   );
@@ -111,7 +111,42 @@ test("status metrics share one-line formatting and contain active devices only",
   assert.match(output.split("\n")[0]!, /Glossa\s+Connected/);
   assert.match(output, /Active workspaces\s+3/);
   assert.match(output, /Devices\s+1/);
+  assert.match(output, /Device\s+Workers\s+Platform\s+Last seen/);
+  assert.match(
+    output,
+    /Laptop\s+3 active workers\s+win32-x64\s+just now/,
+  );
   assert.doesNotMatch(output, /revoked/i);
+});
+
+test("status devices use a compact readable row in narrow terminals", () => {
+  const output = renderHud(
+    {
+      ...connectedState(),
+      view: "status",
+      status: {
+        account: "dev@example.com",
+        relay: "https://relay.example",
+        activeWorkers: 1,
+        devices: [{
+          id: "device-1",
+          name: "Laptop",
+          platform: "win32-x64",
+          lastSeen: "just now",
+          status: "1 active worker",
+        }],
+      },
+    },
+    58,
+    false,
+    22,
+  );
+
+  assert.match(
+    output,
+    /1\s+Laptop · 1 active worker · win32-x64 · just now/,
+  );
+  assert.doesNotMatch(output, /Device\s+Workers\s+Platform\s+Last seen/);
 });
 
 test("status shows every selectable device or an explicit overflow", () => {
@@ -139,9 +174,9 @@ test("status shows every selectable device or an explicit overflow", () => {
   );
 
   assert.match(output, /Devices\s+12/);
-  assert.match(output, /Device 9/);
-  assert.doesNotMatch(output, /Device 10/);
-  assert.match(output, /3 more\. Use glossa devices revoke <id>\./);
+  assert.match(output, /Device 8/);
+  assert.doesNotMatch(output, /Device 9/);
+  assert.match(output, /4 more\. Use glossa devices revoke <id>\./);
 });
 
 test("every view stays within a narrow terminal and retains its footer", () => {

@@ -277,6 +277,69 @@ function metric(
   return `${style(color, PALETTE.muted, visibleLabel)}${gap}${style(color, PALETTE.ink, visibleValue)}`;
 }
 
+function tableCell(value: string, width: number): string {
+  return truncate(value, width).padEnd(width);
+}
+
+function renderDeviceRows(
+  device: HudDevice,
+  index: number,
+  usable: number,
+  color: boolean,
+): string[] {
+  const number = String(index + 1).padStart(2);
+  if (usable < 64) {
+    const prefix = `${number}  `;
+    const details = `${device.name} · ${device.status} · ${device.platform} · ${device.lastSeen}`;
+    return [
+      `${style(color, `${PALETTE.purpleReadable};1`, number)}  ${
+        style(
+          color,
+          PALETTE.muted,
+          truncate(details, Math.max(1, usable - prefix.length)),
+        )
+      }`,
+    ];
+  }
+
+  const statusWidth = 16;
+  const platformWidth = 12;
+  const lastSeenWidth = Math.min(
+    18,
+    Math.max(10, Math.floor(usable * 0.18)),
+  );
+  const nameWidth = usable - 38 - lastSeenWidth;
+  return [
+    `${style(color, `${PALETTE.purpleReadable};1`, number)}  ${
+      style(color, PALETTE.ink, tableCell(device.name, nameWidth))
+    }  ${
+      style(color, PALETTE.purpleReadable, tableCell(device.status, statusWidth))
+    }  ${
+      style(color, PALETTE.muted, tableCell(device.platform, platformWidth))
+    }  ${style(color, PALETTE.muted, tableCell(device.lastSeen, lastSeenWidth))}`,
+  ];
+}
+
+function deviceTableHeading(usable: number, color: boolean): string | undefined {
+  if (usable < 64) return undefined;
+  const statusWidth = 16;
+  const platformWidth = 12;
+  const lastSeenWidth = Math.min(
+    18,
+    Math.max(10, Math.floor(usable * 0.18)),
+  );
+  const nameWidth = usable - 38 - lastSeenWidth;
+  return style(
+    color,
+    PALETTE.muted,
+    `    ${tableCell("Device", nameWidth)}  ${
+      tableCell("Workers", statusWidth)
+    }  ${tableCell("Platform", platformWidth)}  ${
+      tableCell("Last seen", lastSeenWidth)
+    }`,
+  );
+}
+
 function renderStatus(
   state: HudState,
   usable: number,
@@ -300,7 +363,7 @@ function renderStatus(
     style(color, PALETTE.ink, truncate(state.status.account, usable)),
     style(color, PALETTE.muted, truncate(state.status.relay, usable)),
     "",
-    sectionTitle("Overview", color, PALETTE.coral),
+    sectionTitle("Overview", color),
     metric("Active workspaces", workerCount, usable, color),
     metric("Devices", String(state.status.devices.length), usable, color),
     "",
@@ -312,20 +375,10 @@ function renderStatus(
     return lines;
   }
 
+  const heading = deviceTableHeading(usable, color);
+  if (heading) lines.push(heading);
   state.status.devices.slice(0, visibleDeviceCount).forEach((device, index) => {
-    const statusTone = device.status.includes("active")
-      ? PALETTE.purpleReadable
-      : PALETTE.muted;
-    lines.push(
-      style(
-        color,
-        statusTone,
-        truncate(
-          `${String(index + 1).padStart(2)}  ${device.name}  ${device.status}  ${device.platform}  seen ${device.lastSeen}`,
-          usable,
-        ),
-      ),
-    );
+    lines.push(...renderDeviceRows(device, index, usable, color));
   });
   const hiddenCount = state.status.devices.length - visibleDeviceCount;
   if (hiddenCount > 0) {
@@ -509,6 +562,7 @@ export function renderHud(
   const visibleDeviceCount = statusDeviceCapacity(
     state,
     bodyBudget,
+    usable,
   );
   const body = state.view === "activity"
     ? renderActivity(state, usable, color)
@@ -539,6 +593,7 @@ export function renderHud(
 function statusDeviceCapacity(
   state: HudState,
   bodyBudget: number,
+  usable: number,
 ): number {
   if (
     state.view !== "status" ||
@@ -548,7 +603,7 @@ function statusDeviceCapacity(
   ) {
     return 0;
   }
-  const statusPreambleLines = 10;
+  const statusPreambleLines = usable >= 64 ? 11 : 10;
   const available = Math.max(0, bodyBudget - statusPreambleLines);
   let visible = Math.min(9, state.status.devices.length, available);
   if (
@@ -748,6 +803,7 @@ export async function runSessionHud(
             const deviceCount = statusDeviceCapacity(
               promptState,
               bodyBudget,
+              usable,
             );
             state = deviceCount === 0
               ? {
