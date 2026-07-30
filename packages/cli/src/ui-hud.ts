@@ -1,6 +1,9 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
-import type { WorkerJob } from "@glossa/protocol";
+import {
+  DEFAULT_COMMAND_TIMEOUT_MS,
+  type WorkerJob,
+} from "@glossa/protocol";
 import {
   statusMessage,
   type ManagedSessionEvent,
@@ -230,9 +233,14 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         target: job.argv
           ? `argv [${job.argv.map(quoteInline).join(", ")}]`
           : `shell ${quoteInline(job.shellCommand ?? "")}`,
-        details: job.stdin === undefined
-          ? []
-          : [`stdin ${formatByteCount(job.stdin)}`],
+        details: [
+          ...(job.stdin === undefined
+            ? []
+            : [`stdin ${formatByteCount(job.stdin)}`]),
+          ...(job.timeoutMs === DEFAULT_COMMAND_TIMEOUT_MS
+            ? []
+            : [`timeout ${job.timeoutMs} ms`]),
+        ],
         truncation: "middle",
       };
     case "get_command":

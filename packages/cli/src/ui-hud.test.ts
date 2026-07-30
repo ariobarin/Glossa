@@ -132,6 +132,32 @@ test("activity summaries preserve command endpoints as width changes", () => {
   assert.doesNotMatch(wide, /do not show this/);
 });
 
+test("activity summaries include only non-default command timeouts", () => {
+  const defaultTimeout = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-default-timeout",
+      argv: ["node", "script.js"],
+      timeoutMs: 900_000,
+    },
+  });
+  const customTimeout = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId: "request-custom-timeout",
+      argv: ["node", "script.js"],
+      timeoutMs: 1,
+    },
+  });
+
+  assert.deepEqual(defaultTimeout.activities[0]!.summary.details, []);
+  assert.deepEqual(customTimeout.activities[0]!.summary.details, ["timeout 1 ms"]);
+});
+
 test("bounds stored command summaries while preserving endpoints", () => {
   const state = applyHudEvent(connectedState(), {
     type: "activity",
@@ -256,7 +282,7 @@ test("activity summaries quote targets and normalize empty paths", () => {
       type: "run_command",
       requestId: "request-delimiter-shell",
       shellCommand: "echo · stdin 1 B",
-      timeoutMs: 30_000,
+      timeoutMs: 900_000,
     },
   });
   const stdinShell = applyHudEvent(connectedState(), {
@@ -267,7 +293,7 @@ test("activity summaries quote targets and normalize empty paths", () => {
       requestId: "request-stdin-shell",
       shellCommand: "echo",
       stdin: "x",
-      timeoutMs: 30_000,
+      timeoutMs: 900_000,
     },
   });
   assert.deepEqual(delimiterShell.activities[0]!.summary, {
