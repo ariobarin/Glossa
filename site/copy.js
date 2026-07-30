@@ -75,12 +75,21 @@ function initCodeCopy() {
 
 function initPageCopy() {
   const button = document.querySelector("[data-copy-page]");
-  if (!button) return;
+  const source = document.querySelector("[data-page-markdown]");
+  if (!button || !source) return;
+
+  let markdown;
+  try {
+    markdown = JSON.parse(source.textContent ?? "");
+  } catch {
+    return;
+  }
+  if (typeof markdown !== "string") return;
 
   button.addEventListener("click", async () => {
     const originalLabel = button.textContent;
     try {
-      await writeClipboard(window.location.href);
+      await writeClipboard(markdown);
       button.textContent = "Copied";
     } catch {
       button.textContent = "Copy failed";

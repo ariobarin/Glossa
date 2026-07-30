@@ -307,7 +307,8 @@ function createMarkdown(sourceLabel, route) {
 
 function readPage(source, sourceLabel, route) {
   const markdown = createMarkdown(sourceLabel, route);
-  const tokens = markdown.lexer(source.replaceAll("\r\n", "\n").trim());
+  const normalizedSource = source.replaceAll("\r\n", "\n");
+  const tokens = markdown.lexer(normalizedSource.trim());
   const titleIndex = tokens.findIndex(
     (token) => token.type === "heading" && token.depth === 1,
   );
@@ -326,6 +327,7 @@ function readPage(source, sourceLabel, route) {
   const summaryToken = tokens[summaryIndex];
   return {
     markdown,
+    source: normalizedSource,
     title: plainText(titleToken.tokens),
     summary: plainText(summaryToken.tokens),
     summaryHtml: Parser.parseInline(summaryToken.tokens),
@@ -400,6 +402,7 @@ function renderPage(pageConfig, page) {
   const body = renderBody(page.markdown, page.bodyTokens);
   const sectionNavigation = renderSectionNavigation(page.bodyTokens);
   const sidebar = renderDocsSidebar(pageConfig.route);
+  const serializedSource = JSON.stringify(page.source).replaceAll("<", "\\u003c");
 
   return `<!doctype html>
 <html lang="en">
@@ -411,7 +414,7 @@ function renderPage(pageConfig, page) {
     <title>${escapeHtml(pageConfig.tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=39" />
-    <script type="module" src="/copy.js?v=6"></script>
+    <script type="module" src="/copy.js?v=7"></script>
   </head>
   <body class="docs-shell">
     <!-- Generated from ${pageConfig.source}. Run npm run docs:build after editing Markdown. -->
@@ -436,8 +439,9 @@ ${sidebar}
         <div class="docs-kicker">${escapeHtml(pageConfig.group)}</div>
         <div class="docs-title-row">
           <h1>${escapeHtml(page.title)}</h1>
-          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page link">Copy page</button>
+          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
+        <script type="application/json" data-page-markdown>${serializedSource}</script>
         <p class="docs-summary">${page.summaryHtml}</p>
       </header>
 
