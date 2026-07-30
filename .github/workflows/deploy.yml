@@ -1,0 +1,69 @@
+name: Deploy Relay
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relay: ${{ steps.changed.outputs.relay }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: changed
+        name: Detect relay changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        shell: bash
+        run: |
+          if [[ "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "relay=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE" "$GITHUB_SHA" -- \
+            apps/relay \
+            packages/protocol \
+            package.json \
+            package-lock.json \
+            scripts/clean.mjs \
+            tsconfig.base.json \
+            Procfile; then
+            echo "relay=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relay=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    if: needs.deploy-changes.outputs.relay == 'true'
+    needs: deploy-changes
+    runs-on: ubuntu-latest
+    concurrency:
+      group: heroku-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://mcp.glossa.sh/healthz
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Deploy tested commit to Heroku
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git config --global credential.helper store
+          printf '%s\n' "https://heroku:${HEROKU_API_KEY}@git.heroku.com" > ~/.git-credentials
+          trap 'rm -f ~/.git-credentials' EXIT
+          git push https://git.heroku.com/ariobarin-glossa.git HEAD:main
+      - name: Verify production health
+        run: |
+          curl --fail --silent --show-error \
+            --retry 12 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --max-time 10 \
+            https://mcp.glossa.sh/healthz
