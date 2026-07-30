@@ -353,11 +353,17 @@ test("rerenders on terminal resize and removes its listener on exit", async () =
   );
 
   await new Promise<void>((resolve) => setImmediate(resolve));
-  const beforeResize = rendered;
-  output.columns = 38;
-  output.rows = 12;
-  output.emit("resize");
-  assert.ok(rendered.length > beforeResize.length);
+  const framesBeforeResize =
+    rendered.split("\u001b[H\u001b[2J").length - 1;
+  for (let index = 0; index < 100; index += 1) {
+    output.columns = 38 + index % 2;
+    output.rows = 12 + index % 2;
+    output.emit("resize");
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, 30));
+  const framesAfterResize =
+    rendered.split("\u001b[H\u001b[2J").length - 1;
+  assert.equal(framesAfterResize, framesBeforeResize + 1);
   assert.equal(output.listenerCount("resize"), 1);
 
   input.emit("keypress", "q", { name: "q" });
@@ -440,7 +446,7 @@ test("resize cannot revoke a device hidden after prompting", async () => {
   output.emit("resize");
   input.emit("keypress", "3", { name: "3" });
   input.emit("keypress", "y", { name: "y" });
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setTimeout(resolve, 30));
   assert.deepEqual(revoked, []);
   assert.match(rendered, /Increase the terminal height to choose a device/);
 
