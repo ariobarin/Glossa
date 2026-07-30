@@ -118,9 +118,11 @@ function truncateMiddle(value: string, width: number): string {
   const visible = width - 1;
   const leading = Math.max(1, Math.floor(visible * 0.45));
   const trailing = visible - leading;
-  return `${value.slice(0, leading)}…${
-    trailing > 0 ? value.slice(-trailing) : ""
-  }`;
+  let start = value.slice(0, leading);
+  if (/[\ud800-\udbff]$/.test(start)) start = start.slice(0, -1);
+  let end = trailing > 0 ? value.slice(-trailing) : "";
+  if (/^[\udc00-\udfff]/.test(end)) end = end.slice(1);
+  return `${start}…${end}`;
 }
 
 const INLINE_DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;

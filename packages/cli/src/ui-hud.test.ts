@@ -217,6 +217,22 @@ test("bounds stored command summaries while preserving endpoints", () => {
   assert.match(target, /"final-target\.ts"\]$/);
 });
 
+test("activity summary bounds preserve Unicode scalar boundaries", () => {
+  const state = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "read_file",
+      requestId: "request-unicode-boundary",
+      path: `${"a".repeat(222)}😀${"b".repeat(1_000)}`,
+    },
+  });
+  const target = state.activities[0]!.summary.target;
+
+  assert.equal(Buffer.from(target, "utf8").toString("utf8"), target);
+  assert.doesNotMatch(target, /�/);
+});
+
 test("activity summaries distinguish literal escapes from controls", () => {
   const literalPath = applyHudEvent(connectedState(), {
     type: "activity",
