@@ -150,7 +150,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
     job: {
       type: "run_command",
       requestId: "request-5",
-      argv: ["node", "script.js\n\u001b[2J", "target.ts"],
+      argv: ["node", "script.js\n\u001b[2J\u202e", "\u2066target.ts\u2069"],
       timeoutMs: 30_000,
     },
   });
@@ -163,7 +163,8 @@ test("activity summaries hide edit text and escape terminal controls", () => {
 
   assert.match(output, /packages\/cli\/src\/ui-hud\.ts · 1 edit · guarded/);
   assert.doesNotMatch(output, /private secret|replacement|oldText|newText/);
-  assert.match(output, /script\.js\\n\\u001b\[2J/);
+  assert.match(output, /script\.js\\n\\u001b\[2J\\u202e/);
+  assert.match(output, /\\u2066target\.ts\\u2069/);
   assert.doesNotMatch(output, /\u001b/);
 });
 
