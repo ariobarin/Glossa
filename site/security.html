@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#111016" />
     <title>Security | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=37" />
+    <link rel="stylesheet" href="/styles.css?v=39" />
     <script src="/copy.js?v=4" defer></script>
   </head>
   <body class="docs-shell">
@@ -61,6 +61,7 @@
           </ul>
         </section>
       </nav>
+      <div class="docs-page">
       <header class="docs-intro">
         <div class="docs-kicker">Safety</div>
         <div class="docs-title-row">
@@ -70,16 +71,6 @@
         <p class="docs-summary">Glossa does not copy your selected folder into the hosted relay. The local worker reads files and runs commands. Requested file contents, command details, and command results are transmitted through the relay to the connected client.</p>
       </header>
 
-      <nav class="docs-toc" aria-label="On this page">
-        <strong>On this page</strong>
-        <ol>
-          <li><a href="#what-you-authorize">What you authorize</a></li>
-          <li><a href="#what-the-relay-stores">What the relay stores</a></li>
-          <li><a href="#how-boundaries-are-enforced">How boundaries are enforced</a></li>
-          <li><a href="#use-glossa-safely">Use Glossa safely</a></li>
-          <li><a href="#report-a-security-issue">Report a security issue</a></li>
-        </ol>
-      </nav>
       <article class="docs-content">
 <blockquote>
 <p><strong>Command access is powerful.</strong> Commands run with the full environment and permissions of the operating-system account that launched Glossa. File boundaries do not turn shell commands into a sandbox.</p>
@@ -118,6 +109,18 @@
 <p>Maintainers and reviewers can read the complete <a href="/docs/security">threat model and controls</a>.</p>
 </section>
       </article>
+      </div>
+
+      <nav class="docs-toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ol>
+          <li><a href="#what-you-authorize">What you authorize</a></li>
+          <li><a href="#what-the-relay-stores">What the relay stores</a></li>
+          <li><a href="#how-boundaries-are-enforced">How boundaries are enforced</a></li>
+          <li><a href="#use-glossa-safely">Use Glossa safely</a></li>
+          <li><a href="#report-a-security-issue">Report a security issue</a></li>
+        </ol>
+      </nav>
       </div>
     </main>
 

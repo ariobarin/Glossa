@@ -195,7 +195,7 @@ function renderPage(page, route, sourceLabel) {
     <meta name="theme-color" content="#111016" />
     <title>${escapeHtml(tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=37" />
+    <link rel="stylesheet" href="/styles.css?v=39" />
     <script src="/copy.js?v=4" defer></script>
   </head>
   <body class="docs-shell">
@@ -216,6 +216,7 @@ function renderPage(page, route, sourceLabel) {
     <main class="docs-main">
       <div class="docs-layout${sectionNavigation ? " has-toc" : ""}">
 ${sidebar}
+      <div class="docs-page">
       <header class="docs-intro">
         <div class="docs-kicker">${sectionLabel}</div>
         <div class="docs-title-row">
@@ -225,10 +226,12 @@ ${sidebar}
         <p class="docs-summary">${marked.parseInline(page.summary)}</p>
       </header>
 
-${sectionNavigation}
       <article class="docs-content">
 ${body}
       </article>
+      </div>
+
+${sectionNavigation}
       </div>
     </main>
 

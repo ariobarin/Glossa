@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#111016" />
     <title>Support | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=37" />
+    <link rel="stylesheet" href="/styles.css?v=39" />
     <script src="/copy.js?v=4" defer></script>
   </head>
   <body class="docs-shell">
@@ -61,6 +61,7 @@
           </ul>
         </section>
       </nav>
+      <div class="docs-page">
       <header class="docs-intro">
         <div class="docs-kicker">Help</div>
         <div class="docs-title-row">
@@ -70,15 +71,6 @@
         <p class="docs-summary">Use the public issue tracker for setup problems, reproducible bugs, documentation corrections, and feature requests.</p>
       </header>
 
-      <nav class="docs-toc" aria-label="On this page">
-        <strong>On this page</strong>
-        <ol>
-          <li><a href="#before-opening-an-issue">Before opening an issue</a></li>
-          <li><a href="#security-reports">Security reports</a></li>
-          <li><a href="#account-and-data-requests">Account and data requests</a></li>
-          <li><a href="#immediate-disconnect">Immediate disconnect</a></li>
-        </ol>
-      </nav>
       <article class="docs-content">
 <section class="doc-section">
 <h2 id="before-opening-an-issue"><a class="heading-anchor" href="#before-opening-an-issue" aria-label="Link to Before opening an issue"></a>Before opening an issue</h2>
@@ -88,7 +80,7 @@
 <li>Press <code>s</code> in Glossa or run <code>glossa status</code> to validate the account, relay access, enrolled devices, and active workers.</li>
 <li>Remove source code, local paths, account identifiers, tokens, and credentials from any diagnostic details.</li>
 </ul>
-<p><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new">Open a GitHub issue</a></p></section><section class="doc-section">
+<p class="docs-action-row"><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new">Open a GitHub issue</a></p></section><section class="doc-section">
 <h2 id="security-reports"><a class="heading-anchor" href="#security-reports" aria-label="Link to Security reports"></a>Security reports</h2>
 <p>Do not publish credentials, private source code, exploit details, or personal data in a GitHub issue. Open a minimal issue titled <code>Security contact request</code> without sensitive details so the operator can provide a private follow-up route.</p>
 <p>For the current trust boundaries and known limits, read the <a href="/security">Glossa security page</a>.</p>
@@ -100,6 +92,17 @@
 <p>Press <code>q</code> or Ctrl+C in the worker terminal to end useful workspace access. Press <code>l</code> and confirm, or run <code>glossa logout</code>, to sign out locally and in the browser. Disconnect the Glossa app or plugin in ChatGPT to revoke client authorization.</p>
 </section>
       </article>
+      </div>
+
+      <nav class="docs-toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ol>
+          <li><a href="#before-opening-an-issue">Before opening an issue</a></li>
+          <li><a href="#security-reports">Security reports</a></li>
+          <li><a href="#account-and-data-requests">Account and data requests</a></li>
+          <li><a href="#immediate-disconnect">Immediate disconnect</a></li>
+        </ol>
+      </nav>
       </div>
     </main>
 

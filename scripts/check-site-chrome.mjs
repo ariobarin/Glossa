@@ -59,6 +59,7 @@ for (const page of pages) {
   const isGeneratedInformationPage = pageName.startsWith("site/docs/") || generatedInformationPages.has(pageName);
   if (isGeneratedInformationPage && (
     !page.html.includes('<body class="docs-shell">') ||
+    !page.html.includes('<div class="docs-page">') ||
     !page.html.includes('<nav class="docs-sidebar" aria-label="Documentation">')
   )) {
     inconsistentPages.push(pageName);
