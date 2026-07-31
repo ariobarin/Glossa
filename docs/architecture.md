@@ -95,7 +95,7 @@ One enrolled device may run any number of concurrent workers. Each worker receiv
 
 The hosting layer imposes a bounded request window. Therefore:
 
-- worker long polls return within 20 seconds; a worker with concurrent jobs negotiated uses shorter capacity-aware polls while local jobs are active;
+- worker long polls return within 20 seconds; when a concurrent lane becomes free, the worker supersedes a stale capacity poll with a one-shot refresh for only the newly available job types;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
