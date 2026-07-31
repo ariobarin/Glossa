@@ -62,7 +62,7 @@ Open a terminal in the directory you want to expose, then run:
 glossa
 ```
 
-Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. When several workspaces are online, add an explicit ephemeral label such as `glossa --label frontend` or `glossa --label frontend <directory>` so clients can distinguish them; Glossa never derives this label from the local path. Run `glossa status` in another terminal to check the account, relay, enrolled devices, and active workspaces.
+Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. When several different workspaces are online, add an explicit ephemeral label such as `glossa --label frontend` or `glossa --label frontend <directory>` so clients can distinguish them; Glossa never derives this label from the local path. One current Glossa process may expose a canonical directory at a time on the same local account; starting a duplicate session for that directory exits before login or relay connection. Run `glossa status` in another terminal to check the account, relay, enrolled devices, and active workspaces.
 
 On the first successful managed-relay connection on a computer, Glossa prints the ChatGPT quickstart link once. It records a `connect-hint-shown` marker in the local Glossa config directory so later starts stay quiet.
 

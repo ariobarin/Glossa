@@ -44,6 +44,7 @@ import {
 import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
 import { runManagedSession } from "./worker/managed-session.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
+import { acquireWorkspaceLease } from "./worker/workspace-lease.js";
 
 declare const __GLOSSA_VERSION__: string;
 declare const __GLOSSA_DISTRIBUTION__: GlossaDistribution;
@@ -136,40 +137,45 @@ async function runWorkspaceSession(
   label: string | undefined,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
-  const endpoints = loadRelayEndpoints();
-  let credentials = (await authenticatedSession()).credentials;
-  const statusService = new WorkspaceStatusService(credentials, endpoints);
-  let postExitNotice: string | undefined;
-  const exitAction: HudExitAction = await runSessionHud({
-    workspace: root,
-    run: async (signal, onEvent) => {
-      await runManagedSession(root, endpoints, {
-        credentials,
-        ...(label ? { workspaceLabel: label } : {}),
-        signal,
-        onEvent: (event) => {
-          postExitNotice = retainPostExitNotice(postExitNotice, event);
-          onEvent(event);
-        },
-        quiet: true,
-        handleProcessSignals: false,
-      });
-    },
-    loadStatus: async (signal) => {
-      return hudStatus(await statusService.refresh(signal));
-    },
-    revokeDevice: async (deviceId, signal) => {
-      credentials = await validCredentials(credentials, { signal });
-      await revokeDevice(
-        endpoints,
-        credentials,
-        deviceId,
-        async (input, init) => await fetch(input, { ...init, signal }),
-      );
-    },
-  });
-  if (postExitNotice) console.error(postExitNotice);
-  if (exitAction === "logout") await logoutFromGlossa();
+  const lease = await acquireWorkspaceLease(root);
+  try {
+    const endpoints = loadRelayEndpoints();
+    let credentials = (await authenticatedSession()).credentials;
+    const statusService = new WorkspaceStatusService(credentials, endpoints);
+    let postExitNotice: string | undefined;
+    const exitAction: HudExitAction = await runSessionHud({
+      workspace: root,
+      run: async (signal, onEvent) => {
+        await runManagedSession(root, endpoints, {
+          credentials,
+          ...(label ? { workspaceLabel: label } : {}),
+          signal,
+          onEvent: (event) => {
+            postExitNotice = retainPostExitNotice(postExitNotice, event);
+            onEvent(event);
+          },
+          quiet: true,
+          handleProcessSignals: false,
+        });
+      },
+      loadStatus: async (signal) => {
+        return hudStatus(await statusService.refresh(signal));
+      },
+      revokeDevice: async (deviceId, signal) => {
+        credentials = await validCredentials(credentials, { signal });
+        await revokeDevice(
+          endpoints,
+          credentials,
+          deviceId,
+          async (input, init) => await fetch(input, { ...init, signal }),
+        );
+      },
+    });
+    if (postExitNotice) console.error(postExitNotice);
+    if (exitAction === "logout") await logoutFromGlossa();
+  } finally {
+    await lease.release();
+  }
 }
 
 async function runWorkspace(
