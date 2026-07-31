@@ -1,4 +1,5 @@
 import { workspaceLabelSchema } from "@glossa/protocol";
+import type { UpdateChannel, UpdatePolicy } from "./update-state.js";
 
 export class UsageError extends Error {}
 
@@ -7,6 +8,13 @@ export type CliInvocation =
   | { command: "status" }
   | { command: "devices"; action: "revoke"; deviceId: string }
   | { command: "logout" }
+  | { command: "update"; action: "install" | "check" }
+  | {
+      command: "update";
+      action: "configure";
+      policy?: UpdatePolicy;
+      channel?: UpdateChannel;
+    }
   | { command: "help" }
   | { command: "version" };
 
@@ -15,7 +23,6 @@ const retiredCommands = new Set([
   "doctor",
   "login",
   "start",
-  "update",
 ]);
 
 function parseWorkspace(args: string[]): CliInvocation {
@@ -66,6 +73,53 @@ function parseDevices(args: string[]): CliInvocation {
   throw new UsageError("Use: glossa devices revoke <id>.");
 }
 
+function parseUpdate(args: string[]): CliInvocation {
+  if (args.length === 0) return { command: "update", action: "install" };
+  let check = false;
+  let policy: UpdatePolicy | undefined;
+  let channel: UpdateChannel | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
+    if (argument === "--check") {
+      if (check) throw new UsageError("Use --check at most once.");
+      check = true;
+    } else if (argument === "--policy") {
+      if (policy) throw new UsageError("Use --policy at most once.");
+      const value = args[index + 1];
+      if (value !== "notify" && value !== "auto" && value !== "off") {
+        throw new UsageError("Use --policy notify, auto, or off.");
+      }
+      policy = value;
+      index += 1;
+    } else if (argument === "--channel") {
+      if (channel) throw new UsageError("Use --channel at most once.");
+      const value = args[index + 1];
+      if (value !== "beta" && value !== "stable") {
+        throw new UsageError("Use --channel beta or stable.");
+      }
+      channel = value;
+      index += 1;
+    } else {
+      throw new UsageError(`Unknown update option: ${argument}`);
+    }
+  }
+
+  if (check && (policy || channel)) {
+    throw new UsageError("Use --check separately from update settings.");
+  }
+  if (check) return { command: "update", action: "check" };
+  if (policy || channel) {
+    return {
+      command: "update",
+      action: "configure",
+      ...(policy ? { policy } : {}),
+      ...(channel ? { channel } : {}),
+    };
+  }
+  throw new UsageError("Use: glossa update [--check | --policy <value> | --channel <value>].");
+}
+
 function noOptions(command: string, args: string[]): void {
   if (args.length > 0) throw new UsageError(`${command} accepts no options.`);
 }
@@ -91,5 +145,6 @@ export function parseInvocation(args: string[]): CliInvocation {
     noOptions("Logout", options);
     return { command };
   }
+  if (command === "update") return parseUpdate(options);
   return parseWorkspace(args);
 }
