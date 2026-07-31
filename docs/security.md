@@ -146,7 +146,8 @@ Durably retain only what is needed for account/device operation and security:
 
 - device ID, name, platform, created, last seen, and revoked timestamps;
 - OAuth subject identifier;
-- metadata-only audit event type, status, and timestamp.
+- metadata-only audit event type, status, and timestamp;
+- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies.
 
 Do not durably retain:
 
