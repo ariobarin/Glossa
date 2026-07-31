@@ -10,7 +10,7 @@ export function updateRuntimeDirectory(): string {
   return path.join(configDirectory(), "runtime");
 }
 
-function processIsAlive(pid: number): boolean {
+export function processIsAlive(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);

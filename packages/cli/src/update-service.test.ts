@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -180,6 +180,17 @@ test("replaces a running-style Windows executable and cleans its backup", async 
       "old windows glossa binary",
     );
 
+    await cleanupUpdateBackups("standalone", {
+      platform: "win32",
+      executablePath: executable,
+    });
+    assert.deepEqual(
+      (await readdir(directory)).sort(),
+      ["glossa.exe", backups[0]!].sort(),
+    );
+
+    const staleBackup = `${executable}.old-2147483647-${Date.now()}`;
+    await rename(path.join(directory, backups[0]!), staleBackup);
     await cleanupUpdateBackups("standalone", {
       platform: "win32",
       executablePath: executable,

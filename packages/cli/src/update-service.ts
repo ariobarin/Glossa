@@ -4,6 +4,7 @@ import { chmod, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import semver from "semver";
 import type { UpdateChannel } from "./update-state.js";
+import { processIsAlive } from "./update-lock.js";
 
 const PACKAGE_NAME = "@ariobarin/glossa";
 const DEFAULT_REGISTRY_URL = "https://registry.npmjs.org/@ariobarin%2Fglossa";
@@ -36,6 +37,14 @@ export interface InstallUpdateOptions {
 export interface CleanupUpdateOptions {
   platform?: NodeJS.Platform;
   executablePath?: string;
+}
+
+function backupOwnerPid(name: string, prefix: string): number | null {
+  if (!name.startsWith(prefix)) return null;
+  const separator = name.indexOf("-", prefix.length);
+  if (separator < 0) return null;
+  const pid = Number(name.slice(prefix.length, separator));
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
 export type InstallUpdateResult = "installed";
@@ -134,7 +143,11 @@ export async function cleanupUpdateBackups(
   }
   await Promise.all(
     entries
-      .filter((entry) => entry.isFile() && entry.name.startsWith(prefix))
+      .filter((entry) => {
+        if (!entry.isFile()) return false;
+        const ownerPid = backupOwnerPid(entry.name, prefix);
+        return ownerPid !== null && !processIsAlive(ownerPid);
+      })
       .map(async (entry) => {
         await rm(path.join(directory, entry.name), { force: true }).catch(() => undefined);
       }),

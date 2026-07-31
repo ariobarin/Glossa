@@ -180,12 +180,16 @@ async function runWorkspace(
 }
 
 async function refreshUpdateInfo(timeoutMs: number): Promise<UpdateInfo> {
-  const state = await loadUpdateState(VERSION);
-  const info = await checkForUpdate(VERSION, state.channel, {
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const info = await loadUpdateInfo(timeoutMs);
   await recordUpdateCheck(VERSION, info.availableVersion);
   return info;
+}
+
+async function loadUpdateInfo(timeoutMs: number): Promise<UpdateInfo> {
+  const state = await loadUpdateState(VERSION);
+  return await checkForUpdate(VERSION, state.channel, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
 }
 
 async function runUpdateCommand(
@@ -229,7 +233,7 @@ async function updateBeforeWorkspace(): Promise<boolean> {
 
   let info: UpdateInfo;
   try {
-    info = await refreshUpdateInfo(2_000);
+    info = await loadUpdateInfo(2_000);
   } catch (error) {
     if (state.policy === "auto") {
       const message = error instanceof Error ? error.message : String(error);
@@ -239,9 +243,13 @@ async function updateBeforeWorkspace(): Promise<boolean> {
     }
     return false;
   }
-  if (!info.updateAvailable) return false;
+  if (!info.updateAvailable) {
+    await recordUpdateCheck(VERSION, info.availableVersion);
+    return false;
+  }
 
   if (state.policy === "notify") {
+    await recordUpdateCheck(VERSION, info.availableVersion);
     console.error(
       `Glossa ${info.availableVersion} is available. Run glossa update after disconnecting.`,
     );
