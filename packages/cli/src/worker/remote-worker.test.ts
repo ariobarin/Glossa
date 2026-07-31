@@ -578,7 +578,7 @@ test("handles cancellation while a command status wait is still running", async 
   assert.equal(completed.includes(getRequestId), true);
   assert.equal(completed.includes(cancelRequestId), true);
   assert.equal(pollBodies[0]?.waitMs, undefined);
-  assert.equal(pollBodies[1]?.waitMs, 1_000);
+  assert.equal(pollBodies[1]?.waitMs, undefined);
   assert.deepEqual(pollBodies[0]?.acceptedTypes, [
     "get_command",
     "cancel_command",
@@ -641,7 +641,7 @@ test("keeps file mutation jobs serialized while other lanes stay available", asy
           },
         });
       }
-      assert.equal(body.waitMs, 1_000);
+      assert.equal(body.waitMs, undefined);
       assert.equal(accepted.includes("write_file"), false);
       assert.equal(accepted.includes("edit_file"), false);
       assert.equal(accepted.includes("run_command"), false);
@@ -678,6 +678,189 @@ test("keeps file mutation jobs serialized while other lanes stay available", asy
   }).run();
 
   assert.ok(polls >= 2);
+});
+
+test("refreshes a stale capacity poll as soon as a mutation lane becomes free", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const workerToken = `glw_${"f".repeat(43)}`;
+  const requestIds = [
+    "00000000-0000-4000-8000-000000000040",
+    "00000000-0000-4000-8000-000000000041",
+  ];
+  const pollBodies: Array<Record<string, unknown>> = [];
+  let releaseFirst!: () => void;
+  const firstRelease = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let resolveStalePoll!: (response: Response) => void;
+  const stalePoll = new Promise<Response>((resolve) => {
+    resolveStalePoll = resolve;
+  });
+  let completed = 0;
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        workerToken,
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      pollBodies.push(body);
+      const pollIndex = pollBodies.length - 1;
+      if (pollIndex === 0) {
+        return Response.json({
+          job: {
+            type: "write_file",
+            requestId: requestIds[0],
+            path: "README.md",
+            content: "first",
+          },
+        });
+      }
+      if (pollIndex === 1) {
+        const accepted = body.acceptedTypes as string[];
+        assert.equal(accepted.includes("write_file"), false);
+        releaseFirst();
+        return await stalePoll;
+      }
+      if (pollIndex === 2) {
+        assert.equal(body.waitMs, 1);
+        assert.deepEqual(body.acceptedTypes, [
+          "write_file",
+          "edit_file",
+          "run_command",
+        ]);
+        return Response.json({
+          job: {
+            type: "write_file",
+            requestId: requestIds[1],
+            path: "README.md",
+            content: "second",
+          },
+        });
+      }
+      throw new Error(`Unexpected poll: ${pollIndex}`);
+    }
+    if (url.pathname === "/device/result") {
+      completed += 1;
+      if (completed === 2) {
+        resolveStalePoll(new Response(null, { status: 204 }));
+        controller.abort();
+      }
+      return Response.json({ accepted: true }, { status: 202 });
+    }
+    if (url.pathname === "/device/heartbeat") {
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    signal: controller.signal,
+    fetcher,
+    worker: {
+      async handle(job) {
+        assert.equal(job.type, "write_file");
+        if (job.requestId === requestIds[0]) await firstRelease;
+        return { requestId: job.requestId, ok: true, value: { bytes: 6 } };
+      },
+    },
+  }).run();
+
+  assert.equal(completed, 2);
+  assert.equal(pollBodies.length, 3);
+});
+
+test("does not refresh capacity after an in-flight result fails", async () => {
+  const controller = new AbortController();
+  const generation = "00000000-0000-4000-8000-000000000001";
+  const workerToken = `glw_${"g".repeat(43)}`;
+  const requestId = "00000000-0000-4000-8000-000000000050";
+  let polls = 0;
+  let handled = 0;
+  let releaseWrite!: () => void;
+  const writeRelease = new Promise<void>((resolve) => {
+    releaseWrite = resolve;
+  });
+  const stalePoll = new Promise<Response>(() => {});
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        workerToken,
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      polls += 1;
+      if (polls === 1) {
+        return Response.json({
+          job: {
+            type: "write_file",
+            requestId,
+            path: "README.md",
+            content: "updated",
+          },
+        });
+      }
+      assert.equal(polls, 2);
+      releaseWrite();
+      return await stalePoll;
+    }
+    if (url.pathname === "/device/result") {
+      return Response.json({ error: "relay_failure" }, { status: 500 });
+    }
+    if (url.pathname === "/device/heartbeat") {
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    signal: controller.signal,
+    fetcher,
+    worker: {
+      async handle(job) {
+        handled += 1;
+        await writeRelease;
+        return { requestId: job.requestId, ok: true, value: { bytes: 7 } };
+      },
+    },
+    onStatus(status) {
+      if (status.state === "retrying") controller.abort();
+    },
+  }).run();
+
+  assert.equal(handled, 1);
+  assert.equal(polls, 2);
 });
 
 test("accepts a discarded late result without reconnecting", async () => {

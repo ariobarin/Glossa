@@ -9,7 +9,7 @@ const WORKER_REQUEST_TIMEOUT_MS = 19_000;
 const DEFAULT_RECONNECT_BASE_MS = 500;
 const DEFAULT_RECONNECT_MAX_MS = 10_000;
 const DEFAULT_HEARTBEAT_MS = 15_000;
-const CONCURRENT_WORKER_POLL_MS = 1_000;
+const CAPACITY_REFRESH_POLL_MS = 1;
 const MAX_CONCURRENT_JOBS = 5;
 const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
 
@@ -362,6 +362,8 @@ export class RemoteWorker {
       mutation: 0,
     };
     const inFlight = new Set<Promise<void>>();
+    const capacityWaiters = new Set<() => void>();
+    let capacityVersion = 0;
     let failure: unknown;
     let heartbeat: NodeJS.Timeout | undefined;
 
@@ -381,6 +383,30 @@ export class RemoteWorker {
       }, this.#heartbeatMs);
       heartbeat.unref();
     };
+    const signalCapacityChange = (): void => {
+      capacityVersion += 1;
+      const waiters = [...capacityWaiters];
+      capacityWaiters.clear();
+      for (const waiter of waiters) waiter();
+    };
+    const waitForCapacityChange = (
+      afterVersion: number,
+    ): { promise: Promise<void>; cancel: () => void } => {
+      if (capacityVersion !== afterVersion) {
+        return { promise: Promise.resolve(), cancel: () => {} };
+      }
+      let resolve!: () => void;
+      const promise = new Promise<void>((complete) => {
+        resolve = complete;
+        capacityWaiters.add(resolve);
+      });
+      return {
+        promise,
+        cancel() {
+          capacityWaiters.delete(resolve);
+        },
+      };
+    };
     const dispatch = (job: WorkerJob): void => {
       const lane = jobLane(job);
       counts[lane] += 1;
@@ -393,6 +419,7 @@ export class RemoteWorker {
         .finally(() => {
           counts[lane] -= 1;
           inFlight.delete(task);
+          signalCapacityChange();
           if (inFlight.size === 0) stopHeartbeat();
         });
       inFlight.add(task);
@@ -410,19 +437,66 @@ export class RemoteWorker {
           await Promise.race(inFlight);
           continue;
         }
-        const job = await this.#pollForJob(
-          session,
-          acceptedTypes,
-          inFlight.size > 0 ? CONCURRENT_WORKER_POLL_MS : undefined,
-        );
-        if (!job) continue;
-        if (!acceptedTypes.includes(job.type)) {
-          throw new Error("The relay delivered a job outside worker capacity.");
+        let observedCapacityVersion = capacityVersion;
+        const poll = this.#pollForJob(session, acceptedTypes);
+        while (!this.#signal.aborted) {
+          const capacityChange = waitForCapacityChange(observedCapacityVersion);
+          const outcome = await Promise.race([
+            poll.then((job) => ({ kind: "poll" as const, job })),
+            capacityChange.promise.then(() => ({ kind: "capacity" as const })),
+          ]);
+          capacityChange.cancel();
+          if (outcome.kind === "poll") {
+            const job = outcome.job;
+            if (job) {
+              if (!acceptedTypes.includes(job.type)) {
+                throw new Error("The relay delivered a job outside worker capacity.");
+              }
+              dispatch(job);
+            }
+            break;
+          }
+
+          if (failure !== undefined) throw failure;
+          observedCapacityVersion = capacityVersion;
+          const refreshedTypes = acceptedJobTypes(
+            counts,
+            inFlight.size,
+            session.structuredReads,
+          );
+          const newlyAcceptedTypes = refreshedTypes.filter(
+            (type) => !acceptedTypes.includes(type),
+          );
+          if (newlyAcceptedTypes.length === 0) continue;
+
+          const refreshedJob = await this.#pollForJob(
+            session,
+            newlyAcceptedTypes,
+            CAPACITY_REFRESH_POLL_MS,
+          );
+          if (refreshedJob) {
+            if (!newlyAcceptedTypes.includes(refreshedJob.type)) {
+              throw new Error("The relay delivered a job outside worker capacity.");
+            }
+            dispatch(refreshedJob);
+            observedCapacityVersion = capacityVersion;
+            continue;
+          }
+
+          const staleJob = await poll;
+          if (staleJob) {
+            if (!acceptedTypes.includes(staleJob.type)) {
+              throw new Error("The relay delivered a job outside worker capacity.");
+            }
+            dispatch(staleJob);
+          }
+          break;
         }
-        dispatch(job);
       }
     } finally {
       stopHeartbeat();
+      for (const waiter of capacityWaiters) waiter();
+      capacityWaiters.clear();
       await Promise.allSettled(inFlight);
     }
     if (failure !== undefined) throw failure;
