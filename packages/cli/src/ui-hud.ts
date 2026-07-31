@@ -311,7 +311,13 @@ function fitTargetSegments(
   }
   const available = width - separator.length;
   if (available < 2) return undefined;
-  const leadingWidth = Math.floor(available / 2);
+  const balancedLeadingWidth = Math.floor(available / 2);
+  const balancedTrailingWidth = available - balancedLeadingWidth;
+  const leadingWidth = leading.length <= balancedLeadingWidth
+    ? leading.length
+    : trailing.length <= balancedTrailingWidth
+      ? available - trailing.length
+      : balancedLeadingWidth;
   return [
     truncateMiddle(leading, leadingWidth),
     separator,

@@ -167,6 +167,29 @@ test("activity summaries preserve search boundaries and command ids", () => {
     `command ${commandId}`,
   );
   assert.match(output, /command 12345678.*123456789abc/);
+
+  const shortQuery = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "search_text",
+      requestId: "request-short-query",
+      query: "q",
+      path: "p".repeat(100),
+      timeoutMs: 8_000,
+    },
+  });
+  const shortQueryOutput = renderHud(
+    { ...shortQuery, view: "activity" },
+    80,
+    false,
+    18,
+  );
+  const summaryLine = shortQueryOutput
+    .split("\n")
+    .find((line) => line.includes('query "q" in path'));
+
+  assert.equal(summaryLine?.trim().length, 76);
 });
 
 test("activity summaries include only non-default command timeouts", () => {
