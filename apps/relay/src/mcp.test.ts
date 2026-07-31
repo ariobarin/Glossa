@@ -111,6 +111,18 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
   assert.match(byName.get("run_command")?.description ?? "", /network access/);
+  assert.match(byName.get("run_command")?.description ?? "", /Prefer argv/);
+  const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
+    properties?: Record<string, { description?: unknown }>;
+  };
+  assert.match(
+    String(runCommandInputSchema.properties?.argv?.description),
+    /Preferred for native executables.*without shell startup.*Windows.*npm/,
+  );
+  assert.match(
+    String(runCommandInputSchema.properties?.shellCommand?.description),
+    /Use when shell features are required.*Windows.*npm.*PowerShell/,
+  );
   assert.match(
     byName.get("list_devices")?.description ?? "",
     /deployment-specific start instructions.*then retry/,
