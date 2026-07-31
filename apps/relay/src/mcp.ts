@@ -25,6 +25,9 @@ import {
 import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
+// Bump whenever a public tool name, schema, annotation, or result contract changes.
+export const MCP_SERVER_VERSION = "0.1.0-beta.13";
+
 const deviceIdFieldSchema = z
   .string()
   .uuid()
@@ -68,6 +71,9 @@ const listDevicesOutputSchema = z
         description: z
           .literal("The local bridge between ChatGPT and one explicitly exposed workspace.")
           .describe("Concise product identity for agent context."),
+        contractVersion: z
+          .literal(MCP_SERVER_VERSION)
+          .describe("Public MCP tool-contract version advertised during initialization."),
       })
       .strict()
       .describe("Stable Glossa product identity."),
@@ -345,14 +351,13 @@ const commandOutputSchema = workerCommandOutputSchema.extend({
     .describe("Online worker identifier returned for restart-safe get_command and cancel_command follow-ups."),
 });
 
-export const MCP_SERVER_VERSION = "0.1.0-beta.6";
-
 const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
 const MANAGED_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
 const SELF_HOSTING_DOCS_URL = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
 const PRODUCT_CONTEXT = {
   name: "Glossa",
   description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
+  contractVersion: MCP_SERVER_VERSION,
 } as const;
 
 function isManagedRelay(publicOrigin: string): boolean {
@@ -818,7 +823,7 @@ function registerTools(
     "run_command",
     {
       title: "Run Command",
-      description: "Use when the task requires a shell command, tests, builds, version control, or multi-file work. Starts a bounded process with the full authority, inherited environment, and network access of the worker account. It waits briefly for fast completion and returns output immediately; longer commands return a handle for get_command. The command may modify local or external systems.",
+      description: "Use for tests, builds, version control, or multi-file work. Prefer argv for a native executable; use shellCommand for pipes, redirection, variable expansion, multiple statements, and Windows command shims with an explicit .cmd or .bat filename such as npm.cmd. Starts a bounded process with the full authority, inherited environment, and network access of the worker account. It waits briefly for fast completion and returns output immediately; longer commands return a handle for get_command. The command may modify local or external systems.",
       inputSchema: runCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,

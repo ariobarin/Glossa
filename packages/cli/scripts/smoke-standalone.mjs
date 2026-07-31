@@ -32,14 +32,23 @@ for (const usage of [
   "glossa status",
   "glossa devices revoke <id>",
   "glossa logout",
+  "glossa update [--check]",
+  "glossa update --policy <notify|auto|off>",
+  "glossa update --channel <beta|stable>",
   "glossa --help",
   "glossa --version",
 ]) {
   assert.match(help.stdout, new RegExp(usage.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
-assert.doesNotMatch(help.stdout, /\b(?:doctor|login|update|--json)\b/);
+assert.doesNotMatch(help.stdout, /\b(?:doctor|login|start|--json)\b/);
 
-for (const retired of [["doctor"], ["login"], ["start"], ["update"], ["status", "--json"]]) {
+for (const retired of [
+  ["doctor"],
+  ["login"],
+  ["start"],
+  ["status", "--json"],
+  ["update", "--json"],
+]) {
   const result = run(retired);
   assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /Run glossa --help for usage/);

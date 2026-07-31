@@ -75,7 +75,7 @@ During a relay-first beta rollout, a current relay accepts structured-read, conc
 
 ### `POST /device/poll`
 
-Includes the worker ID and generation. Waits no more than 18 seconds and returns one job or `204 No Content`. A worker with `concurrentJobs` may also send `acceptedTypes` and a shorter `waitMs`; the relay skips queued jobs outside the advertised capacity instead of allowing them to block control work. The current worker allows one command-status wait, one cancellation, two reads, and one mutation at a time, with five total in-flight jobs. `read_file`, `list_files`, `search_text`, and `read_file_range` share the read lane. `write_file`, `edit_file`, and `run_command` share the serialized mutation lane, while `cancel_command` remains independent from a long `get_command`. Older workers omit these fields and retain sequential delivery. Worker HTTP requests use a 19 second client timeout and reconnect with bounded exponential jitter.
+Includes the worker ID and generation. Waits no more than 18 seconds and returns one job or `204 No Content`. A worker with `concurrentJobs` may also send `acceptedTypes` and a shorter `waitMs`; the relay skips queued jobs outside the advertised capacity instead of allowing them to block control work. When a lane becomes free, the current worker sends a one-millisecond refresh poll containing only newly available job types. That refresh supersedes the stale waiter without continuously shortening every active-job poll. The current worker allows one command-status wait, one cancellation, two reads, and one mutation at a time, with five total in-flight jobs. `read_file`, `list_files`, `search_text`, and `read_file_range` share the read lane. `write_file`, `edit_file`, and `run_command` share the serialized mutation lane, while `cancel_command` remains independent from a long `get_command`. Older workers omit these fields and retain sequential delivery. Worker HTTP requests use a 19 second client timeout and reconnect with bounded exponential jitter.
 
 ### `POST /device/result`
 
@@ -97,6 +97,8 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
+MCP initialization advertises public tool-contract version `0.1.0-beta.13`. Bump this version whenever a public tool name, input or output schema, annotation, or result contract changes so connector refreshes and production scans can distinguish contracts.
+
 Tools:
 
 - `list_devices`
@@ -113,7 +115,7 @@ Tools:
 
 `list_devices` returns an object with `product`, `documentationUrl`, `devices`, `availability`, and `message`. `product` gives the agent a stable, concise Glossa identity in both online and offline states. `documentationUrl` always links to the official setup and reconnect guide for the current deployment: the managed relay uses `https://glossa.sh/docs/quickstart`, while a custom relay uses `https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md`.
 
-The result includes one device entry for every active worker. Its `deviceId` is the ephemeral worker identifier accepted by file and command tools, `name` is the enrolled computer name, and `workspaceLabel` is present only when the user explicitly supplied one. Each entry reports `path: "."`; local absolute paths and derived repository names are never returned. When no workers are active, `devices` is empty and `availability` is `"offline"`. The managed-relay `message` asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, wait for the workspace to appear, and retry. A custom relay instead points the agent to the platform-specific worker command in the self-hosting guide. When one or more workers are active, `availability` is `"online"` and `message` confirms that workspaces are available. The offline result is a successful, user-safe response rather than a tool error. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
+The result includes stable product metadata with the same `contractVersion` advertised during MCP initialization, plus one device entry for every active worker. Its `deviceId` is the ephemeral worker identifier accepted by file and command tools, `name` is the enrolled computer name, and `workspaceLabel` is present only when the user explicitly supplied one. Each entry reports `path: "."`; local absolute paths and derived repository names are never returned. When no workers are active, `devices` is empty and `availability` is `"offline"`. The managed-relay `message` asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, wait for the workspace to appear, and retry. A custom relay instead points the agent to the platform-specific worker command in the self-hosting guide. When one or more workers are active, `availability` is `"online"` and `message` confirms that workspaces are available. The offline result is a successful, user-safe response rather than a tool error. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
 
 `logout` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
 
@@ -192,7 +194,7 @@ type WorkerJob =
   | { type: "cancel_command"; requestId: string; commandId: string };
 ```
 
-`argv` and `shellCommand` are mutually exclusive.
+`argv` and `shellCommand` are mutually exclusive. Clients should use `argv` for native executables such as Git and Node.js. Direct execution avoids shell startup and parsing. Use `shellCommand` when the operation requires shell syntax such as pipes, redirection, variable expansion, or multiple statements. On Windows, also use `shellCommand` for command shims and name the `.cmd` or `.bat` file explicitly, for example `npm.cmd test`, because direct process spawning does not resolve those scripts and PowerShell may otherwise select a blocked `.ps1` shim.
 
 An active worker executes valid `write_file`, `edit_file`, and bounded `run_command` jobs without a separate local confirmation round trip. Session startup is the local authorization boundary. File tools remain confined to the exposed root. Commands retain the full authority and permissions of the local worker account.
 

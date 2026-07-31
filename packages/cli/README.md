@@ -31,8 +31,15 @@ glossa
 ```
 
 The hosted commands run the tracked scripts in `site`. They verify native
-release checksums before installing. Stop every running Glossa session, then
-rerun the original installation method to update Glossa.
+release checksums before installing. Glossa checks for updates at most once per
+day before connecting a workspace and prints a notice by default.
+
+After disconnecting every running Glossa workspace, run `glossa update --check`
+to check or `glossa update` to install. Use `glossa update --policy auto` to
+install an available update before the next workspace connects, or
+`glossa update --policy off` to disable automatic checks. Open-beta installs use
+the `beta` channel; `glossa update --channel stable` selects stable releases once
+one is published.
 
 Glossa opens Google sign-in automatically when needed using OAuth Device Authorization Flow. Public client and resource identifiers are built in, so testers do not configure OAuth values. Use the same Google account when authorizing Glossa in ChatGPT.
 

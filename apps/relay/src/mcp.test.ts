@@ -23,6 +23,7 @@ const accountId = "00000000-0000-4000-8000-000000000001";
 const product = {
   name: "Glossa",
   description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
+  contractVersion: MCP_SERVER_VERSION,
 };
 const managedDocumentationUrl = "https://glossa.sh/docs/quickstart";
 const selfHostingDocumentationUrl = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
@@ -74,8 +75,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
+  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.13");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
-  assert.notEqual(client.getServerVersion()?.version, "0.0.0");
 
   const { tools } = await client.listTools();
   assert.deepEqual(
@@ -111,6 +112,18 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
   assert.match(byName.get("run_command")?.description ?? "", /network access/);
+  assert.match(byName.get("run_command")?.description ?? "", /Prefer argv/);
+  const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
+    properties?: Record<string, { description?: unknown }>;
+  };
+  assert.match(
+    String(runCommandInputSchema.properties?.argv?.description),
+    /Preferred for native executables.*without shell startup.*Windows.*npm/,
+  );
+  assert.match(
+    String(runCommandInputSchema.properties?.shellCommand?.description),
+    /Use when shell features are required.*Windows.*npm.*PowerShell/,
+  );
   assert.match(
     byName.get("list_devices")?.description ?? "",
     /deployment-specific start instructions.*then retry/,

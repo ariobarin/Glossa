@@ -14,6 +14,7 @@ This packet centralizes proposed marketplace copy, tool explanations, reviewer s
 - Support: `https://glossa.sh/support`
 - Security: `https://github.com/ariobarin/glossa/blob/main/docs/security.md`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
+- MCP tool contract: `0.1.0-beta.13` (11 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 Proposed short description:
@@ -45,7 +46,7 @@ Proposed full description:
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
 | `write_file` | No | Yes | No | Creates or replaces one file inside the exposed root. Revision checking is available through `expectedSha256`. |
 | `edit_file` | No | Yes | No | Applies exact guarded replacements and returns a bounded unified diff. |
-| `run_command` | No | Yes | Yes | Starts an arbitrary command with the worker account's inherited environment and network access. It can affect files and external systems. |
+| `run_command` | No | Yes | Yes | Starts an arbitrary command with the worker account's inherited environment and network access. Clients prefer direct `argv` execution for native programs and use `shellCommand` for shell syntax or explicit Windows `.cmd` and `.bat` shim names such as `npm.cmd`. It can affect files and external systems. |
 | `get_command` | Yes | No | No | Reads status and captured output for a command previously started by the signed-in account. |
 | `cancel_command` | No | Yes | No | Terminates a running local process tree. It does not reverse effects already caused by that command. |
 
@@ -69,6 +70,7 @@ Before submitting:
 - Enter its credentials only in the portal's protected reviewer fields. Never commit them.
 - Run the worker under a dedicated operating-system account with no developer credentials or access to private data.
 - Verify the account, OAuth consent, fixture reset, worker connection, and all twelve cases from an unrelated network.
+- Reconnect the ChatGPT integration and verify discovery reports contract `0.1.0-beta.13`, all 11 documented tools, `run_command.waitMs`, and `get_command.deviceId` plus `afterSequence`.
 - Reset the fixture before review and after any test run that changes it.
 
 ## Nine positive tests
@@ -108,4 +110,4 @@ Suggested release note after the public execution profile is resolved:
 
 ## Submission gate
 
-Do not submit this packet until the production privacy, terms, and support pages are live, the MCP scan matches the documented schemas and annotations, the reviewer account and isolated worker are continuously available, and the unrestricted command-execution decision is resolved.
+Do not submit this packet until the production privacy, terms, and support pages are live, the MCP scan reports contract `0.1.0-beta.13` and matches all 11 documented schemas and annotations, the reviewer account and isolated worker are continuously available, and the unrestricted command-execution decision is resolved.

@@ -42,6 +42,38 @@ test("keeps the reduced direct CLI actions", () => {
   assert.deepEqual(parseInvocation(["logout"]), { command: "logout" });
 });
 
+test("parses update actions and settings", () => {
+  assert.deepEqual(parseInvocation(["update"]), {
+    command: "update",
+    action: "install",
+  });
+  assert.deepEqual(parseInvocation(["update", "--check"]), {
+    command: "update",
+    action: "check",
+  });
+  assert.deepEqual(parseInvocation(["update", "--policy", "auto"]), {
+    command: "update",
+    action: "configure",
+    policy: "auto",
+  });
+  assert.deepEqual(
+    parseInvocation(["update", "--channel", "stable", "--policy", "off"]),
+    {
+      command: "update",
+      action: "configure",
+      channel: "stable",
+      policy: "off",
+    },
+  );
+});
+
+test("rejects invalid update options", () => {
+  assert.throws(() => parseInvocation(["update", "--check", "--policy", "auto"]), UsageError);
+  assert.throws(() => parseInvocation(["update", "--policy", "sometimes"]), UsageError);
+  assert.throws(() => parseInvocation(["update", "--channel", "nightly"]), UsageError);
+  assert.throws(() => parseInvocation(["update", "--unknown"]), UsageError);
+});
+
 test("keeps standard metadata options", () => {
   assert.deepEqual(parseInvocation(["--help"]), { command: "help" });
   assert.deepEqual(parseInvocation(["-h"]), { command: "help" });
@@ -77,9 +109,7 @@ test("rejects malformed retained commands and removed flags", () => {
 });
 
 test("rejects retired command names instead of treating them as paths", () => {
-  for (
-    const command of ["completions", "doctor", "login", "start", "update"]
-  ) {
+  for (const command of ["completions", "doctor", "login", "start"]) {
     assert.throws(
       () => parseInvocation([command]),
       (error: unknown) =>

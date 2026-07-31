@@ -251,14 +251,14 @@ export const runCommandRequestSchema = z
       .max(256)
       .optional()
       .describe(
-        "Executable and arguments passed without shell parsing. Provide this or shellCommand, not both.",
+        "Preferred for native executables such as git and node. Executes directly without shell startup or parsing. On Windows, use shellCommand with the explicit .cmd or .bat filename, for example npm.cmd test. Provide this or shellCommand, not both.",
       ),
     shellCommand: z
       .string()
       .max(64 * 1024)
       .optional()
       .describe(
-        "Shell command text. Glossa uses PowerShell on Windows and the user's shell on macOS and Linux. Provide this or argv, not both.",
+        "Use when shell features are required, such as pipes, redirection, variable expansion, or multiple statements. Also use on Windows for command shims, naming the .cmd or .bat file explicitly, for example npm.cmd test. Glossa starts PowerShell on Windows and the user's shell on macOS and Linux. Provide this or argv, not both.",
       ),
     stdin: boundedTextSchema
       .optional()

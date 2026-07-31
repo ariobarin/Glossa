@@ -42,13 +42,27 @@ curl -fsSL https://glossa.sh/install.sh | sh
 Both direct installers are tracked in [`site`](site). They select the native
 release for the computer and verify its SHA-256 checksum before installing it.
 
+Glossa checks for updates at most once per day before connecting a workspace and
+prints a notice by default. After disconnecting every running Glossa workspace,
+check or install an update with:
+
+```shell
+glossa update --check
+glossa update
+```
+
+Use `glossa update --policy auto` to install an available update before the next
+workspace connects, or `glossa update --policy off` to disable automatic checks.
+Open-beta installs follow the `beta` channel; `glossa update --channel stable`
+switches to stable releases once one is published.
+
 Open a terminal in the directory you want to expose, then run:
 
 ```shell
 glossa
 ```
 
-Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. When several workspaces are online, add an explicit ephemeral label such as `glossa --label frontend` or `glossa --label frontend <directory>` so clients can distinguish them; Glossa never derives this label from the local path. Run `glossa status` in another terminal to check the account, relay, enrolled devices, and active workspaces.
+Glossa signs in automatically and exposes the current directory. Pass a directory to expose a different workspace. When several different workspaces are online, add an explicit ephemeral label such as `glossa --label frontend` or `glossa --label frontend <directory>` so clients can distinguish them; Glossa never derives this label from the local path. One current Glossa process may expose a canonical directory at a time on the same local account; starting a duplicate session for that directory exits before login or relay connection. Run `glossa status` in another terminal to check the account, relay, enrolled devices, and active workspaces.
 
 On the first successful managed-relay connection on a computer, Glossa prints the ChatGPT quickstart link once. It records a `connect-hint-shown` marker in the local Glossa config directory so later starts stay quiet.
 
