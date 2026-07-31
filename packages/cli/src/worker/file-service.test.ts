@@ -282,6 +282,27 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   });
 });
 
+test("searches regular directory entries without redundant lstat calls", async (context) => {
+  const root = await temporaryDirectory(context);
+  await mkdir(path.join(root, "src"));
+  await writeFile(path.join(root, "src", "one.ts"), "const needle = true;", "utf8");
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      trustDirectoryEntryTypes: true,
+      lstatPath: async () => {
+        throw new Error("search should use Dirent types for regular entries");
+      },
+    },
+  );
+
+  const result = await files.searchText({ query: "needle" });
+  assert.deepEqual(result.matches.map((match) => match.path), ["src/one.ts"]);
+  assert.equal(result.scannedFiles, 1);
+  assert.equal(result.skippedFiles, 0);
+  assert.equal(result.skippedLinks, 0);
+});
+
 test("reads bounded complete line ranges with continuation metadata", async (context) => {
   const root = await temporaryDirectory(context);
   const files = new FileService(await PathPolicy.create(root));
