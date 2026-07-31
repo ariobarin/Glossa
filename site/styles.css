@@ -174,9 +174,35 @@ p {
 }
 
 .hero-footnote {
-  margin: 16px 0 0;
+  margin: 12px 0 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.hero-footnote code {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+.hero-installer {
+  width: min(100%, 720px);
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.hero-installer-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hero-install-panel {
+  margin-top: 10px;
+}
+
+.hero-code-block pre {
+  padding-block: 13px;
 }
 
 .primary-action {
@@ -913,6 +939,20 @@ p {
     margin-top: 20px;
     justify-content: space-between;
     gap: 12px;
+  }
+
+  .hero-installer {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+
+  .hero-code-block pre {
+    overflow-x: hidden;
+  }
+
+  .hero-code-block code {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .primary-action {
