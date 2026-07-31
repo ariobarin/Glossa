@@ -195,6 +195,57 @@ test("activity summaries include only non-default command timeouts", () => {
   assert.deepEqual(customTimeout.activities[0]!.summary.details, ["timeout 1 ms"]);
 });
 
+test("activity summaries include only non-default read timeouts", () => {
+  const defaultList = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "list_files",
+      requestId: "request-default-list-timeout",
+      timeoutMs: 8_000,
+    },
+  });
+  const customList = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "list_files",
+      requestId: "request-custom-list-timeout",
+      timeoutMs: 2_000,
+    },
+  });
+  const customSearch = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "search_text",
+      requestId: "request-custom-search-timeout",
+      query: "needle",
+      timeoutMs: 2_000,
+    },
+  });
+  const customRange = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "read_file_range",
+      requestId: "request-custom-range-timeout",
+      path: "src/index.ts",
+      startLine: 5,
+      lineCount: 10,
+      timeoutMs: 2_000,
+    },
+  });
+
+  assert.deepEqual(defaultList.activities[0]!.summary.details, []);
+  assert.deepEqual(customList.activities[0]!.summary.details, ["timeout 2000 ms"]);
+  assert.deepEqual(customSearch.activities[0]!.summary.details, ["timeout 2000 ms"]);
+  assert.deepEqual(customRange.activities[0]!.summary.details, [
+    "lines 5\u201314",
+    "timeout 2000 ms",
+  ]);
+});
+
 test("activity summaries include only non-default command start waits", () => {
   const defaultWait = applyHudEvent(connectedState(), {
     type: "activity",

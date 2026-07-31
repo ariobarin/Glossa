@@ -3,6 +3,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import {
   DEFAULT_COMMAND_FAST_WAIT_MS,
   DEFAULT_COMMAND_TIMEOUT_MS,
+  MAX_STRUCTURED_READ_TIMEOUT_MS,
   type WorkerJob,
 } from "@glossa/protocol";
 import {
@@ -209,6 +210,9 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         ...(job.recursive ? ["recursive"] : []),
         ...(job.limit ? [`limit ${job.limit}`] : []),
         ...(job.cursor ? [`after ${quoteActivityInput(job.cursor)}`] : []),
+        ...(job.timeoutMs === MAX_STRUCTURED_READ_TIMEOUT_MS
+          ? []
+          : [`timeout ${job.timeoutMs} ms`]),
       ]);
     case "search_text": {
       const leading = `query ${quoteActivityInput(job.query)}`;
@@ -226,6 +230,9 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
             : []),
           ...(job.caseSensitive ? ["case-sensitive"] : []),
           ...(job.maxResults ? [`limit ${job.maxResults}`] : []),
+          ...(job.timeoutMs === MAX_STRUCTURED_READ_TIMEOUT_MS
+            ? []
+            : [`timeout ${job.timeoutMs} ms`]),
         ],
         truncation: "middle",
       };
@@ -236,7 +243,12 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         range = `lines ${job.startLine}–${job.startLine + job.lineCount - 1}`;
       } else if (job.startLine) range = `from line ${job.startLine}`;
       else if (job.lineCount) range = `first ${job.lineCount} lines`;
-      return pathSummary(job.path, range ? [range] : []);
+      return pathSummary(job.path, [
+        ...(range ? [range] : []),
+        ...(job.timeoutMs === MAX_STRUCTURED_READ_TIMEOUT_MS
+          ? []
+          : [`timeout ${job.timeoutMs} ms`]),
+      ]);
     }
     case "write_file":
       return pathSummary(job.path, [
