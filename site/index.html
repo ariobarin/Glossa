@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Make ChatGPT your local coding agent with one explicitly exposed workspace."
+      content="Take advantage of the other 50% of your plan with one explicitly exposed workspace."
     />
     <meta name="theme-color" content="#111016" />
     <title>Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=39" />
+    <link rel="stylesheet" href="/styles.css?v=40" />
   </head>
   <body class="landing-shell">
     <header class="site-header page-width">
@@ -29,14 +29,28 @@
     <main class="landing-main page-width">
       <section class="landing-hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <h1 id="hero-title">Make ChatGPT your <span>local coding agent.</span></h1>
+          <h1 id="hero-title">Take advantage of the <span>other 50% of your plan.</span></h1>
           <div class="hero-action-row">
-            <a class="primary-action" href="/docs/quickstart">Set up Glossa</a>
-            <a class="secondary-action" href="/docs/why">Why?</a>
+            <a class="primary-action" href="/docs/quickstart">Quickstart</a>
+            <a class="secondary-action" href="/docs/why">What?</a>
           </div>
-          <p class="hero-footnote">
-            Glossa works with ChatGPT and other apps that support MCP tools.
-          </p>
+          <div class="hero-installer">
+            <div class="hero-installer-heading">
+              <span>Install with npm</span>
+            </div>
+            <div class="hero-install-panel">
+              <div class="code-block hero-code-block">
+                <button
+                  class="copy-button"
+                  type="button"
+                  aria-label="Copy npm install command"
+                  data-copy-target="hero-install-npm"
+                ><span class="copy-tooltip" aria-hidden="true">Copy</span></button>
+                <pre><code id="hero-install-npm">npm install -g @ariobarin/glossa@beta</code></pre>
+              </div>
+            </div>
+          </div>
+          <p class="hero-footnote">Install, run <code>glossa</code> in a folder, then connect ChatGPT.</p>
         </div>
       </section>
     </main>
@@ -52,5 +66,6 @@
         </nav>
       </div>
     </footer>
+    <script type="module" src="/copy.js"></script>
   </body>
 </html>
