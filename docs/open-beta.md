@@ -41,8 +41,19 @@ Get-Content .\install.ps1
 .\install.ps1
 ```
 
-To update Glossa, stop every running Glossa session, then run the same npm or
-direct installer command again.
+Glossa checks for updates at most once per day before connecting a workspace and
+prints a notice by default. After disconnecting every running Glossa workspace,
+check or install an update:
+
+```shell
+glossa update --check
+glossa update
+```
+
+Use `glossa update --policy auto` to install an available update before the next
+workspace connects, or `glossa update --policy off` to disable automatic checks.
+The open beta follows the `beta` channel. Run `glossa update --channel stable`
+to switch to stable releases once one is published.
 
 ## Start a worker
 

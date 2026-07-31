@@ -42,6 +42,20 @@ curl -fsSL https://glossa.sh/install.sh | sh
 Both direct installers are tracked in [`site`](site). They select the native
 release for the computer and verify its SHA-256 checksum before installing it.
 
+Glossa checks for updates at most once per day before connecting a workspace and
+prints a notice by default. After disconnecting every running Glossa workspace,
+check or install an update with:
+
+```shell
+glossa update --check
+glossa update
+```
+
+Use `glossa update --policy auto` to install an available update before the next
+workspace connects, or `glossa update --policy off` to disable automatic checks.
+Open-beta installs follow the `beta` channel; `glossa update --channel stable`
+switches to stable releases once one is published.
+
 Open a terminal in the directory you want to expose, then run:
 
 ```shell
