@@ -194,7 +194,7 @@ type WorkerJob =
   | { type: "cancel_command"; requestId: string; commandId: string };
 ```
 
-`argv` and `shellCommand` are mutually exclusive.
+`argv` and `shellCommand` are mutually exclusive. Clients should use `argv` for native executables such as Git and Node.js. Direct execution avoids shell startup and parsing. Use `shellCommand` when the operation requires shell syntax such as pipes, redirection, variable expansion, or multiple statements. On Windows, also use `shellCommand` for command shims and name the `.cmd` or `.bat` file explicitly, for example `npm.cmd test`, because direct process spawning does not resolve those scripts and PowerShell may otherwise select a blocked `.ps1` shim.
 
 An active worker executes valid `write_file`, `edit_file`, and bounded `run_command` jobs without a separate local confirmation round trip. Session startup is the local authorization boundary. File tools remain confined to the exposed root. Commands retain the full authority and permissions of the local worker account.
 

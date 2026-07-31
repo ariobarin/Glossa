@@ -46,7 +46,7 @@ Proposed full description:
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
 | `write_file` | No | Yes | No | Creates or replaces one file inside the exposed root. Revision checking is available through `expectedSha256`. |
 | `edit_file` | No | Yes | No | Applies exact guarded replacements and returns a bounded unified diff. |
-| `run_command` | No | Yes | Yes | Starts an arbitrary command with the worker account's inherited environment and network access. It can affect files and external systems. |
+| `run_command` | No | Yes | Yes | Starts an arbitrary command with the worker account's inherited environment and network access. Clients prefer direct `argv` execution for native programs and use `shellCommand` for shell syntax or explicit Windows `.cmd` and `.bat` shim names such as `npm.cmd`. It can affect files and external systems. |
 | `get_command` | Yes | No | No | Reads status and captured output for a command previously started by the signed-in account. |
 | `cancel_command` | No | Yes | No | Terminates a running local process tree. It does not reverse effects already caused by that command. |
 
