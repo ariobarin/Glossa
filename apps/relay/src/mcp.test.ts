@@ -75,7 +75,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.13");
+  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.14");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
 
   const { tools } = await client.listTools();
@@ -123,6 +123,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(
     String(runCommandInputSchema.properties?.shellCommand?.description),
     /Use when shell features are required.*Windows.*npm.*PowerShell/,
+  );
+  assert.match(
+    String(runCommandInputSchema.properties?.windowsShell?.description),
+    /Windows-only.*PowerShell.*cmd.*faster/,
   );
   assert.match(
     byName.get("list_devices")?.description ?? "",

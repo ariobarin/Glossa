@@ -26,7 +26,7 @@ import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
 // Bump whenever a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "0.1.0-beta.13";
+export const MCP_SERVER_VERSION = "0.1.0-beta.14";
 
 const deviceIdFieldSchema = z
   .string()
@@ -387,6 +387,7 @@ const safeWorkerMessages: Record<string, string> = {
   edit_overlap: "The requested edits overlap.",
   command_busy: "Another command is already running on this device.",
   invalid_command: "The command request is invalid.",
+  invalid_shell: "The requested command shell is unavailable on this worker.",
   invalid_timeout: "The command timeout is invalid.",
   invalid_wait: "The command status wait is invalid.",
   invalid_sequence: "The command progress sequence is invalid.",
@@ -823,7 +824,7 @@ function registerTools(
     "run_command",
     {
       title: "Run Command",
-      description: "Use for tests, builds, version control, or multi-file work. Prefer argv for a native executable; use shellCommand for pipes, redirection, variable expansion, multiple statements, and Windows command shims with an explicit .cmd or .bat filename such as npm.cmd. Starts a bounded process with the full authority, inherited environment, and network access of the worker account. It waits briefly for fast completion and returns output immediately; longer commands return a handle for get_command. The command may modify local or external systems.",
+      description: "Use for tests, builds, version control, or multi-file work. Prefer argv for a native executable. Use shellCommand for pipes, redirection, variable expansion, multiple statements, and Windows command shims with an explicit .cmd or .bat filename such as npm.cmd. On Windows, set windowsShell to cmd for shim commands that do not require PowerShell syntax; PowerShell remains the default. Starts a bounded process with the full authority, inherited environment, and network access of the worker account. It waits briefly for fast completion and returns output immediately; longer commands return a handle for get_command. The command may modify local or external systems.",
       inputSchema: runCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
@@ -834,12 +835,13 @@ function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ deviceId, argv, shellCommand, stdin, timeoutMs, waitMs }) => {
+    async ({ deviceId, argv, shellCommand, windowsShell, stdin, timeoutMs, waitMs }) => {
       const job: WorkerJob = {
         type: "run_command",
         requestId: randomUUID(),
         ...(argv ? { argv } : {}),
         ...(shellCommand ? { shellCommand } : {}),
+        ...(windowsShell ? { windowsShell } : {}),
         ...(stdin !== undefined ? { stdin } : {}),
         timeoutMs,
         ...(waitMs === undefined ? {} : { waitMs }),

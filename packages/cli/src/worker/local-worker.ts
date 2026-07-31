@@ -74,6 +74,7 @@ export class LocalWorker {
           value = await this.commands.start({
             ...(job.argv ? { argv: job.argv } : {}),
             ...(job.shellCommand ? { shellCommand: job.shellCommand } : {}),
+            ...(job.windowsShell ? { windowsShell: job.windowsShell } : {}),
             ...(job.stdin !== undefined ? { stdin: job.stdin } : {}),
             timeoutMs: job.timeoutMs,
             ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),

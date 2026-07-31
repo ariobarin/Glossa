@@ -23,6 +23,7 @@ export type CommandStatus =
 export interface StartCommandOptions {
   argv?: string[];
   shellCommand?: string;
+  windowsShell?: "powershell" | "cmd";
   stdin?: string;
   timeoutMs?: number;
   waitMs?: number;
@@ -266,13 +267,28 @@ function renderOutput(
   };
 }
 
-function shellInvocation(command: string): { file: string; args: string[] } {
+function shellInvocation(
+  command: string,
+  windowsShell?: "powershell" | "cmd",
+): { file: string; args: string[] } {
   if (process.platform === "win32") {
+    if (windowsShell === "cmd") {
+      return {
+        file: process.env.ComSpec ?? "cmd.exe",
+        args: ["/d", "/s", "/c", command],
+      };
+    }
     const file = process.env.GLOSSA_WINDOWS_SHELL ?? "powershell.exe";
     return {
       file,
       args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
     };
+  }
+  if (windowsShell) {
+    throw new WorkerError(
+      "invalid_shell",
+      "windowsShell is available only on Windows.",
+    );
   }
   return { file: process.env.SHELL ?? "/bin/sh", args: ["-lc", command] };
 }
@@ -326,6 +342,12 @@ export class CommandService {
         "Exactly one of argv or shellCommand is required.",
       );
     }
+    if (options.windowsShell && !options.shellCommand) {
+      throw new WorkerError(
+        "invalid_shell",
+        "windowsShell requires shellCommand.",
+      );
+    }
     const timeoutMs = options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_COMMAND_TIMEOUT_MS) {
       throw new WorkerError(
@@ -343,7 +365,7 @@ export class CommandService {
     const cwd = this.policy.root;
     const invocation = options.argv
       ? { file: options.argv[0]!, args: options.argv.slice(1) }
-      : shellInvocation(options.shellCommand!);
+      : shellInvocation(options.shellCommand!, options.windowsShell);
 
     const child = spawn(invocation.file, invocation.args, {
       cwd,

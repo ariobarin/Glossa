@@ -114,6 +114,33 @@ test("runs the platform shell inside the exposed root", async (context) => {
   assert.equal(completed.stderr, "");
 });
 
+test("runs the faster cmd shell when explicitly selected", { skip: process.platform !== "win32" }, async (context) => {
+  const { root, commands } = await commandFixture(context);
+  const completed = await commands.start({
+    shellCommand: "cd",
+    windowsShell: "cmd",
+    timeoutMs: 30_000,
+    waitMs: 5_000,
+  });
+
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.exitCode, 0);
+  assert.equal(completed.stdout?.trim().toLowerCase(), root.toLowerCase());
+  assert.equal(completed.stderr, "");
+});
+
+test("rejects a Windows shell selection on other platforms", { skip: process.platform === "win32" }, async (context) => {
+  const { commands } = await commandFixture(context);
+  await assert.rejects(
+    commands.start({
+      shellCommand: "pwd",
+      windowsShell: "cmd",
+      timeoutMs: 30_000,
+    }),
+    /available only on Windows/,
+  );
+});
+
 test("terminates a shell process after its timeout", async (context) => {
   const { commands } = await commandFixture(context);
   const started = await commands.start({

@@ -231,6 +231,7 @@ function requireOneCommand(
   value: {
     argv?: string[] | undefined;
     shellCommand?: string | undefined;
+    windowsShell?: "powershell" | "cmd" | undefined;
   },
   context: z.core.$RefinementCtx,
 ): void {
@@ -238,6 +239,14 @@ function requireOneCommand(
     context.addIssue({
       code: "custom",
       message: "Exactly one of argv or shellCommand is required.",
+      input: value,
+    });
+  }
+  if (value.windowsShell && !value.shellCommand) {
+    context.addIssue({
+      code: "custom",
+      path: ["windowsShell"],
+      message: "windowsShell requires shellCommand.",
       input: value,
     });
   }
@@ -259,6 +268,12 @@ export const runCommandRequestSchema = z
       .optional()
       .describe(
         "Use when shell features are required, such as pipes, redirection, variable expansion, or multiple statements. Also use on Windows for command shims, naming the .cmd or .bat file explicitly, for example npm.cmd test. Glossa starts PowerShell on Windows and the user's shell on macOS and Linux. Provide this or argv, not both.",
+      ),
+    windowsShell: z
+      .enum(["powershell", "cmd"])
+      .optional()
+      .describe(
+        "Windows-only shell selection for shellCommand. Defaults to PowerShell. Use cmd for .cmd or .bat shims when PowerShell-specific syntax is not required; cmd starts substantially faster. Omit this field on macOS and Linux.",
       ),
     stdin: boundedTextSchema
       .optional()
