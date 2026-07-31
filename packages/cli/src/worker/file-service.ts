@@ -137,6 +137,7 @@ interface FileServiceDependencies {
   openDirectory?: OpenDirectory;
   readFileBytes?: ReadFileBytes;
   lstatPath?: LstatPath;
+  trustDirectoryEntryTypes?: boolean;
   maxRepositoryScanEntries?: number;
   maxSearchBytes?: number;
 }
@@ -464,6 +465,7 @@ export class FileService {
   readonly #openDirectory: OpenDirectory;
   readonly #readFileBytes: ReadFileBytes;
   readonly #lstatPath: LstatPath;
+  readonly #trustDirectoryEntryTypes: boolean;
   readonly #maxRepositoryScanEntries: number;
   readonly #maxSearchBytes: number;
 
@@ -476,6 +478,8 @@ export class FileService {
     this.#openDirectory = dependencies.openDirectory ?? ((directory) => opendir(directory));
     this.#readFileBytes = dependencies.readFileBytes ?? readBoundedFile;
     this.#lstatPath = dependencies.lstatPath ?? ((target) => lstat(target));
+    this.#trustDirectoryEntryTypes =
+      dependencies.trustDirectoryEntryTypes ?? dependencies.lstatPath === undefined;
     this.#maxRepositoryScanEntries =
       dependencies.maxRepositoryScanEntries ?? MAX_REPOSITORY_SCAN_ENTRIES;
     this.#maxSearchBytes = dependencies.maxSearchBytes ?? MAX_SEARCH_BYTES;
@@ -911,6 +915,7 @@ export class FileService {
           (error instanceof WorkerError &&
             [
               "not_text",
+              "not_file",
               "file_too_large",
               "file_changed",
               "path_not_found",
@@ -972,21 +977,37 @@ export class FileService {
       for (const child of batch.children) {
         this.#assertBeforeDeadline(deadlineAt);
         const target = path.join(directory, child.name);
-        let targetStat;
-        try {
-          targetStat = await this.#withinDeadline(this.#lstatPath(target), deadlineAt);
-        } catch (error) {
-          if (isUnavailableFileError(error)) {
-            skippedFiles += 1;
+        let targetType: "directory" | "file" | undefined;
+        if (this.#trustDirectoryEntryTypes) {
+          if (child.isSymbolicLink()) {
+            skippedLinks += 1;
             continue;
           }
-          throw error;
+          if (child.isDirectory()) targetType = "directory";
+          else if (child.isFile()) targetType = "file";
         }
-        if (targetStat.isSymbolicLink()) {
-          skippedLinks += 1;
-          continue;
+        if (!targetType) {
+          let targetStat;
+          try {
+            targetStat = await this.#withinDeadline(
+              this.#lstatPath(target),
+              deadlineAt,
+            );
+          } catch (error) {
+            if (isUnavailableFileError(error)) {
+              skippedFiles += 1;
+              continue;
+            }
+            throw error;
+          }
+          if (targetStat.isSymbolicLink()) {
+            skippedLinks += 1;
+            continue;
+          }
+          if (targetStat.isDirectory()) targetType = "directory";
+          else if (targetStat.isFile()) targetType = "file";
         }
-        if (targetStat.isDirectory()) {
+        if (targetType === "directory") {
           if (SKIPPED_RECURSIVE_DIRECTORIES.has(child.name.toLowerCase())) continue;
           try {
             await this.#withinDeadline(
@@ -1005,7 +1026,7 @@ export class FileService {
             throw error;
           }
           if (await visit(target)) return true;
-        } else if (targetStat.isFile() && await searchFile(target)) {
+        } else if (targetType === "file" && await searchFile(target)) {
           return true;
         }
       }
