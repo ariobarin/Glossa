@@ -164,7 +164,7 @@ export const writeFileRequestSchema = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .optional()
     .describe(
-      "SHA-256 returned by read_file. When provided, the write fails if the file changed.",
+      "Full-file SHA-256 returned by read_file or read_file_range. When provided, the write fails if the file changed.",
     ),
 }).strict();
 
@@ -201,7 +201,7 @@ export const editFileRequestSchema = z
       .regex(/^[a-f0-9]{64}$/)
       .optional()
       .describe(
-        "SHA-256 returned by read_file. When provided, the edit fails if the file changed.",
+        "Full-file SHA-256 returned by read_file or read_file_range. When provided, the edit fails if the file changed.",
       ),
   })
   .strict()

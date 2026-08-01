@@ -3,7 +3,11 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { loadConfig } from "./config.js";
-import { createMcpServer, MCP_SERVER_VERSION } from "./mcp.js";
+import {
+  createMcpServer,
+  MCP_SERVER_INSTRUCTIONS,
+  MCP_SERVER_VERSION,
+} from "./mcp.js";
 import { RouterState } from "./router-state.js";
 
 const expectedTools = [
@@ -19,10 +23,23 @@ const expectedTools = [
   "search_text",
   "write_file",
 ];
+const expectedToolTitles: Record<string, string> = {
+  cancel_command: "Stop Workspace Command",
+  edit_file: "Edit Workspace File",
+  get_command: "Check Workspace Command",
+  list_devices: "Find Glossa Workspaces",
+  list_files: "List Workspace Files",
+  logout: "Get Glossa Sign-Out Steps",
+  read_file: "Read Workspace File",
+  read_file_range: "Read Workspace File Range",
+  run_command: "Run Workspace Command",
+  search_text: "Search Workspace Text",
+  write_file: "Create or Replace Workspace File",
+};
 const accountId = "00000000-0000-4000-8000-000000000001";
 const product = {
   name: "Glossa",
-  description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
+  description: "Access files and run project commands in user-exposed local coding workspaces.",
   contractVersion: MCP_SERVER_VERSION,
 };
 const managedDocumentationUrl = "https://glossa.sh/docs/quickstart";
@@ -77,6 +94,17 @@ test("publishes reviewable MCP tool contracts", async (context) => {
 
   assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.13");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
+  assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
+  const [routingInstructions] = MCP_SERVER_INSTRUCTIONS.split("\n\n");
+  assert.ok(routingInstructions);
+  assert.ok(routingInstructions.length <= 512);
+  assert.match(routingInstructions, /Use it to read, search, or edit files/);
+  assert.match(routingInstructions, /Do not use it for general questions/);
+  assert.match(routingInstructions, /Before the first file or run_command call, use list_devices/);
+  assert.match(routingInstructions, /full worker-account authority and network access/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /workspace labels, files, and command output/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /requests a scoped change/);
 
   const { tools } = await client.listTools();
   assert.deepEqual(
@@ -85,8 +113,13 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
 
   for (const tool of tools) {
-    assert.ok(tool.title, `${tool.name} must have a title`);
+    assert.equal(tool.title, expectedToolTitles[tool.name]);
     assert.ok(tool.description, `${tool.name} must have a description`);
+    assert.match(
+      tool.description,
+      /^Use this when/,
+      `${tool.name} must begin with model-selection guidance`,
+    );
     assert.ok(tool.inputSchema, `${tool.name} must have an input schema`);
     assert.ok(tool.outputSchema, `${tool.name} must have an output schema`);
     assertFieldDescriptions(
@@ -98,6 +131,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       `${tool.name}.output`,
     );
     assert.equal(tool._meta?.["openai/visibility"], "public");
+    assert.deepEqual(tool._meta?.ui, { visibility: ["model"] });
     assert.deepEqual(tool._meta?.securitySchemes, [
       { type: "oauth2", scopes: ["glossa:access"] },
     ]);
@@ -112,7 +146,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
   assert.match(byName.get("run_command")?.description ?? "", /network access/);
-  assert.match(byName.get("run_command")?.description ?? "", /Prefer argv/);
+  assert.match(
+    byName.get("run_command")?.description ?? "",
+    /Do not use it only to list, search, or read workspace files/,
+  );
+  assert.match(
+    byName.get("run_command")?.description ?? "",
+    /not confined to the exposed root/,
+  );
   const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
     properties?: Record<string, { description?: unknown }>;
   };
@@ -126,7 +167,15 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     byName.get("list_devices")?.description ?? "",
-    /deployment-specific start instructions.*then retry/,
+    /identifies one uniquely.*unique --label.*If none are online/,
+  );
+  assert.match(
+    byName.get("list_devices")?.description ?? "",
+    /stop until the user confirms one is running/,
+  );
+  assert.match(
+    byName.get("list_devices")?.description ?? "",
+    /Do not use it for requests that need no local workspace/,
   );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_devices")?.outputSchema),
@@ -167,6 +216,27 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("edit_file")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("edit_file")?.annotations?.openWorldHint, false);
   assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
+  assert.match(byName.get("read_file")?.description ?? "", /Prefer read_file_range/);
+  assert.match(byName.get("read_file_range")?.description ?? "", /Prefer read_file/);
+  assert.match(byName.get("write_file")?.description ?? "", /Prefer edit_file/);
+  assert.match(byName.get("edit_file")?.description ?? "", /prefer write_file/);
+  assert.match(byName.get("search_text")?.description ?? "", /Prefer it to run_command/);
+  assert.match(byName.get("get_command")?.description ?? "", /Do not rerun the original command/);
+  assert.match(byName.get("cancel_command")?.description ?? "", /does not undo effects/);
+  const writeFileSchema = byName.get("write_file")?.inputSchema as {
+    properties?: Record<string, { description?: unknown }>;
+  };
+  const editFileSchema = byName.get("edit_file")?.inputSchema as {
+    properties?: Record<string, { description?: unknown }>;
+  };
+  assert.match(
+    String(writeFileSchema.properties?.expectedSha256?.description),
+    /read_file or read_file_range.*write fails if the file changed/,
+  );
+  assert.match(
+    String(editFileSchema.properties?.expectedSha256?.description),
+    /read_file or read_file_range.*edit fails if the file changed/,
+  );
 
   const result = await client.callTool({
     name: "list_devices",
@@ -178,11 +248,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     documentationUrl: managedDocumentationUrl,
     devices: [],
     availability: "offline",
-    message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open, wait for the workspace to appear, then retry. See https://glossa.sh/docs/quickstart for setup help.",
+    message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
   });
   assert.match(
     String(result.structuredContent?.message),
-    /open a terminal.*run `glossa`.*Keep that terminal open.*then retry\./,
+    /open a terminal.*run `glossa`.*Keep that terminal open.*Retry only after the user confirms/,
   );
   assert.match(
     String(result.structuredContent?.message),
@@ -196,7 +266,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         documentationUrl: managedDocumentationUrl,
         devices: [],
         availability: "offline",
-        message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open, wait for the workspace to appear, then retry. See https://glossa.sh/docs/quickstart for setup help.",
+        message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
       }),
     },
   ]);
@@ -260,7 +330,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.equal(
     selfHostedMessage,
-    `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${selfHostingDocumentationUrl}. Keep that terminal open, wait for the workspace to appear, then retry.`,
+    `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${selfHostingDocumentationUrl}. Keep that terminal open. Retry only after the user confirms the workspace is running.`,
   );
   assert.doesNotMatch(selfHostedMessage, /run `glossa`/);
 
@@ -298,8 +368,19 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(logout.isError, undefined);
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
-    instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. Choose the same intended Google account for both authorizations.`,
+    instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts sign-in automatically the next time it needs an account. Choose the same intended sign-in account for both authorizations.`,
   });
+  assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
+
+  const selfHostedLogout = await selfHostedClient.callTool({
+    name: "logout",
+    arguments: {},
+  });
+  assert.match(
+    JSON.stringify(selfHostedLogout.structuredContent),
+    /same intended sign-in account/,
+  );
+  assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
 
 test("routes cached command schemas without deviceId", async (context) => {
