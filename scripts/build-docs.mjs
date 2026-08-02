@@ -413,7 +413,7 @@ function renderPage(pageConfig, page) {
     <meta name="theme-color" content="#111016" />
     <title>${escapeHtml(pageConfig.tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=45" />
+    <link rel="stylesheet" href="/styles.css?v=46" />
     <script type="module" src="/copy.js?v=7"></script>
   </head>
   <body class="docs-shell">
