@@ -1,17 +1,21 @@
 # Why Glossa?
 
-Your plan still has code left in it.
+Codex can run out before your ideas do.
 
-## Codex ran out. You didn't.
+## Your plan still has code left in it
 
-OpenAI [advertises core ChatGPT chat as unlimited on Pro](https://openai.com/chatgpt/pricing/), subject to guardrails. Glossa lets [ChatGPT](https://chatgpt.com/chat) use that conversation to read files, make changes, and run commands in a local workspace. When Codex reaches its limit, your coding does not have to stop with it.
+When Codex reaches its limit but ChatGPT is still available, most people stop coding and wait. Glossa lets you keep going. It connects a regular [ChatGPT](https://chatgpt.com/chat) conversation to the project on your computer, so ChatGPT can inspect files, make changes, and run commands instead of only telling you what to do.
 
-## Keep your momentum
+## Keep the problem warm
 
-The idea is already in your head and the project is already open. Glossa gives ChatGPT another way to inspect the repository, make the change, and check its work. Keep building instead of waiting for a usage window to reset.
+The expensive part of coding is getting the whole problem into your head. Your project is open. The decisions are fresh. You know what should happen next. Glossa keeps that momentum alive instead of letting a usage window end it.
 
-## Use the chat you already pay for
+## Use the ChatGPT you already have
 
-Glossa does not add another model, agent, or subscription. ChatGPT does the thinking. Glossa gives it the tools to work on the project on your computer.
+Glossa is not another model or another subscription. ChatGPT does the thinking. Glossa gives it a way to work on your local code. The access you might have used for one-off questions can become more progress on the project you actually care about.
 
-<p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Keep coding</a></p>
+## Everyone else stopped. You kept going.
+
+That is the feeling Glossa is built for. Codex is done for now, but you are not. You found the extra runway in the plan you already pay for and used it to ship.
+
+<p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>

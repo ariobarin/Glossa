@@ -98,7 +98,8 @@ button:focus-visible {
 
 .header-links,
 .site-footer-inner,
-.site-footer nav {
+.site-footer nav,
+.hero-action-row {
   display: flex;
   align-items: center;
 }
@@ -167,20 +168,41 @@ p {
   color: var(--purple);
 }
 
-.hero-lede {
-  max-width: 620px;
-  margin: 22px 0 0;
-  color: var(--muted);
-  font-size: clamp(16px, 1.5vw, 19px);
-  line-height: 1.55;
-}
-
-.hero-lede strong {
-  color: var(--ink);
-}
-
-.hero-cta {
+.hero-action-row {
   margin-top: 28px;
+  gap: 20px;
+}
+
+.hero-footnote {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.hero-footnote code {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+.hero-installer {
+  width: min(100%, 720px);
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.hero-installer-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hero-install-panel {
+  margin-top: 10px;
+}
+
+.hero-code-block pre {
+  padding-block: 13px;
 }
 
 .primary-action {
@@ -208,6 +230,25 @@ p {
 .primary-action:active {
   background: #ef5c56;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+}
+
+.secondary-action {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  padding: 0 17px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.secondary-action:hover {
+  border-color: var(--purple-readable);
+  color: var(--purple-readable);
 }
 
 .site-footer {
@@ -882,8 +923,8 @@ p {
   }
 
   .landing-hero {
-    gap: 28px;
-    padding: 34px 0 36px;
+    gap: 22px;
+    padding: 22px 0 18px;
   }
 
   .hero-copy h1 {
@@ -894,16 +935,33 @@ p {
     margin-top: 4px;
   }
 
-  .hero-lede {
-    margin-top: 18px;
-    font-size: 16px;
+  .hero-action-row {
+    margin-top: 20px;
+    justify-content: space-between;
+    gap: 12px;
   }
 
-  .hero-cta {
-    margin-top: 24px;
+  .hero-installer {
+    margin-top: 18px;
+    padding-top: 14px;
+  }
+
+  .hero-code-block pre {
+    overflow-x: hidden;
+  }
+
+  .hero-code-block code {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .primary-action {
+    min-height: 43px;
+    padding: 0 13px;
+    font-size: 13px;
+  }
+
+  .secondary-action {
     min-height: 43px;
     padding: 0 13px;
     font-size: 13px;
@@ -989,10 +1047,6 @@ p {
   .header-links {
     gap: 8px;
     font-size: 10px;
-  }
-
-  .hero-copy h1 {
-    font-size: 38px;
   }
 }
 
