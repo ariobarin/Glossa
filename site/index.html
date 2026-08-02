@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Take advantage of the other 50% of your plan with one explicitly exposed workspace."
+      content="Codex ran out. You didn't. Use Glossa to keep coding with ChatGPT and the plan you already have."
     />
     <meta name="theme-color" content="#111016" />
-    <title>Glossa</title>
+    <title>Glossa | Your plan still has code left in it</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=40" />
+    <link rel="stylesheet" href="/styles.css?v=41" />
   </head>
   <body class="landing-shell">
     <header class="site-header page-width">
@@ -29,10 +29,16 @@
     <main class="landing-main page-width">
       <section class="landing-hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <h1 id="hero-title">Take advantage of the <span>other 50% of your plan.</span></h1>
+          <p class="hero-status"><span aria-hidden="true"></span>Codex usage limit reached</p>
+          <h1 id="hero-title">Your plan still has <span>code left in it.</span></h1>
+          <p class="hero-lede">
+            <strong>Codex ran out. You didn't.</strong> Glossa lets ChatGPT work on the
+            project on your computer, so you can keep building with the chat you
+            already pay for.
+          </p>
           <div class="hero-action-row">
-            <a class="primary-action" href="/docs/quickstart">Quickstart</a>
-            <a class="secondary-action" href="/docs/why">What?</a>
+            <a class="primary-action" href="/docs/quickstart">Keep coding</a>
+            <a class="secondary-action" href="/docs/why">See the trick</a>
           </div>
           <div class="hero-installer">
             <div class="hero-installer-heading">
@@ -50,8 +56,31 @@
               </div>
             </div>
           </div>
-          <p class="hero-footnote">Install, run <code>glossa</code> in a folder, then connect ChatGPT.</p>
+          <p class="hero-footnote">Install, run <code>glossa</code> in your project, then connect ChatGPT.</p>
         </div>
+        <aside class="hero-reveal" aria-label="Another way to keep coding">
+          <div class="reveal-heading">
+            <span>Your next move</span>
+            <span class="reveal-ready"><span aria-hidden="true"></span>Still ready</span>
+          </div>
+          <div class="usage-route">
+            <div class="usage-row usage-spent">
+              <span>Codex</span>
+              <strong>Limit reached</strong>
+            </div>
+            <div class="usage-turn" aria-hidden="true">
+              <span>but</span>
+            </div>
+            <div class="usage-row usage-available">
+              <span>ChatGPT + Glossa</span>
+              <strong>Ready to code</strong>
+            </div>
+          </div>
+          <p class="reveal-payoff">
+            Everyone else stopped when Codex ran out.
+            <strong>You knew how to keep going.</strong>
+          </p>
+        </aside>
       </section>
     </main>
 

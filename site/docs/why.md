@@ -1,17 +1,17 @@
 # Why Glossa?
 
-The best place to start coding work may already be the ChatGPT conversation you have open.
+Your plan still has code left in it.
 
-## Use the subscription you already pay for
+## Codex ran out. You didn't.
 
-OpenAI [advertises core ChatGPT chat as unlimited on Pro](https://openai.com/chatgpt/pricing/), subject to guardrails. Glossa lets [ChatGPT](https://chatgpt.com/chat) read files, make changes, and run commands in a local workspace, so that access can do real coding work instead of stopping at suggestions.
+OpenAI [advertises core ChatGPT chat as unlimited on Pro](https://openai.com/chatgpt/pricing/), subject to guardrails. Glossa lets [ChatGPT](https://chatgpt.com/chat) use that conversation to read files, make changes, and run commands in a local workspace. When Codex reaches its limit, your coding does not have to stop with it.
 
-## Keep the conversation
+## Keep your momentum
 
-Your questions, context, and decisions are already in ChatGPT. Glossa lets the same conversation inspect the repository, make the change, and check its work. There is no need to restart elsewhere just because the task touches code.
+The idea is already in your head and the project is already open. Glossa gives ChatGPT another way to inspect the repository, make the change, and check its work. Keep building instead of waiting for a usage window to reset.
 
-## Add a bridge, not another agent
+## Use the chat you already pay for
 
-Glossa has no model, planner, or conversation store. ChatGPT does the thinking. A small hosted relay connects it to a worker running on your computer, and you choose which workspace to expose.
+Glossa does not add another model, agent, or subscription. ChatGPT does the thinking. Glossa gives it the tools to work on the project on your computer.
 
-<p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Set up Glossa</a></p>
+<p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Keep coding</a></p>
