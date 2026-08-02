@@ -16,6 +16,6 @@ Glossa is not another model or another subscription. ChatGPT does the thinking. 
 
 ## Everyone else stopped. You kept going.
 
-That is the feeling Glossa is built for. Codex is done for now, but you are not. You found the extra runway in the plan you already pay for and used it to ship.
+Codex is done for now. Your project is not.
 
 <p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>
