@@ -175,8 +175,27 @@ p {
   line-height: 1.55;
 }
 
-.hero-cta {
+.hero-lede strong {
+  color: var(--ink);
+}
+
+.hero-installer {
+  width: min(100%, 650px);
   margin-top: 28px;
+}
+
+.hero-installer-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hero-code-block {
+  margin-top: 10px;
+}
+
+.hero-code-block pre {
+  padding-block: 13px;
 }
 
 .primary-action {
@@ -895,8 +914,17 @@ p {
     font-size: 16px;
   }
 
-  .hero-cta {
+  .hero-installer {
     margin-top: 24px;
+  }
+
+  .hero-code-block pre {
+    overflow-x: hidden;
+  }
+
+  .hero-code-block code {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .primary-action {
