@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Codex ran out. You didn't. Use Glossa to keep coding with ChatGPT and the plan you already have."
+      content="Codex ran out. You didn't. Use ChatGPT on your local project with Glossa."
     />
     <meta name="theme-color" content="#111016" />
-    <title>Glossa | Your plan still has code left in it</title>
+    <title>Glossa | Codex ran out. You didn't.</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=42" />
+    <link rel="stylesheet" href="/styles.css?v=44" />
   </head>
   <body class="landing-shell">
     <header class="site-header page-width">
@@ -19,9 +19,7 @@
         <span>Glossa</span>
       </a>
       <nav class="header-links" aria-label="Site navigation">
-        <a href="/docs/quickstart">Quickstart</a>
-        <a href="/security">Security</a>
-        <a href="/support">Support</a>
+        <a href="/docs/quickstart">Install</a>
         <a href="https://github.com/ariobarin/glossa">GitHub</a>
       </nav>
     </header>
@@ -29,32 +27,9 @@
     <main class="landing-main page-width">
       <section class="landing-hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <h1 id="hero-title">Your plan still has <span>code left in it.</span></h1>
-          <p class="hero-lede">
-            <strong>Codex ran out. You didn't.</strong> Keep coding with ChatGPT and the
-            plan you already have.
-          </p>
-          <div class="hero-action-row">
-            <a class="primary-action" href="/docs/quickstart">Keep coding</a>
-            <a class="hero-text-link" href="/docs/why">See how it works</a>
-          </div>
-          <div class="hero-installer">
-            <div class="hero-installer-heading">
-              <span>Install with npm</span>
-            </div>
-            <div class="hero-install-panel">
-              <div class="code-block hero-code-block">
-                <button
-                  class="copy-button"
-                  type="button"
-                  aria-label="Copy npm install command"
-                  data-copy-target="hero-install-npm"
-                ><span class="copy-tooltip" aria-hidden="true">Copy</span></button>
-                <pre><code id="hero-install-npm">npm install -g @ariobarin/glossa@beta</code></pre>
-              </div>
-            </div>
-          </div>
-          <p class="hero-footnote">Install, run <code>glossa</code> in your project, then connect ChatGPT.</p>
+          <h1 id="hero-title">Codex ran out. <span>You didn't.</span></h1>
+          <p class="hero-lede">Glossa lets ChatGPT code on your computer.</p>
+          <a class="primary-action hero-cta" href="/docs/quickstart">Install</a>
         </div>
       </section>
     </main>
@@ -70,6 +45,5 @@
         </nav>
       </div>
     </footer>
-    <script type="module" src="/copy.js"></script>
   </body>
 </html>

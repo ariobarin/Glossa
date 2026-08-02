@@ -98,8 +98,7 @@ button:focus-visible {
 
 .header-links,
 .site-footer-inner,
-.site-footer nav,
-.hero-action-row {
+.site-footer nav {
   display: flex;
   align-items: center;
 }
@@ -176,45 +175,8 @@ p {
   line-height: 1.55;
 }
 
-.hero-lede strong {
-  color: var(--ink);
-}
-
-.hero-action-row {
+.hero-cta {
   margin-top: 28px;
-  gap: 20px;
-}
-
-.hero-footnote {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.hero-footnote code {
-  color: var(--ink);
-  font-family: var(--mono);
-}
-
-.hero-installer {
-  width: min(100%, 650px);
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.hero-installer-heading > span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.hero-install-panel {
-  margin-top: 10px;
-}
-
-.hero-code-block pre {
-  padding-block: 13px;
 }
 
 .primary-action {
@@ -242,24 +204,6 @@ p {
 .primary-action:active {
   background: #ef5c56;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
-}
-
-.hero-text-link {
-  display: inline-flex;
-  min-height: 48px;
-  align-items: center;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  text-underline-offset: 4px;
-  transition: color 140ms ease, text-decoration-color 140ms ease;
-}
-
-.hero-text-link:hover {
-  color: var(--purple-readable);
-  text-decoration-color: currentColor;
 }
 
 .site-footer {
@@ -951,34 +895,13 @@ p {
     font-size: 16px;
   }
 
-  .hero-action-row {
-    margin-top: 20px;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .hero-installer {
-    margin-top: 18px;
-    padding-top: 14px;
-  }
-
-  .hero-code-block pre {
-    overflow-x: hidden;
-  }
-
-  .hero-code-block code {
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
+  .hero-cta {
+    margin-top: 24px;
   }
 
   .primary-action {
     min-height: 43px;
     padding: 0 13px;
-    font-size: 13px;
-  }
-
-.hero-text-link {
-    min-height: 43px;
     font-size: 13px;
   }
 
