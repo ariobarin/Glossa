@@ -9,9 +9,6 @@ import { PAGE_REGISTRY } from "./build-docs.mjs";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const siteDirectory = join(repositoryRoot, "site");
 const generatedPages = new Set(PAGE_REGISTRY.map((page) => page.output));
-const generatedPageConfigs = new Map(
-  PAGE_REGISTRY.map((page) => [page.output, page]),
-);
 
 async function findHtmlFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -85,18 +82,11 @@ for (const page of pages) {
   }
 
   if (generatedPages.has(page.name)) {
-    const pageConfig = generatedPageConfigs.get(page.name);
     requireAll(page.html, [
-      pageConfig?.focused
-        ? '<body class="docs-shell docs-shell-focused">'
-        : '<body class="docs-shell">',
+      '<body class="docs-shell">',
       '<div class="docs-page">',
+      '<nav class="docs-sidebar" aria-label="Documentation">',
     ], page.name);
-    if (!pageConfig?.focused) {
-      requireAll(page.html, [
-        '<nav class="docs-sidebar" aria-label="Documentation">',
-      ], page.name);
-    }
     if (!/<script type="module" src="\/copy\.js(?:\?[^"]*)?"><\/script>/.test(page.html)) {
       throw new Error(`${page.name} must load the site interactions`);
     }
@@ -141,12 +131,17 @@ assert.equal(chooseActiveSection([
 
 const quickstart = pagesByName.get("site/docs/quickstart.html")?.html ?? "";
 requireAll(quickstart, [
-  '<div class="docs-layout docs-layout-focused">',
+  '<div class="docs-layout has-toc">',
+  '<nav class="docs-sidebar" aria-label="Documentation">',
+  '<nav class="docs-toc" aria-label="On this page">',
+  'data-copy-page',
+  'data-page-markdown',
+  'class="heading-anchor"',
   '<h1>Connect ChatGPT to a local workspace</h1>',
-  '<h2 id="1-install-glossa">1. Install Glossa</h2>',
-  '<h2 id="2-start-glossa">2. Start Glossa</h2>',
-  '<h2 id="3-add-glossa-to-chatgpt">3. Add Glossa to ChatGPT</h2>',
-  '<h2 id="4-test-the-connection">4. Test the connection</h2>',
+  '<h2 id="1-install-glossa"><a class="heading-anchor"',
+  '<h2 id="2-start-glossa"><a class="heading-anchor"',
+  '<h2 id="3-add-glossa-to-chatgpt"><a class="heading-anchor"',
+  '<h2 id="4-test-the-connection"><a class="heading-anchor"',
   'npm install --global @ariobarin/glossa@beta',
   'https://mcp.glossa.sh/mcp',
   '<strong>Scan Tools</strong>',
@@ -154,11 +149,6 @@ requireAll(quickstart, [
   "data-copy-target=",
 ], "site/docs/quickstart.html");
 for (const unnecessary of [
-  'data-copy-page',
-  'data-page-markdown',
-  'class="docs-sidebar"',
-  'class="docs-toc"',
-  'class="heading-anchor"',
   'data-docs-tabs',
   'Direct installer',
   'glossa --version',

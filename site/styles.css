@@ -299,20 +299,6 @@ p {
   min-width: 0;
 }
 
-.docs-shell-focused .header-links {
-  display: none;
-}
-
-.docs-layout-focused {
-  display: block;
-  max-width: var(--reading-width);
-  margin-inline: auto;
-}
-
-.docs-shell-focused .docs-content {
-  margin-top: 24px;
-}
-
 .docs-sidebar {
   position: sticky;
   top: 96px;

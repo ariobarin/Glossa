@@ -17,7 +17,6 @@ export const PAGE_GROUPS = [
         route: "/docs/quickstart",
         tabTitle: "Quickstart",
         navLabel: "Quickstart",
-        focused: true,
       },
     ],
   },
@@ -115,7 +114,7 @@ function slugifyHeading(value) {
     .replace(/^-|-$/g, "");
 }
 
-function createMarkdown(route, headingAnchors = true) {
+function createMarkdown(route) {
   const headingIds = new Map();
   let codeIndex = 0;
   const markdown = new Marked();
@@ -135,10 +134,7 @@ function createMarkdown(route, headingAnchors = true) {
         headingIds.set(baseId, count + 1);
         token.docId = count === 0 ? baseId : `${baseId}-${count + 1}`;
         token.docLabel = label;
-        const anchor = headingAnchors
-          ? `<a class="heading-anchor" href="#${token.docId}" aria-label="Link to ${escapeHtml(label)}"></a>`
-          : "";
-        return `<h${token.depth} id="${token.docId}">${anchor}${content}</h${token.depth}>\n`;
+        return `<h${token.depth} id="${token.docId}"><a class="heading-anchor" href="#${token.docId}" aria-label="Link to ${escapeHtml(label)}"></a>${content}</h${token.depth}>\n`;
       },
       code(token) {
         codeIndex += 1;
@@ -162,8 +158,8 @@ function createMarkdown(route, headingAnchors = true) {
   return markdown;
 }
 
-function readPage(source, sourceLabel, route, headingAnchors = true) {
-  const markdown = createMarkdown(route, headingAnchors);
+function readPage(source, sourceLabel, route) {
+  const markdown = createMarkdown(route);
   const normalizedSource = source.replaceAll("\r\n", "\n");
   const tokens = markdown.lexer(normalizedSource.trim());
   const titleIndex = tokens.findIndex(
@@ -257,21 +253,11 @@ ${groups}
 
 function renderPage(pageConfig, page) {
   const body = renderBody(page.markdown, page.bodyTokens);
-  const focused = pageConfig.focused === true;
-  const sectionNavigation = focused
-    ? ""
-    : renderSectionNavigation(page.bodyTokens);
-  const sidebar = focused ? "" : renderDocsSidebar(pageConfig.route);
+  const sectionNavigation = renderSectionNavigation(page.bodyTokens);
+  const sidebar = renderDocsSidebar(pageConfig.route);
   const serializedSource = JSON.stringify(page.source).replaceAll("<", "\\u003c");
-  const layoutClass = focused
-    ? " docs-layout-focused"
-    : sectionNavigation ? " has-toc" : "";
-  const introduction = focused
-    ? `      <header class="docs-intro">
-        <h1>${escapeHtml(page.title)}</h1>
-        <p class="docs-summary">${page.summaryHtml}</p>
-      </header>`
-    : `      <header class="docs-intro">
+  const layoutClass = sectionNavigation ? " has-toc" : "";
+  const introduction = `      <header class="docs-intro">
         <div class="docs-kicker">${escapeHtml(pageConfig.group)}</div>
         <div class="docs-title-row">
           <h1>${escapeHtml(page.title)}</h1>
@@ -293,7 +279,7 @@ function renderPage(pageConfig, page) {
     <link rel="stylesheet" href="/styles.css?v=39" />
     <script type="module" src="/copy.js?v=7"></script>
   </head>
-  <body class="docs-shell${focused ? " docs-shell-focused" : ""}">
+  <body class="docs-shell">
     <!-- Generated from ${pageConfig.source}. Run npm run docs:build after editing Markdown. -->
     <header class="site-header page-width">
       <a class="brand" href="/" aria-label="Glossa home">
@@ -344,12 +330,7 @@ async function buildDocs() {
 
   for (const pageConfig of PAGE_REGISTRY) {
     const source = await readFile(pageConfig.sourcePath, "utf8");
-    const page = readPage(
-      source,
-      pageConfig.source,
-      pageConfig.route,
-      !pageConfig.focused,
-    );
+    const page = readPage(source, pageConfig.source, pageConfig.route);
     const output = renderPage(pageConfig, page);
 
     if (checkOnly) {

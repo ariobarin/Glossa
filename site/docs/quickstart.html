@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/styles.css?v=39" />
     <script type="module" src="/copy.js?v=7"></script>
   </head>
-  <body class="docs-shell docs-shell-focused">
+  <body class="docs-shell">
     <!-- Generated from site/docs/quickstart.md. Run npm run docs:build after editing Markdown. -->
     <header class="site-header page-width">
       <a class="brand" href="/" aria-label="Glossa home">
@@ -26,11 +26,49 @@
     </header>
 
     <main class="docs-main">
-      <div class="docs-layout docs-layout-focused">
-
+      <div class="docs-layout has-toc">
+      <nav class="docs-sidebar" aria-label="Documentation">
+        <section>
+          <h2>Getting started</h2>
+          <ul>
+          <li><a class="is-current" aria-current="page" href="/docs/quickstart">Quickstart</a></li>
+          </ul>
+        </section>
+        <section>
+          <h2>Learn</h2>
+          <ul>
+          <li><a href="/docs/why">Why Glossa</a></li>
+          </ul>
+        </section>
+        <section>
+          <h2>Safety</h2>
+          <ul>
+          <li><a href="/security">Security overview</a></li>
+          <li><a href="/docs/security">Technical security</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          </ul>
+        </section>
+        <section>
+          <h2>Help</h2>
+          <ul>
+          <li><a href="/support">Support</a></li>
+          </ul>
+        </section>
+        <section>
+          <h2>Legal</h2>
+          <ul>
+          <li><a href="/terms">Terms</a></li>
+          </ul>
+        </section>
+      </nav>
       <div class="docs-page">
       <header class="docs-intro">
-        <h1>Connect ChatGPT to a local workspace</h1>
+        <div class="docs-kicker">Getting started</div>
+        <div class="docs-title-row">
+          <h1>Connect ChatGPT to a local workspace</h1>
+          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
+        </div>
+        <script type="application/json" data-page-markdown>"# Connect ChatGPT to a local workspace\n\nInstall Glossa, connect one folder, and confirm it works.\n\n> Glossa can edit files and run commands with the permissions of the account that starts it. Expose only a folder you trust. Review the [security model](/docs/security).\n\n## 1. Install Glossa\n\nRequires Node.js 22.9 or newer.\n\n```shell\nnpm install --global @ariobarin/glossa@beta\n```\n\n## 2. Start Glossa\n\nOpen a terminal in the folder you want ChatGPT to use, then run:\n\n```shell\nglossa\n```\n\nSign in if prompted, and keep this terminal open.\n\n## 3. Add Glossa to ChatGPT\n\nChatGPT Pro supports Glossa's read and fetch tools. Full file and command access\nrequires ChatGPT Business, Enterprise, or Edu.\n\n1. In ChatGPT web, follow [OpenAI's Developer Mode guide](https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta) to enable Developer Mode and create a custom app.\n2. Name it **Glossa** and enter this MCP server URL:\n\n```text\nhttps://mcp.glossa.sh/mcp\n```\n\n3. Choose **OAuth**, then **Scan Tools**.\n4. Sign in with the same Google account used by Glossa, wait for the scan to finish, then choose **Create**.\n\n## 4. Test the connection\n\nIn ChatGPT, select Glossa and send:\n\n```text\nUse Glossa to list my connected workspaces.\n```\n\nIf your workspace appears, Glossa is ready. Having trouble? Visit [support](/support).\n"</script>
         <p class="docs-summary">Install Glossa, connect one folder, and confirm it works.</p>
       </header>
 
@@ -39,7 +77,7 @@
 <p>Glossa can edit files and run commands with the permissions of the account that starts it. Expose only a folder you trust. Review the <a href="/docs/security">security model</a>.</p>
 </blockquote>
 <section class="doc-section">
-<h2 id="1-install-glossa">1. Install Glossa</h2>
+<h2 id="1-install-glossa"><a class="heading-anchor" href="#1-install-glossa" aria-label="Link to 1. Install Glossa"></a>1. Install Glossa</h2>
 <p>Requires Node.js 22.9 or newer.</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-1" aria-label="Copy code">
@@ -49,7 +87,7 @@
 </div>
 </section>
 <section class="doc-section">
-<h2 id="2-start-glossa">2. Start Glossa</h2>
+<h2 id="2-start-glossa"><a class="heading-anchor" href="#2-start-glossa" aria-label="Link to 2. Start Glossa"></a>2. Start Glossa</h2>
 <p>Open a terminal in the folder you want ChatGPT to use, then run:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-2" aria-label="Copy code">
@@ -60,7 +98,7 @@
 <p>Sign in if prompted, and keep this terminal open.</p>
 </section>
 <section class="doc-section">
-<h2 id="3-add-glossa-to-chatgpt">3. Add Glossa to ChatGPT</h2>
+<h2 id="3-add-glossa-to-chatgpt"><a class="heading-anchor" href="#3-add-glossa-to-chatgpt" aria-label="Link to 3. Add Glossa to ChatGPT"></a>3. Add Glossa to ChatGPT</h2>
 <p>ChatGPT Pro supports Glossa&#39;s read and fetch tools. Full file and command access
 requires ChatGPT Business, Enterprise, or Edu.</p>
 <ol>
@@ -79,7 +117,7 @@ requires ChatGPT Business, Enterprise, or Edu.</p>
 </ol>
 </section>
 <section class="doc-section">
-<h2 id="4-test-the-connection">4. Test the connection</h2>
+<h2 id="4-test-the-connection"><a class="heading-anchor" href="#4-test-the-connection" aria-label="Link to 4. Test the connection"></a>4. Test the connection</h2>
 <p>In ChatGPT, select Glossa and send:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-4" aria-label="Copy code">
@@ -92,7 +130,15 @@ requires ChatGPT Business, Enterprise, or Edu.</p>
       </article>
       </div>
 
-
+      <nav class="docs-toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ol>
+          <li><a href="#1-install-glossa">1. Install Glossa</a></li>
+          <li><a href="#2-start-glossa">2. Start Glossa</a></li>
+          <li><a href="#3-add-glossa-to-chatgpt">3. Add Glossa to ChatGPT</a></li>
+          <li><a href="#4-test-the-connection">4. Test the connection</a></li>
+        </ol>
+      </nav>
       </div>
     </main>
 
