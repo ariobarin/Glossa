@@ -125,7 +125,7 @@ Glossa executes commands with the permissions and environment of the local accou
 - structured metadata logs only;
 - redact headers and bodies;
 - never attach request or response content;
-- never add local absolute paths or derived repository names to relay metadata or logs;
+- keep online root paths only in relay process memory, return them only to the authenticated account through `list_workspaces`, and never persist or log them;
 - retain an optional workspace label only when the user explicitly supplies it, and only for the active worker lifetime;
 - verify log scrubbing before deployment.
 

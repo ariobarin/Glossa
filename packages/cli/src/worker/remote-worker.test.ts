@@ -54,6 +54,47 @@ test("reports retry, connection, and graceful disconnection", async () => {
   ]);
 });
 
+test("registers stable workspace identity before polling", async () => {
+  const controller = new AbortController();
+  let registration: Record<string, unknown> | undefined;
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/device/register") {
+      registration = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        workerId: registration.workerId,
+        generation: "00000000-0000-4000-8000-000000000001",
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    workspaceId: "00000000-0000-4000-8000-000000000002",
+    rootPath: "C:\\code\\glossa",
+    workspaceLabel: "glossa",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.equal(
+    registration?.workspaceId,
+    "00000000-0000-4000-8000-000000000002",
+  );
+  assert.equal(registration?.rootPath, "C:\\code\\glossa");
+  assert.equal(registration?.workspaceLabel, "glossa");
+});
+
 test("falls back without a label when the relay does not accept labels", async () => {
   const controller = new AbortController();
   const registerBodies: Array<Record<string, unknown>> = [];

@@ -10,7 +10,7 @@ OAuth-capable MCP client
 hosted relay
   +-- OAuth token verification
   +-- MCP adapter
-  +-- account and device routing
+  +-- account and workspace routing
   +-- in-memory jobs
   +-- metadata persistence in Postgres
         ^
@@ -75,7 +75,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
-- device IDs, ephemeral worker IDs, connection generations, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
+- device IDs, stable workspace IDs, ephemeral worker IDs, connection generations, online root paths, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps
 - pending jobs
 - request waiters
 - one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
@@ -89,7 +89,9 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - complete inherited local environment and developer credentials
 - temporary active command state
 
-One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path. Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
+One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. Each root receives a stable UUID derived from the enrolled device ID and canonical root. The worker sends that UUID and root path at registration so the relay can route the same workspace across worker reconnects. The relay keeps the path only in process memory and does not persist it. A user may explicitly add a workspace label, and the relay never derives one from the path.
+
+Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
 
 ## Hosted request deadlines
 

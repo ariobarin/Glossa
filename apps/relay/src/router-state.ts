@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import path from "node:path";
 import type { WorkerJob, WorkerResult } from "@glossa/protocol";
 
 const WORKER_STALE_MS = 45_000;
@@ -18,6 +19,17 @@ function workerKey(accountId: string, workerId: string): string {
   return `${accountId}:${workerId}`;
 }
 
+function workspaceKey(accountId: string, workspaceId: string): string {
+  return `${accountId}:${workspaceId}`;
+}
+
+function sameRootPath(left: string, right: string): boolean {
+  if (left === right) return true;
+  if (!path.win32.isAbsolute(left) || !path.win32.isAbsolute(right)) return false;
+  return left.replaceAll("/", "\\").toLowerCase() ===
+    right.replaceAll("/", "\\").toLowerCase();
+}
+
 interface PollWaiter {
   acceptedTypes?: ReadonlySet<WorkerJob["type"]>;
   resolve: (job: WorkerJob | null) => void;
@@ -33,6 +45,8 @@ interface ConnectedWorker {
   concurrentJobs: boolean;
   structuredReads: boolean;
   workspaceLabel?: string;
+  workspaceId?: string;
+  rootPath?: string;
   sessionDigest: string;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
@@ -76,6 +90,7 @@ function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
 
 export class RouterState {
   readonly #workers = new Map<string, ConnectedWorker>();
+  readonly #workspaceRoutes = new Map<string, string>();
   readonly #workerSessions = new Map<string, string>();
   readonly #workerCountsByDevice = new Map<string, number>();
   readonly #deviceSeenPersistedAt = new Map<string, number>();
@@ -94,18 +109,48 @@ export class RouterState {
       concurrentJobs?: boolean;
       structuredReads?: boolean;
       workspaceLabel?: string;
+      workspaceId?: string;
+      rootPath?: string;
     } = { commandProgress: false },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
     const workerToken = `glw_${randomBytes(32).toString("base64url")}`;
     const sessionDigest = workerTokenDigest(workerToken);
-    const previous = this.#workers.get(workerId);
+    let previous = this.#workers.get(workerId);
     if (
       previous &&
       (previous.accountId !== accountId || previous.deviceId !== deviceId)
     ) {
       throw new Error("worker_identity_conflict");
+    }
+    if (Boolean(options.workspaceId) !== Boolean(options.rootPath)) {
+      throw new Error("workspace_registration_invalid");
+    }
+    if (
+      previous?.workspaceId &&
+      options.workspaceId &&
+      previous.workspaceId !== options.workspaceId
+    ) {
+      throw new Error("workspace_identity_conflict");
+    }
+    if (options.workspaceId && options.rootPath) {
+      const routedWorkerId = this.#workspaceRoutes.get(
+        workspaceKey(accountId, options.workspaceId),
+      );
+      const routedWorker = routedWorkerId
+        ? this.#workers.get(routedWorkerId)
+        : undefined;
+      if (routedWorker && routedWorker.workerId !== workerId) {
+        if (
+          routedWorker.deviceId !== deviceId ||
+          !sameRootPath(routedWorker.rootPath!, options.rootPath)
+        ) {
+          throw new Error("workspace_identity_conflict");
+        }
+        this.#removeWorker(routedWorker);
+        previous = this.#workers.get(workerId);
+      }
     }
     previous?.pollWaiter?.resolve(null);
     if (previous) {
@@ -132,11 +177,26 @@ export class RouterState {
       ...(options.workspaceLabel
         ? { workspaceLabel: options.workspaceLabel }
         : {}),
+      ...(options.workspaceId && options.rootPath
+        ? { workspaceId: options.workspaceId, rootPath: options.rootPath }
+        : previous?.workspaceId && previous.rootPath
+          ? {
+              workspaceId: previous.workspaceId,
+              rootPath: previous.rootPath,
+            }
+          : {}),
       sessionDigest,
       lastSeenAt: Date.now(),
       pendingJobs: [],
     });
     this.#workerSessions.set(sessionDigest, workerId);
+    const connected = this.#workers.get(workerId)!;
+    if (connected.workspaceId) {
+      this.#workspaceRoutes.set(
+        workspaceKey(accountId, connected.workspaceId),
+        workerId,
+      );
+    }
     this.#deviceSeenPersistedAt.set(deviceKey(accountId, deviceId), Date.now());
     return { generation, workerToken };
   }
@@ -405,6 +465,42 @@ export class RouterState {
       }));
   }
 
+  listWorkspaces(accountId: string): Array<{
+    workspaceId: string;
+    label: string | null;
+    deviceName: string;
+    rootPath: string;
+  }> {
+    this.#pruneStaleWorkers();
+    return [...this.#workers.values()]
+      .filter(
+        (worker) =>
+          worker.accountId === accountId &&
+          worker.workspaceId !== undefined &&
+          worker.rootPath !== undefined &&
+          this.#workspaceRoutes.get(
+            workspaceKey(accountId, worker.workspaceId),
+          ) === worker.workerId,
+      )
+      .map((worker) => ({
+        workspaceId: worker.workspaceId!,
+        label: worker.workspaceLabel ?? null,
+        deviceName: worker.deviceName,
+        rootPath: worker.rootPath!,
+      }))
+      .sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
+  }
+
+  workerForWorkspace(accountId: string, workspaceId: string): string | null {
+    this.#pruneStaleWorkers();
+    const workerId = this.#workspaceRoutes.get(
+      workspaceKey(accountId, workspaceId),
+    );
+    if (!workerId) return null;
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId ? workerId : null;
+  }
+
   activeWorkerCount(accountId: string, deviceId: string): number {
     this.#pruneStaleWorkers();
     return this.#workerCountsByDevice.get(deviceKey(accountId, deviceId)) ?? 0;
@@ -445,6 +541,15 @@ export class RouterState {
     worker.pollWaiter?.resolve(null);
     this.#forgetWorkerCommand(worker.accountId, worker.workerId);
     this.#workers.delete(worker.workerId);
+    if (
+      worker.workspaceId &&
+      this.#workspaceRoutes.get(workspaceKey(worker.accountId, worker.workspaceId)) ===
+        worker.workerId
+    ) {
+      this.#workspaceRoutes.delete(
+        workspaceKey(worker.accountId, worker.workspaceId),
+      );
+    }
     this.#workerSessions.delete(worker.sessionDigest);
     const key = deviceKey(worker.accountId, worker.deviceId);
     const remaining = (this.#workerCountsByDevice.get(key) ?? 1) - 1;

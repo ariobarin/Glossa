@@ -6,7 +6,9 @@ import {
   MAX_WORKER_POLL_MS,
   deviceNameSchema,
   workerResultSchema,
+  workspaceIdSchema,
   workspaceLabelSchema,
+  workspaceRootPathSchema,
 } from "@glossa/protocol";
 import type { RelayConfig } from "./config.js";
 import { requireAuth, type AuthenticatedRequest } from "./auth.js";
@@ -43,6 +45,8 @@ const registerSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     workspaceLabel: workspaceLabelSchema.optional(),
+    workspaceId: workspaceIdSchema.optional(),
+    rootPath: workspaceRootPathSchema.optional(),
     capabilities: z
       .object({
         commandProgress: z.literal(true).optional(),
@@ -462,27 +466,54 @@ export function buildRoutes(
       rejectInvalidInput(response);
       return;
     }
+    if (
+      ("workspaceId" in parsed.data || "rootPath" in parsed.data) &&
+      (Boolean(parsed.data.workspaceId) !== Boolean(parsed.data.rootPath))
+    ) {
+      rejectInvalidInput(response);
+      return;
+    }
     const workerId = "workerId" in parsed.data ? parsed.data.workerId : device.id;
-    const session = state.register(
-      device.accountId,
-      device.id,
-      device.name,
-      workerId,
-      {
-        commandProgress:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.commandProgress === true,
-        concurrentJobs:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.concurrentJobs === true,
-        structuredReads:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.structuredReads === true,
-        ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
-          ? { workspaceLabel: parsed.data.workspaceLabel }
-          : {}),
-      },
-    );
+    let session: { generation: string; workerToken: string };
+    try {
+      session = state.register(
+        device.accountId,
+        device.id,
+        device.name,
+        workerId,
+        {
+          commandProgress:
+            "capabilities" in parsed.data &&
+            parsed.data.capabilities?.commandProgress === true,
+          concurrentJobs:
+            "capabilities" in parsed.data &&
+            parsed.data.capabilities?.concurrentJobs === true,
+          structuredReads:
+            "capabilities" in parsed.data &&
+            parsed.data.capabilities?.structuredReads === true,
+          ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+            ? { workspaceLabel: parsed.data.workspaceLabel }
+            : {}),
+          ...("workspaceId" in parsed.data &&
+          parsed.data.workspaceId &&
+          "rootPath" in parsed.data &&
+          parsed.data.rootPath
+            ? {
+                workspaceId: parsed.data.workspaceId,
+                rootPath: parsed.data.rootPath,
+              }
+            : {}),
+        },
+      );
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "invalid_request";
+      if (code === "workspace_identity_conflict") {
+        response.status(409).json({ error: code });
+        return;
+      }
+      rejectInvalidInput(response);
+      return;
+    }
     response.json({
       deviceId: device.id,
       workerId,
@@ -495,6 +526,9 @@ export function buildRoutes(
       },
       ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
         ? { workspaceLabel: parsed.data.workspaceLabel }
+        : {}),
+      ...("workspaceId" in parsed.data && parsed.data.workspaceId
+        ? { workspaceId: parsed.data.workspaceId }
         : {}),
     });
   });

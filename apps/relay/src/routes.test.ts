@@ -186,6 +186,8 @@ test("uses worker credentials without repeating device authentication", async (c
   const current = await register({
     workerId,
     workspaceLabel: "frontend",
+    workspaceId: "00000000-0000-4000-8000-000000000004",
+    rootPath: "C:\\code\\frontend",
     capabilities: {
       commandProgress: true,
       concurrentJobs: true,
@@ -210,6 +212,18 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(typeof current.workerToken, "string");
   assert.equal(typeof current.generation, "string");
   assert.equal(current.workspaceLabel, "frontend");
+  assert.equal(
+    current.workspaceId,
+    "00000000-0000-4000-8000-000000000004",
+  );
+  assert.deepEqual(state.listWorkspaces(accountId), [
+    {
+      workspaceId: "00000000-0000-4000-8000-000000000004",
+      label: "frontend",
+      deviceName: "Test PC",
+      rootPath: "C:\\code\\frontend",
+    },
+  ]);
   assert.deepEqual(current.capabilities, {
     commandProgress: true,
     concurrentJobs: true,

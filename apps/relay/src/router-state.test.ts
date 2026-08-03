@@ -8,6 +8,7 @@ const accountId = "00000000-0000-4000-8000-000000000001";
 const deviceId = "00000000-0000-4000-8000-000000000002";
 const firstWorkerId = "00000000-0000-4000-8000-000000000003";
 const secondWorkerId = "00000000-0000-4000-8000-000000000004";
+const workspaceId = "00000000-0000-4000-8000-000000000005";
 
 test("routes multiple workers enrolled on one computer independently", async () => {
   const state = new RouterState();
@@ -78,6 +79,51 @@ test("reconnecting one worker does not displace another", () => {
   state.register(accountId, deviceId, "Test PC", secondWorkerId);
   state.register(accountId, deviceId, "Test PC", firstWorkerId);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
+});
+
+test("routes a stable workspace through worker replacement", () => {
+  const state = new RouterState();
+  state.register(accountId, deviceId, "Test PC", firstWorkerId, {
+    commandProgress: true,
+    workspaceId,
+    rootPath: "C:\\code\\glossa",
+    workspaceLabel: "glossa",
+  });
+  assert.deepEqual(state.listWorkspaces(accountId), [
+    {
+      workspaceId,
+      label: "glossa",
+      deviceName: "Test PC",
+      rootPath: "C:\\code\\glossa",
+    },
+  ]);
+  assert.equal(state.workerForWorkspace(accountId, workspaceId), firstWorkerId);
+
+  state.register(accountId, deviceId, "Test PC", secondWorkerId, {
+    commandProgress: true,
+    workspaceId,
+    rootPath: "c:\\CODE\\GLOSSA",
+    workspaceLabel: "glossa",
+  });
+  assert.equal(state.workerForWorkspace(accountId, workspaceId), secondWorkerId);
+  assert.equal(state.activeWorkerCount(accountId, deviceId), 1);
+});
+
+test("rejects conflicting workspace registration", () => {
+  const state = new RouterState();
+  state.register(accountId, deviceId, "Test PC", firstWorkerId, {
+    commandProgress: true,
+    workspaceId,
+    rootPath: "C:\\code\\glossa",
+  });
+  assert.throws(
+    () => state.register(accountId, deviceId, "Test PC", secondWorkerId, {
+      commandProgress: true,
+      workspaceId,
+      rootPath: "C:\\code\\other",
+    }),
+    /workspace_identity_conflict/,
+  );
 });
 
 test("filters progress against the current worker generation", async () => {

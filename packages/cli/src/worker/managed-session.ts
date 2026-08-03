@@ -25,6 +25,7 @@ import {
   type WorkerHandler,
   type RemoteWorkerStatus,
 } from "./remote-worker.js";
+import { workspaceIdentity } from "./workspace-identity.js";
 
 export type ManagedSessionEvent =
   | { type: "session"; root: string; deviceName: string }
@@ -240,6 +241,8 @@ async function connectRemoteWorker(
   const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
+    workspaceId: workspaceIdentity(device.deviceId, worker.policy.root),
+    rootPath: worker.policy.root,
     ...(options.workspaceLabel
       ? { workspaceLabel: options.workspaceLabel }
       : {}),

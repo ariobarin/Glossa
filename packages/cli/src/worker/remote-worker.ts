@@ -36,6 +36,8 @@ export interface WorkerHandler {
 export interface RemoteWorkerOptions {
   origin: string;
   deviceToken: string;
+  workspaceId?: string;
+  rootPath?: string;
   workspaceLabel?: string;
   worker: WorkerHandler;
   signal: AbortSignal;
@@ -160,6 +162,8 @@ export function reconnectDelayMs(
 export class RemoteWorker {
   readonly #origin: URL;
   readonly #deviceToken: string;
+  readonly #workspaceId: string | undefined;
+  readonly #rootPath: string | undefined;
   readonly #workspaceLabel: string | undefined;
   readonly #worker: WorkerHandler;
   readonly #signal: AbortSignal;
@@ -175,6 +179,8 @@ export class RemoteWorker {
   constructor(options: RemoteWorkerOptions) {
     this.#origin = new URL(options.origin);
     this.#deviceToken = options.deviceToken;
+    this.#workspaceId = options.workspaceId;
+    this.#rootPath = options.rootPath;
     this.#workspaceLabel = options.workspaceLabel;
     this.#worker = options.worker;
     this.#signal = options.signal;
@@ -250,6 +256,19 @@ export class RemoteWorker {
       capabilities: { commandProgress: true, concurrentJobs: true },
     };
     const attempts: Array<{ body: object; legacyRelay: boolean }> = [
+      ...(this.#workspaceId && this.#rootPath
+        ? [{
+            body: {
+              ...structuredBody,
+              workspaceId: this.#workspaceId,
+              rootPath: this.#rootPath,
+              ...(this.#workspaceLabel
+                ? { workspaceLabel: this.#workspaceLabel }
+                : {}),
+            },
+            legacyRelay: false,
+          }]
+        : []),
       ...(this.#workspaceLabel
         ? [{
             body: {

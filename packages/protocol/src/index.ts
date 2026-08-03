@@ -35,6 +35,9 @@ export const workspaceLabelSchema = z
     "Workspace label contains control characters",
   );
 
+export const workspaceIdSchema = z.string().uuid();
+export const workspaceRootPathSchema = z.string().min(1).max(4096);
+
 export const relativePathSchema = z
   .string()
   .max(4096)
