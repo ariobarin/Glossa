@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chooseActiveSection, tabSelectionUrl } from "../site/copy.js";
+import { chooseActiveSection } from "../site/copy.js";
 import { PAGE_REGISTRY } from "./build-docs.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -129,37 +129,36 @@ assert.equal(chooseActiveSection([
   { id: "install", top: 420, visible: true },
 ]), "install", "an observed section takes precedence");
 
-const hiddenHashUrl = tabSelectionUrl(
-  "https://glossa.sh/docs/quickstart?platform=macos#direct-macos",
-  "install",
-  "npm",
-  true,
-);
-assert.equal(hiddenHashUrl.searchParams.get("install"), "npm");
-assert.equal(hiddenHashUrl.hash, "", "a hidden tab target is removed from the URL");
-const visibleHashUrl = tabSelectionUrl(
-  "https://glossa.sh/docs/quickstart#before-you-begin",
-  "install",
-  "direct",
-  false,
-);
-assert.equal(
-  visibleHashUrl.hash,
-  "#before-you-begin",
-  "a visible section target remains in the URL",
-);
-
 const quickstart = pagesByName.get("site/docs/quickstart.html")?.html ?? "";
 requireAll(quickstart, [
-  'data-copy-page aria-label="Copy page">Copy</button>',
-  '<script type="application/json" data-page-markdown>',
-  'data-tabs-storage="glossa-install-method-v2" data-tabs-param="install"',
-  'data-tabs-storage="glossa-direct-platform-v2" data-tabs-param="platform"',
-  'role="tablist" aria-label="Install method"',
-  'role="tablist" aria-label="Direct installer platform"',
-  'role="tabpanel"',
+  '<div class="docs-layout has-toc">',
+  '<nav class="docs-sidebar" aria-label="Documentation">',
+  '<nav class="docs-toc" aria-label="On this page">',
+  'data-copy-page',
+  'data-page-markdown',
+  'class="heading-anchor"',
+  '<h1>Connect ChatGPT to a local workspace</h1>',
+  '<h2 id="1-install-glossa"><a class="heading-anchor"',
+  '<h2 id="2-start-glossa"><a class="heading-anchor"',
+  '<h2 id="3-add-glossa-to-chatgpt"><a class="heading-anchor"',
+  '<h2 id="4-test-the-connection"><a class="heading-anchor"',
+  'npm install --global @ariobarin/glossa@beta',
+  'https://mcp.glossa.sh/mcp',
+  '<strong>Scan Tools</strong>',
+  'Use Glossa to list my connected workspaces.',
   "data-copy-target=",
 ], "site/docs/quickstart.html");
+for (const unnecessary of [
+  'data-docs-tabs',
+  'Direct installer',
+  'glossa --version',
+  'glossa update',
+]) {
+  assert.ok(
+    !quickstart.includes(unnecessary),
+    `quickstart omits ${unnecessary}`,
+  );
+}
 
 const generator = await readFile(
   join(repositoryRoot, "scripts", "build-docs.mjs"),
