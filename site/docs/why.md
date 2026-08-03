@@ -1,17 +1,9 @@
-# Why Glossa?
+# Codex is done for now. The project is not.
 
-The best place to start coding work may already be the ChatGPT conversation you have open.
+Glossa lets ChatGPT keep coding on a local project when Codex usage runs out.
 
-## Use the subscription you already pay for
+Glossa connects a regular [ChatGPT](https://chatgpt.com/chat) conversation to the project. ChatGPT can inspect files, make changes, run commands, and verify results instead of stopping at suggestions.
 
-OpenAI [advertises core ChatGPT chat as unlimited on Pro](https://openai.com/chatgpt/pricing/), subject to guardrails. Glossa lets [ChatGPT](https://chatgpt.com/chat) read files, make changes, and run commands in a local workspace, so that access can do real coding work instead of stopping at suggestions.
+That turns available ChatGPT access into more progress on the codebase, without waiting for another Codex usage window or rebuilding the problem later.
 
-## Keep the conversation
-
-Your questions, context, and decisions are already in ChatGPT. Glossa lets the same conversation inspect the repository, make the change, and check its work. There is no need to restart elsewhere just because the task touches code.
-
-## Add a bridge, not another agent
-
-Glossa has no model, planner, or conversation store. ChatGPT does the thinking. A small hosted relay connects it to a worker running on your computer, and you choose which workspace to expose.
-
-<p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Set up Glossa</a></p>
+<p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>

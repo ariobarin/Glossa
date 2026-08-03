@@ -29,6 +29,7 @@ export const PAGE_GROUPS = [
         route: "/docs/why",
         tabTitle: "Why",
         navLabel: "Why Glossa",
+        copyPage: false,
       },
     ],
   },
@@ -256,12 +257,15 @@ function renderPage(pageConfig, page) {
   const sectionNavigation = renderSectionNavigation(page.bodyTokens);
   const sidebar = renderDocsSidebar(pageConfig.route);
   const serializedSource = JSON.stringify(page.source).replaceAll("<", "\\u003c");
+  const copyPageButton = pageConfig.copyPage === false
+    ? ""
+    : `          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>`;
   const layoutClass = sectionNavigation ? " has-toc" : "";
   const introduction = `      <header class="docs-intro">
         <div class="docs-kicker">${escapeHtml(pageConfig.group)}</div>
         <div class="docs-title-row">
           <h1>${escapeHtml(page.title)}</h1>
-          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
+${copyPageButton}
         </div>
         <script type="application/json" data-page-markdown>${serializedSource}</script>
         <p class="docs-summary">${page.summaryHtml}</p>
