@@ -143,6 +143,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     byName.get("run_command")?.description ?? "",
     /not confined to the exposed root.*may affect local or external systems/,
   );
+  assert.match(
+    byName.get("run_command")?.description ?? "",
+    /waitMs 0.*1500 to 2000.*default is 750/i,
+  );
   const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
     properties?: Record<string, { description?: unknown }>;
   };
@@ -153,6 +157,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(
     String(runCommandInputSchema.properties?.shellCommand?.description),
     /Use when shell features are required.*Windows.*npm.*PowerShell/,
+  );
+  assert.match(
+    String(runCommandInputSchema.properties?.waitMs?.description),
+    /Use 0.*1500 to 2000.*Defaults to 750/,
   );
   assert.match(
     byName.get("list_devices")?.description ?? "",

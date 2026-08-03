@@ -391,7 +391,7 @@ const MCP_TOOL_COPY = {
   },
   run_command: {
     title: "Run Workspace Command",
-    description: "Runs tests, builds, Git, or another project command. It is not confined to the exposed root and may affect local or external systems. Fast completion returns output; otherwise it returns a handle for get_command.",
+    description: "Runs tests, builds, Git, or another project command. It is not confined to the exposed root and may affect local or external systems. Use waitMs 0 for longer commands, or 1500 to 2000 for checks expected to finish near one second. The default is 750 milliseconds.",
   },
   get_command: {
     title: "Check Workspace Command",
