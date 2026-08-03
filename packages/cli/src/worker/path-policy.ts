@@ -143,6 +143,11 @@ export class PathPolicy {
       if (targetStat.isDirectory()) {
         throw new WorkerError("not_file", "The destination is a directory.");
       }
+      const canonicalTarget = await realpath(lexical);
+      if (!isWithin(this.root, canonicalTarget)) {
+        throw new WorkerError("path_escape", "The destination escapes the exposed root.");
+      }
+      return canonicalTarget;
     } catch (error) {
       if (error instanceof WorkerError) throw error;
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
