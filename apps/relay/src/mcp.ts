@@ -23,47 +23,57 @@ import {
   type WorkerResult,
 } from "@glossa/protocol";
 import type { RelayConfig } from "./config.js";
+import { BindingState, type WorkspaceBinding } from "./binding-state.js";
 import type { RouterState } from "./router-state.js";
 
 // Bump whenever a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "0.1.0-beta.13";
+export const MCP_SERVER_VERSION = "0.1.0-beta.14";
 
-const deviceIdFieldSchema = z
+const bindingTokenFieldSchema = z
   .string()
-  .uuid()
-  .describe("Online worker identifier returned by list_devices.");
-const deviceIdSchema = z.object({ deviceId: deviceIdFieldSchema }).strict();
-const optionalCommandDeviceIdSchema = z
-  .object({
-    deviceId: deviceIdFieldSchema
-      .optional()
-      .describe(
-        "Online worker identifier returned by run_command. Pass it when available; omission is supported only for compatibility with clients that cached the earlier command schema.",
-      ),
-  })
-  .strict();
-const readFileInputSchema = readFileRequestSchema.extend(deviceIdSchema.shape);
-const listFilesInputSchema = listFilesRequestSchema.extend(deviceIdSchema.shape);
-const searchTextInputSchema = searchTextRequestSchema.extend(deviceIdSchema.shape);
+  .regex(/^glt_[A-Za-z0-9_-]{43}$/)
+  .optional()
+  .describe("Opaque fallback token returned by select_workspace when conversation metadata is unavailable.");
+const bindingTokenInputSchema = z.object({
+  bindingToken: bindingTokenFieldSchema,
+}).strict();
+const readFileInputSchema = readFileRequestSchema.extend(bindingTokenInputSchema.shape);
+const listFilesInputSchema = listFilesRequestSchema.extend(bindingTokenInputSchema.shape);
+const searchTextInputSchema = searchTextRequestSchema.extend(bindingTokenInputSchema.shape);
 const readFileRangeInputSchema = readFileRangeRequestSchema.extend(
-  deviceIdSchema.shape,
+  bindingTokenInputSchema.shape,
 );
-const writeFileInputSchema = writeFileRequestSchema.extend(deviceIdSchema.shape);
-const editFileInputSchema = editFileRequestSchema.safeExtend(deviceIdSchema.shape);
+const writeFileInputSchema = writeFileRequestSchema.extend(bindingTokenInputSchema.shape);
+const editFileInputSchema = editFileRequestSchema.safeExtend(
+  bindingTokenInputSchema.shape,
+);
 const runCommandInputSchema = runCommandRequestSchema.safeExtend(
-  deviceIdSchema.shape,
+  bindingTokenInputSchema.shape,
 );
 const getCommandInputSchema = getCommandRequestSchema.extend(
-  optionalCommandDeviceIdSchema.shape,
+  bindingTokenInputSchema.shape,
 );
 const cancelCommandInputSchema = cancelCommandRequestSchema.extend(
-  optionalCommandDeviceIdSchema.shape,
+  bindingTokenInputSchema.shape,
 );
 const sha256Schema = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
   .describe("Lowercase SHA-256 digest of the UTF-8 file content.");
-const listDevicesOutputSchema = z
+const publicWorkspaceSchema = z
+  .object({
+    workspaceId: z.string().uuid().describe("Stable workspace routing identifier."),
+    label: z.string().nullable().describe("User-chosen workspace label, when set."),
+    deviceName: z.string().describe("Name of the enrolled computer."),
+    rootPath: z.string().describe("Canonical exposed root path."),
+    activeAgentBindings: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Current active conversation bindings for this workspace."),
+  })
+  .strict();
+const listWorkspacesOutputSchema = z
   .object({
     product: z
       .object({
@@ -81,30 +91,42 @@ const listDevicesOutputSchema = z
       .string()
       .url()
       .describe("Official setup and reconnect documentation for this relay deployment."),
-    devices: z
-      .array(
-        z
-          .object({
-            deviceId: z
-              .string()
-              .uuid()
-              .describe("Identifier to pass to workspace tools."),
-            name: z.string().describe("Name of the computer running this worker."),
-            path: z.literal(".").describe("The single exposed workspace root."),
-            workspaceLabel: z
-              .string()
-              .optional()
-              .describe("Optional user-chosen label for distinguishing online workspaces."),
-          })
-          .strict(),
-      )
-      .describe("Online workers available to the authenticated account."),
+    workspaces: z
+      .array(publicWorkspaceSchema)
+      .describe("Online workspaces available to the authenticated account."),
     availability: z
       .enum(["online", "offline"])
       .describe("Whether one or more Glossa workspaces are online."),
     message: z
       .string()
       .describe("Agent-facing availability guidance with a safe reconnect next step and no local workspace details."),
+  })
+  .strict();
+const selectWorkspaceInputSchema = z
+  .object({
+    workspaceId: z
+      .string()
+      .uuid()
+      .describe("Stable workspace identifier returned by list_workspaces."),
+    bindingToken: bindingTokenFieldSchema,
+  })
+  .strict();
+const selectWorkspaceOutputSchema = z
+  .object({
+    selected: z.literal(true).describe("Whether workspace selection succeeded."),
+    workspace: publicWorkspaceSchema.describe("The selected online workspace."),
+    bindingMode: z
+      .enum(["session", "token"])
+      .describe("How later calls identify this binding."),
+    expiresAt: z
+      .number()
+      .int()
+      .describe("Unix millisecond expiry after inactivity."),
+    bindingToken: z
+      .string()
+      .optional()
+      .describe("Fallback token returned when conversation metadata is unavailable."),
+    message: z.string().describe("Agent-facing selection guidance."),
   })
   .strict();
 const logoutOutputSchema = z
@@ -344,12 +366,7 @@ const workerCommandOutputSchema = z
       .describe("Whether standard error exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use a narrower command to retrieve omitted detail."),
   })
   .strip();
-const commandOutputSchema = workerCommandOutputSchema.extend({
-  deviceId: z
-    .string()
-    .uuid()
-    .describe("Online worker identifier returned for restart-safe get_command and cancel_command follow-ups."),
-});
+const commandOutputSchema = workerCommandOutputSchema;
 
 const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
 const MANAGED_QUICKSTART_URL = "https://glossa.sh/docs/quickstart";
@@ -470,8 +487,6 @@ function workerSuccess<T extends z.ZodObject>(
 
 function commandSuccess(
   result: WorkerResult,
-  deviceId: string,
-  onSuccess?: (value: z.infer<typeof workerCommandOutputSchema>) => void,
 ) {
   if (!result.ok) return workerError(result);
   const parsed = workerCommandOutputSchema.safeParse(result.value);
@@ -481,20 +496,15 @@ function commandSuccess(
       "The worker returned an invalid result.",
     );
   }
-  onSuccess?.(parsed.data);
-  return structuredResult({ deviceId, ...parsed.data });
+  return structuredResult(parsed.data);
 }
 
 function structuredReadError(
   state: RouterState,
   accountId: string,
-  deviceId: string,
+  workerId: string,
 ) {
-  const online = state
-    .listDevices(accountId)
-    .some((device) => device.deviceId === deviceId);
-  if (!online) return errorResult("device_offline", "The device is offline.");
-  if (!state.supportsStructuredReads(accountId, deviceId)) {
+  if (!state.supportsStructuredReads(accountId, workerId)) {
     return errorResult(
       "worker_update_required",
       "Update and reconnect the Glossa worker before using structured repository tools.",
@@ -517,15 +527,62 @@ async function executeJob(
   state: RouterState,
   config: RelayConfig,
   accountId: string,
-  deviceId: string,
+  workerId: string,
   job: WorkerJob,
 ): Promise<WorkerResult> {
   return await state.enqueue(
     accountId,
-    deviceId,
+    workerId,
     job,
     config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS,
   );
+}
+
+function openAiSession(extra: { _meta?: Record<string, unknown> }): unknown {
+  return extra._meta?.["openai/session"];
+}
+
+function publicWorkspaces(
+  state: RouterState,
+  bindings: BindingState,
+  accountId: string,
+) {
+  return state.listWorkspaces(accountId).map((workspace) => ({
+    ...workspace,
+    activeAgentBindings: bindings.count(accountId, workspace.workspaceId),
+  }));
+}
+
+function resolveWorkspace(
+  state: RouterState,
+  bindings: BindingState,
+  accountId: string,
+  session: unknown,
+  bindingToken: unknown,
+):
+  | { binding: WorkspaceBinding; workerId: string }
+  | ReturnType<typeof errorResult> {
+  const binding = bindings.resolve(accountId, session, bindingToken);
+  if (binding === "invalid") {
+    return errorResult(
+      "binding_invalid",
+      "The workspace binding is invalid. Call list_workspaces and select_workspace again.",
+    );
+  }
+  if (!binding) {
+    return errorResult(
+      "workspace_selection_required",
+      "No workspace is selected. Call list_workspaces, then select_workspace.",
+    );
+  }
+  const workerId = state.workerForWorkspace(accountId, binding.workspaceId);
+  if (!workerId) {
+    return errorResult(
+      "workspace_offline",
+      "The selected workspace is offline. Start its worker and retry.",
+    );
+  }
+  return { binding, workerId };
 }
 
 function registerTools(
@@ -533,6 +590,7 @@ function registerTools(
   config: RelayConfig,
   state: RouterState,
   accountId: string,
+  bindings: BindingState,
 ): void {
   const toolMetadata = {
     securitySchemes: [
@@ -544,14 +602,24 @@ function registerTools(
     ui: { visibility: ["model"] },
     "openai/visibility": "public",
   };
+  const routeFor = (
+    extra: { _meta?: Record<string, unknown> },
+    bindingToken: unknown,
+  ) => resolveWorkspace(
+    state,
+    bindings,
+    accountId,
+    openAiSession(extra),
+    bindingToken,
+  );
 
   server.registerTool(
-    "list_devices",
+    "list_workspaces",
     {
-      title: "List Devices",
-      description: "Call this first to obtain the deviceId for every online Glossa workspace. If none are online, use message and documentationUrl to give the user the deployment-specific start instructions, then retry after the workspace appears. One computer may expose several workspaces at once.",
-      inputSchema: z.object({}).strict(),
-      outputSchema: listDevicesOutputSchema,
+      title: "List Workspaces",
+      description: "Call this before selection. Show the user labels and exposed paths when a choice is needed. Use workspaceId only with select_workspace; later tools use the conversation binding.",
+      inputSchema: bindingTokenInputSchema,
+      outputSchema: listWorkspacesOutputSchema,
       _meta: toolMetadata,
       annotations: {
         readOnlyHint: true,
@@ -560,24 +628,35 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async () => {
-      const devices = state.listDevices(accountId);
+    async ({ bindingToken }, extra) => {
+      const renewed = bindings.resolve(
+        accountId,
+        openAiSession(extra),
+        bindingToken,
+      );
+      if (renewed === "invalid") {
+        return errorResult(
+          "binding_invalid",
+          "The workspace binding is invalid. Select a workspace again.",
+        );
+      }
+      const workspaces = publicWorkspaces(state, bindings, accountId);
       const documentationUrl = officialDocumentationUrl(
         config.GLOSSA_PUBLIC_ORIGIN,
       );
       return structuredResult(
-        devices.length > 0
+        workspaces.length > 0
           ? {
               product: PRODUCT_CONTEXT,
               documentationUrl,
-              devices,
+              workspaces,
               availability: "online",
               message: "Glossa workspaces are available.",
             }
           : {
               product: PRODUCT_CONTEXT,
               documentationUrl,
-              devices,
+              workspaces,
               availability: "offline",
               message: offlineWorkspaceMessage(config),
             },
@@ -586,11 +665,68 @@ function registerTools(
   );
 
   server.registerTool(
+    "select_workspace",
+    {
+      title: "Select Workspace",
+      description: "Select one online workspace for this conversation. A later selection atomically replaces the current binding.",
+      inputSchema: selectWorkspaceInputSchema,
+      outputSchema: selectWorkspaceOutputSchema,
+      _meta: toolMetadata,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ workspaceId, bindingToken }, extra) => {
+      const available = publicWorkspaces(state, bindings, accountId);
+      if (!available.some((workspace) => workspace.workspaceId === workspaceId)) {
+        return errorResult(
+          "workspace_offline",
+          "That workspace is not online. Call list_workspaces and choose an available workspace.",
+        );
+      }
+      const selected = bindings.select(
+        accountId,
+        openAiSession(extra),
+        bindingToken,
+        workspaceId,
+      );
+      if (selected === "invalid") {
+        return errorResult(
+          "binding_invalid",
+          "The workspace binding is invalid. Call select_workspace without the stale token.",
+        );
+      }
+      if (selected === "capacity") {
+        return errorResult(
+          "binding_capacity",
+          "The relay cannot create another workspace binding right now.",
+        );
+      }
+      const workspace = publicWorkspaces(state, bindings, accountId).find(
+        (candidate) => candidate.workspaceId === workspaceId,
+      )!;
+      return structuredResult({
+        selected: true,
+        workspace,
+        bindingMode: selected.binding.mode,
+        expiresAt: selected.binding.expiresAt,
+        ...(selected.bindingToken
+          ? { bindingToken: selected.bindingToken }
+          : {}),
+        message: "Workspace selected. Later tools use this conversation binding.",
+      });
+    },
+  );
+
+  server.registerTool(
     "logout",
     {
       title: "Log Out of Glossa",
       description: "Use when the user asks to sign out of Glossa or switch Google accounts. Tell the user to run glossa logout, stop any other Glossa sessions, and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. The returned logoutUrl is a fallback if the CLI does not open a browser. This tool returns instructions only and does not revoke credentials or change server state.",
-      inputSchema: z.object({}).strict(),
+      inputSchema: bindingTokenInputSchema,
       outputSchema: logoutOutputSchema,
       _meta: toolMetadata,
       annotations: {
@@ -600,7 +736,15 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async () => {
+    async ({ bindingToken }, extra) => {
+      const renewed = bindings.resolve(
+        accountId,
+        openAiSession(extra),
+        bindingToken,
+      );
+      if (renewed === "invalid") {
+        return errorResult("binding_invalid", "The workspace binding is invalid.");
+      }
       const logoutUrl = browserLogoutUrl(config.GLOSSA_AUTH0_ISSUER);
       return structuredResult({
         logoutUrl,
@@ -613,7 +757,7 @@ function registerTools(
     "read_file",
     {
       title: "Read File",
-      description: "Use after list_devices to read one known UTF-8 text file. Returns its full content and SHA-256 for a guarded write_file call.",
+      description: "Read one known UTF-8 text file in the selected workspace. Returns its full content and SHA-256 for a guarded write_file call.",
       inputSchema: readFileInputSchema,
       outputSchema: readFileOutputSchema,
       _meta: toolMetadata,
@@ -624,9 +768,11 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, path }) => {
+    async ({ bindingToken, path }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
       try {
-        const result = await executeJob(state, config, accountId, deviceId, {
+        const result = await executeJob(state, config, accountId, route.workerId, {
           type: "read_file",
           requestId: randomUUID(),
           path,
@@ -653,11 +799,13 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, path, recursive, cursor, limit }) => {
-      const unavailable = structuredReadError(state, accountId, deviceId);
+    async ({ bindingToken, path, recursive, cursor, limit }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
+      const unavailable = structuredReadError(state, accountId, route.workerId);
       if (unavailable) return unavailable;
       try {
-        const result = await executeJob(state, config, accountId, deviceId, {
+        const result = await executeJob(state, config, accountId, route.workerId, {
           type: "list_files",
           requestId: randomUUID(),
           timeoutMs: structuredReadTimeoutMs(config),
@@ -688,11 +836,13 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, query, path, caseSensitive, maxResults, extensions }) => {
-      const unavailable = structuredReadError(state, accountId, deviceId);
+    async ({ bindingToken, query, path, caseSensitive, maxResults, extensions }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
+      const unavailable = structuredReadError(state, accountId, route.workerId);
       if (unavailable) return unavailable;
       try {
-        const result = await executeJob(state, config, accountId, deviceId, {
+        const result = await executeJob(state, config, accountId, route.workerId, {
           type: "search_text",
           requestId: randomUUID(),
           timeoutMs: structuredReadTimeoutMs(config),
@@ -724,11 +874,13 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, path, startLine, lineCount }) => {
-      const unavailable = structuredReadError(state, accountId, deviceId);
+    async ({ bindingToken, path, startLine, lineCount }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
+      const unavailable = structuredReadError(state, accountId, route.workerId);
       if (unavailable) return unavailable;
       try {
-        const result = await executeJob(state, config, accountId, deviceId, {
+        const result = await executeJob(state, config, accountId, route.workerId, {
           type: "read_file_range",
           requestId: randomUUID(),
           timeoutMs: structuredReadTimeoutMs(config),
@@ -758,7 +910,9 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, path, content, expectedSha256 }) => {
+    async ({ bindingToken, path, content, expectedSha256 }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
       const job: WorkerJob = {
         type: "write_file",
         requestId: randomUUID(),
@@ -771,7 +925,7 @@ function registerTools(
           state,
           config,
           accountId,
-          deviceId,
+          route.workerId,
           job,
         );
         return workerSuccess(result, writeFileOutputSchema);
@@ -796,7 +950,9 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, path, edits, expectedSha256 }) => {
+    async ({ bindingToken, path, edits, expectedSha256 }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
       const job: WorkerJob = {
         type: "edit_file",
         requestId: randomUUID(),
@@ -809,7 +965,7 @@ function registerTools(
           state,
           config,
           accountId,
-          deviceId,
+          route.workerId,
           job,
         );
         return workerSuccess(result, editFileOutputSchema);
@@ -834,7 +990,9 @@ function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ deviceId, argv, shellCommand, stdin, timeoutMs, waitMs }) => {
+    async ({ bindingToken, argv, shellCommand, stdin, timeoutMs, waitMs }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
       const job: WorkerJob = {
         type: "run_command",
         requestId: randomUUID(),
@@ -849,16 +1007,10 @@ function registerTools(
           state,
           config,
           accountId,
-          deviceId,
+          route.workerId,
           job,
         );
-        return commandSuccess(result, deviceId, (command) => {
-          if (command.status === "running") {
-            state.rememberCommand(accountId, deviceId, command.commandId);
-          } else {
-            state.forgetCommand(accountId, command.commandId);
-          }
-        });
+        return commandSuccess(result);
       } catch (error) {
         return routedError(error);
       }
@@ -869,7 +1021,7 @@ function registerTools(
     "get_command",
     {
       title: "Get Command",
-      description: "Use after run_command to read status and captured output so far. Pass its deviceId and commandId when available. Clients with a cached earlier schema may omit deviceId while the relay still remembers that running command. Pass the returned sequence as afterSequence with waitMs to return when output or status changes, for up to 15 seconds.",
+      description: "Use after run_command to read status and captured output so far in the selected workspace. Pass the returned sequence as afterSequence with waitMs to return when output or status changes, for up to 15 seconds.",
       inputSchema: getCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
@@ -880,21 +1032,15 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, commandId, waitMs, afterSequence }) => {
-      const routedDeviceId =
-        deviceId ?? state.workerForCommand(accountId, commandId);
-      if (!routedDeviceId) {
-        return errorResult(
-          "command_not_found",
-          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
-        );
-      }
+    async ({ bindingToken, commandId, waitMs, afterSequence }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
       try {
         const result = await executeJob(
           state,
           config,
           accountId,
-          routedDeviceId,
+          route.workerId,
           {
             type: "get_command",
             requestId: randomUUID(),
@@ -903,18 +1049,7 @@ function registerTools(
             ...(afterSequence === undefined ? {} : { afterSequence }),
           },
         );
-        if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommandForWorker(
-            accountId,
-            routedDeviceId,
-            commandId,
-          );
-        }
-        return commandSuccess(result, routedDeviceId, (command) => {
-          if (command.status !== "running") {
-            state.forgetCommand(accountId, command.commandId);
-          }
-        });
+        return commandSuccess(result);
       } catch (error) {
         return routedError(error);
       }
@@ -925,7 +1060,7 @@ function registerTools(
     "cancel_command",
     {
       title: "Cancel Command",
-      description: "Use only to stop a command started by run_command. Pass its deviceId and commandId when available. Clients with a cached earlier schema may omit deviceId while the relay still remembers that running command. Terminates its process tree but does not revert effects already caused.",
+      description: "Use only to stop a command started by run_command in the selected workspace. Terminates its process tree but does not revert effects already caused.",
       inputSchema: cancelCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
@@ -936,39 +1071,22 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, commandId }) => {
-      const routedDeviceId =
-        deviceId ?? state.workerForCommand(accountId, commandId);
-      if (!routedDeviceId) {
-        return errorResult(
-          "command_not_found",
-          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
-        );
-      }
+    async ({ bindingToken, commandId }, extra) => {
+      const route = routeFor(extra, bindingToken);
+      if (!("workerId" in route)) return route;
       try {
         const result = await executeJob(
           state,
           config,
           accountId,
-          routedDeviceId,
+          route.workerId,
           {
             type: "cancel_command",
             requestId: randomUUID(),
             commandId,
           },
         );
-        if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommandForWorker(
-            accountId,
-            routedDeviceId,
-            commandId,
-          );
-        }
-        return commandSuccess(result, routedDeviceId, (command) => {
-          if (command.status !== "running") {
-            state.forgetCommand(accountId, command.commandId);
-          }
-        });
+        return commandSuccess(result);
       } catch (error) {
         return routedError(error);
       }
@@ -981,12 +1099,13 @@ export function createMcpServer(
   config: RelayConfig,
   state: RouterState,
   accountId: string,
+  bindings = new BindingState(),
 ): McpServer {
   const server = new McpServer({
     name: "glossa",
     version: MCP_SERVER_VERSION,
   });
-  registerTools(server, config, state, accountId);
+  registerTools(server, config, state, accountId, bindings);
   return server;
 }
 
@@ -996,8 +1115,9 @@ export async function handleMcpRequest(
   config: RelayConfig,
   state: RouterState,
   accountId: string,
+  bindings: BindingState,
 ): Promise<void> {
-  const server = createMcpServer(config, state, accountId);
+  const server = createMcpServer(config, state, accountId, bindings);
   const transport = new StreamableHTTPServerTransport({
     enableJsonResponse: true,
   });

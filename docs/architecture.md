@@ -11,6 +11,7 @@ hosted relay
   +-- OAuth token verification
   +-- MCP adapter
   +-- account and workspace routing
+  +-- expiring conversation bindings
   +-- in-memory jobs
   +-- metadata persistence in Postgres
         ^
@@ -78,6 +79,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - device IDs, stable workspace IDs, ephemeral worker IDs, connection generations, online root paths, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps
 - pending jobs
 - request waiters
+- account-scoped conversation bindings identified by hashed OpenAI session metadata or a hashed fallback token
 - one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
 - recent nonces and bounded rate-limit counters
 
@@ -91,7 +93,9 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 
 One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. Each root receives a stable UUID derived from the enrolled device ID and canonical root. The worker sends that UUID and root path at registration so the relay can route the same workspace across worker reconnects. The relay keeps the path only in process memory and does not persist it. A user may explicitly add a workspace label, and the relay never derives one from the path.
 
-Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
+An MCP conversation selects one workspace. A later selection replaces that conversation's binding atomically. Bindings renew on tool calls and expire after 15 minutes of inactivity. OpenAI session metadata is hashed with the authenticated account ID for normal correlation. Clients without that metadata receive an opaque fallback token whose digest is stored instead. File and command tools stay registered while unbound and ask the agent to select a workspace. Later calls route through the binding without carrying a workspace UUID.
+
+Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise. Legacy workers that omit stable workspace identity remain connected but are not selectable.
 
 ## Hosted request deadlines
 
@@ -100,9 +104,9 @@ The hosting layer imposes a bounded request window. Therefore:
 - worker long polls return within 20 seconds; when a concurrent lane becomes free, the worker supersedes a stale capacity poll with a one-shot refresh for only the newly available job types;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
-- `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
+- `run_command` returns after the selected workspace worker accepts the command and supplies the command ID;
 - command execution continues locally beyond the initiating request;
-- current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
+- command follow-ups use the current conversation binding and command ID;
 - `get_command` may wait up to 15 seconds and can wake as soon as command output or status changes;
 - `cancel_command` uses a separate bounded request;
 - structured repository reads use a worker-local deadline of at most half the relay request window and 8 seconds; after expiry, the read lane stays occupied until the active filesystem operation settles and any late directory handle is closed;

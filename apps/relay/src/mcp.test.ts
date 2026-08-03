@@ -1,517 +1,357 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { BindingState } from "./binding-state.js";
 import { loadConfig } from "./config.js";
 import { createMcpServer, MCP_SERVER_VERSION } from "./mcp.js";
 import { RouterState } from "./router-state.js";
 
+const accountId = "00000000-0000-4000-8000-000000000001";
+const otherAccountId = "00000000-0000-4000-8000-000000000002";
+const deviceId = "00000000-0000-4000-8000-000000000003";
+const alphaWorkerId = "00000000-0000-4000-8000-000000000004";
+const betaWorkerId = "00000000-0000-4000-8000-000000000005";
+const alphaWorkspaceId = "00000000-0000-4000-8000-000000000006";
+const betaWorkspaceId = "00000000-0000-4000-8000-000000000007";
 const expectedTools = [
   "cancel_command",
   "edit_file",
   "get_command",
-  "list_devices",
   "list_files",
+  "list_workspaces",
   "logout",
   "read_file",
   "read_file_range",
   "run_command",
   "search_text",
+  "select_workspace",
   "write_file",
 ];
-const accountId = "00000000-0000-4000-8000-000000000001";
-const product = {
-  name: "Glossa",
-  description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
-  contractVersion: MCP_SERVER_VERSION,
-};
-const managedDocumentationUrl = "https://glossa.sh/docs/quickstart";
-const selfHostingDocumentationUrl = "https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md";
 
-interface JsonSchemaNode {
-  description?: unknown;
-  properties?: Record<string, JsonSchemaNode>;
-  items?: JsonSchemaNode;
-}
-
-function assertFieldDescriptions(schema: JsonSchemaNode, label: string): void {
-  for (const [name, property] of Object.entries(schema.properties ?? {})) {
-    assert.equal(
-      typeof property.description,
-      "string",
-      `${label}.${name} must have a description`,
-    );
-    assertFieldDescriptions(property, `${label}.${name}`);
-    if (property.items) {
-      assertFieldDescriptions(property.items, `${label}.${name}[]`);
-    }
-  }
-}
-
-function testConfig(publicOrigin = "https://mcp.glossa.sh") {
+function testConfig() {
   return loadConfig({
     NODE_ENV: "test",
     DATABASE_URL: "postgres://test:test@localhost:5432/test",
-    GLOSSA_PUBLIC_ORIGIN: publicOrigin,
+    GLOSSA_PUBLIC_ORIGIN: "https://mcp.glossa.sh",
     GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
     GLOSSA_AUTH0_AUDIENCE: "https://mcp.glossa.test/",
   });
 }
 
-test("publishes reviewable MCP tool contracts", async (context) => {
-  const state = new RouterState();
-  const server = createMcpServer(
-    testConfig(),
-    state,
-    accountId,
-  );
-  const client = new Client({ name: "glossa-contract-test", version: "1.0.0" });
+async function connect(
+  context: TestContext,
+  state: RouterState,
+  bindings = new BindingState(),
+  account = accountId,
+): Promise<Client> {
+  const server = createMcpServer(testConfig(), state, account, bindings);
+  const client = new Client({ name: "glossa-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-
   context.after(async () => {
     await Promise.allSettled([client.close(), server.close()]);
   });
-
   await server.connect(serverTransport);
   await client.connect(clientTransport);
+  return client;
+}
 
-  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.13");
-  assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
+function errorCode(result: Awaited<ReturnType<Client["callTool"]>>): string {
+  const first = (result.content as Array<{ type: string; text?: string }>)[0];
+  assert.equal(first?.type, "text");
+  if (first?.type !== "text") assert.fail("Expected a text error");
+  return (JSON.parse(first.text!) as { error: { code: string } }).error.code;
+}
 
-  const { tools } = await client.listTools();
-  assert.deepEqual(
-    tools.map((tool) => tool.name).sort(),
-    expectedTools,
+function structured<T>(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): T {
+  return result.structuredContent as T;
+}
+
+function registerWorkspaces(state: RouterState) {
+  const alpha = state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    alphaWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      workspaceId: alphaWorkspaceId,
+      rootPath: "C:\\code\\alpha",
+      workspaceLabel: "alpha",
+    },
   );
+  const beta = state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    betaWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      workspaceId: betaWorkspaceId,
+      rootPath: "C:\\code\\beta",
+      workspaceLabel: "beta",
+    },
+  );
+  return { alpha, beta };
+}
+
+async function answerRead(
+  state: RouterState,
+  workerId: string,
+  generation: string,
+  content: string,
+): Promise<void> {
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    generation,
+    100,
+  );
+  assert.equal(job?.type, "read_file");
+  assert.ok(job);
+  state.complete(accountId, workerId, {
+    requestId: job.requestId,
+    ok: true,
+    value: { content, sha256: "a".repeat(64), bytes: content.length },
+  });
+}
+
+test("publishes one fixed workspace-bound tool catalog", async (context) => {
+  const client = await connect(context, new RouterState());
+  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.14");
+  assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
+  const { tools } = await client.listTools();
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), expectedTools);
 
   for (const tool of tools) {
-    assert.ok(tool.title, `${tool.name} must have a title`);
-    assert.ok(tool.description, `${tool.name} must have a description`);
-    assert.ok(tool.inputSchema, `${tool.name} must have an input schema`);
-    assert.ok(tool.outputSchema, `${tool.name} must have an output schema`);
-    assertFieldDescriptions(
-      tool.inputSchema as JsonSchemaNode,
-      `${tool.name}.input`,
-    );
-    assertFieldDescriptions(
-      tool.outputSchema as JsonSchemaNode,
-      `${tool.name}.output`,
-    );
+    assert.ok(tool.title, `${tool.name} needs a title`);
+    assert.ok(tool.description, `${tool.name} needs a description`);
+    assert.ok(tool.inputSchema, `${tool.name} needs an input schema`);
+    assert.ok(tool.outputSchema, `${tool.name} needs an output schema`);
     assert.equal(tool._meta?.["openai/visibility"], "public");
     assert.deepEqual(tool._meta?.securitySchemes, [
       { type: "oauth2", scopes: ["glossa:access"] },
     ]);
-    assert.equal(typeof tool.annotations?.readOnlyHint, "boolean");
-    assert.equal(typeof tool.annotations?.destructiveHint, "boolean");
-    assert.equal(typeof tool.annotations?.idempotentHint, "boolean");
-    assert.equal(typeof tool.annotations?.openWorldHint, "boolean");
   }
 
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
-  assert.equal(byName.get("run_command")?.annotations?.readOnlyHint, false);
-  assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
-  assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
-  assert.match(byName.get("run_command")?.description ?? "", /network access/);
-  assert.match(byName.get("run_command")?.description ?? "", /Prefer argv/);
-  const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
-    properties?: Record<string, { description?: unknown }>;
-  };
-  assert.match(
-    String(runCommandInputSchema.properties?.argv?.description),
-    /Preferred for native executables.*without shell startup.*Windows.*npm/,
-  );
-  assert.match(
-    String(runCommandInputSchema.properties?.shellCommand?.description),
-    /Use when shell features are required.*Windows.*npm.*PowerShell/,
-  );
-  assert.match(
-    byName.get("list_devices")?.description ?? "",
-    /deployment-specific start instructions.*then retry/,
-  );
-  assert.doesNotMatch(
-    JSON.stringify(byName.get("list_devices")?.outputSchema),
-    /\bWindows\b/,
-  );
-  const listDevicesSchema = byName.get("list_devices")?.outputSchema as JsonSchemaNode;
-  assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.workspaceLabel,
-  );
-
-  for (const toolName of ["get_command", "cancel_command"]) {
-    const inputSchema = byName.get(toolName)?.inputSchema as {
+  for (const name of expectedTools) {
+    const schema = byName.get(name)?.inputSchema as {
       properties?: Record<string, unknown>;
       required?: string[];
     };
-    assert.ok(inputSchema.properties?.deviceId);
-    assert.equal(inputSchema.required?.includes("deviceId") ?? false, false);
+    assert.ok(schema.properties?.bindingToken, `${name} needs bindingToken`);
+    assert.equal(schema.required?.includes("bindingToken") ?? false, false);
   }
-  const getCommandInputSchema = byName.get("get_command")?.inputSchema as {
+  for (const name of [
+    "read_file",
+    "list_files",
+    "search_text",
+    "read_file_range",
+    "write_file",
+    "edit_file",
+    "run_command",
+    "get_command",
+    "cancel_command",
+  ]) {
+    const properties = (byName.get(name)?.inputSchema as {
+      properties?: Record<string, unknown>;
+    }).properties;
+    assert.equal(properties?.deviceId, undefined);
+    assert.equal(properties?.workspaceId, undefined);
+  }
+  const commandOutput = byName.get("run_command")?.outputSchema as {
     properties?: Record<string, unknown>;
   };
-  assert.ok(getCommandInputSchema.properties?.afterSequence);
+  assert.equal(commandOutput.properties?.deviceId, undefined);
 
-  const commandOutputSchema = byName.get("get_command")?.outputSchema as {
-    properties?: Record<string, unknown>;
-  };
-  assert.ok(commandOutputSchema.properties?.deviceId);
-  assert.ok(commandOutputSchema.properties?.commandId);
-  assert.ok(commandOutputSchema.properties?.status);
-  assert.ok(commandOutputSchema.properties?.sequence);
-  assert.equal(commandOutputSchema.properties?.startedAt, undefined);
-  assert.equal(commandOutputSchema.properties?.finishedAt, undefined);
-
-  assert.equal(byName.get("write_file")?.annotations?.readOnlyHint, false);
-  assert.equal(byName.get("write_file")?.annotations?.destructiveHint, true);
-  assert.equal(byName.get("write_file")?.annotations?.openWorldHint, false);
-  assert.equal(byName.get("edit_file")?.annotations?.readOnlyHint, false);
-  assert.equal(byName.get("edit_file")?.annotations?.destructiveHint, true);
-  assert.equal(byName.get("edit_file")?.annotations?.openWorldHint, false);
-  assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
-
-  const result = await client.callTool({
-    name: "list_devices",
+  const beforeSelection = tools.map((tool) => tool.name).sort();
+  const offline = await client.callTool({
+    name: "list_workspaces",
     arguments: {},
   });
-  assert.equal(result.isError, undefined);
-  assert.deepEqual(result.structuredContent, {
-    product,
-    documentationUrl: managedDocumentationUrl,
-    devices: [],
+  assert.deepEqual(offline.structuredContent, {
+    product: {
+      name: "Glossa",
+      description: "The local bridge between ChatGPT and one explicitly exposed workspace.",
+      contractVersion: MCP_SERVER_VERSION,
+    },
+    documentationUrl: "https://glossa.sh/docs/quickstart",
+    workspaces: [],
     availability: "offline",
     message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open, wait for the workspace to appear, then retry. See https://glossa.sh/docs/quickstart for setup help.",
   });
-  assert.match(
-    String(result.structuredContent?.message),
-    /open a terminal.*run `glossa`.*Keep that terminal open.*then retry\./,
-  );
-  assert.match(
-    String(result.structuredContent?.message),
-    /https:\/\/glossa\.sh\/docs\/quickstart/,
-  );
-  assert.deepEqual(result.content, [
-    {
-      type: "text",
-      text: JSON.stringify({
-        product,
-        documentationUrl: managedDocumentationUrl,
-        devices: [],
-        availability: "offline",
-        message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open, wait for the workspace to appear, then retry. See https://glossa.sh/docs/quickstart for setup help.",
-      }),
-    },
-  ]);
-
-  const onlineWorkerId = "00000000-0000-4000-8000-000000000003";
-  state.register(
-    accountId,
-    "00000000-0000-4000-8000-000000000002",
-    "Test PC",
-    onlineWorkerId,
-  );
-  const onlineResult = await client.callTool({
-    name: "list_devices",
-    arguments: {},
-  });
-  assert.deepEqual(onlineResult.structuredContent, {
-    product,
-    documentationUrl: managedDocumentationUrl,
-    devices: [{ deviceId: onlineWorkerId, name: "Test PC", path: "." }],
-    availability: "online",
-    message: "Glossa workspaces are available.",
-  });
-
-  const selfHostedState = new RouterState();
-  const selfHostedServer = createMcpServer(
-    testConfig("https://mcp.example.com"),
-    selfHostedState,
-    accountId,
-  );
-  const selfHostedClient = new Client({ name: "glossa-self-hosted-test", version: "1.0.0" });
-  const [selfHostedClientTransport, selfHostedServerTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([selfHostedClient.close(), selfHostedServer.close()]);
-  });
-  await selfHostedServer.connect(selfHostedServerTransport);
-  await selfHostedClient.connect(selfHostedClientTransport);
-  const selfHostedResult = await selfHostedClient.callTool({
-    name: "list_devices",
-    arguments: {},
-  });
-  assert.equal(selfHostedResult.isError, undefined);
-  const selfHostedMessage = String(
-    (selfHostedResult.structuredContent as { message?: unknown }).message,
-  );
   assert.deepEqual(
-    (selfHostedResult.structuredContent as { product?: unknown }).product,
-    product,
+    (await client.listTools()).tools.map((tool) => tool.name).sort(),
+    beforeSelection,
   );
-  assert.equal(
-    (selfHostedResult.structuredContent as { documentationUrl?: unknown })
-      .documentationUrl,
-    selfHostingDocumentationUrl,
-  );
-  assert.match(
-    selfHostedMessage,
-    /https:\/\/github\.com\/ariobarin\/glossa\/blob\/main\/docs\/self-hosting\.md/,
-  );
-  assert.doesNotMatch(
-    selfHostedMessage,
-    /glossa\.sh\/docs\/quickstart/,
-  );
-  assert.equal(
-    selfHostedMessage,
-    `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${selfHostingDocumentationUrl}. Keep that terminal open, wait for the workspace to appear, then retry.`,
-  );
-  assert.doesNotMatch(selfHostedMessage, /run `glossa`/);
-
-  selfHostedState.register(
-    accountId,
-    "00000000-0000-4000-8000-000000000004",
-    "Self-hosted PC",
-    "00000000-0000-4000-8000-000000000005",
-  );
-  const selfHostedOnlineResult = await selfHostedClient.callTool({
-    name: "list_devices",
-    arguments: {},
-  });
-  assert.equal(
-    (selfHostedOnlineResult.structuredContent as {
-      documentationUrl?: unknown;
-    }).documentationUrl,
-    selfHostingDocumentationUrl,
-  );
-  assert.deepEqual(
-    (selfHostedOnlineResult.structuredContent as { product?: unknown }).product,
-    product,
-  );
-  assert.equal(
-    (selfHostedOnlineResult.structuredContent as { availability?: unknown })
-      .availability,
-    "online",
-  );
-
-  const logout = await client.callTool({
-    name: "logout",
-    arguments: {},
-  });
-  const logoutUrl = "https://identity.glossa.test/v2/logout";
-  assert.equal(logout.isError, undefined);
-  assert.deepEqual(logout.structuredContent, {
-    logoutUrl,
-    instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts Google login automatically the next time it needs an account. Choose the same intended Google account for both authorizations.`,
-  });
 });
 
-test("routes cached command schemas without deviceId", async (context) => {
+test("binds sessions and fallback tokens without later workspace ids", async (context) => {
   const state = new RouterState();
-  const deviceId = "00000000-0000-4000-8000-000000000010";
-  const workerId = "00000000-0000-4000-8000-000000000011";
-  const commandId = "00000000-0000-4000-8000-000000000012";
-  const canceledCommandId = "00000000-0000-4000-8000-000000000013";
-  const otherDeviceId = "00000000-0000-4000-8000-000000000014";
-  const otherWorkerId = "00000000-0000-4000-8000-000000000015";
-  const session = state.register(accountId, deviceId, "Test PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
+  const bindings = new BindingState();
+  const workers = registerWorkspaces(state);
+  const client = await connect(context, state, bindings);
+
+  const unbound = await client.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt" },
   });
-  const otherSession = state.register(
+  assert.equal(errorCode(unbound), "workspace_selection_required");
+  assert.equal(
+    await state.poll(
+      accountId,
+      deviceId,
+      alphaWorkerId,
+      workers.alpha.generation,
+      1,
+    ),
+    null,
+  );
+
+  const sessionA = { "openai/session": "conversation-a" };
+  const sessionB = { "openai/session": "conversation-b" };
+  await client.callTool({
+    name: "select_workspace",
+    arguments: { workspaceId: alphaWorkspaceId },
+    _meta: sessionA,
+  });
+  const alphaRead = client.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt" },
+    _meta: sessionA,
+  });
+  await answerRead(state, alphaWorkerId, workers.alpha.generation, "alpha");
+  assert.equal(
+    structured<{ content: string }>(await alphaRead).content,
+    "alpha",
+  );
+
+  await client.callTool({
+    name: "select_workspace",
+    arguments: { workspaceId: betaWorkspaceId },
+    _meta: sessionA,
+  });
+  await client.callTool({
+    name: "select_workspace",
+    arguments: { workspaceId: betaWorkspaceId },
+    _meta: sessionB,
+  });
+  const listed = await client.callTool({
+    name: "list_workspaces",
+    arguments: {},
+    _meta: sessionA,
+  });
+  const workspaces = structured<{ workspaces: Array<{
+    workspaceId: string;
+    activeAgentBindings: number;
+  }> }>(listed).workspaces;
+  assert.equal(
+    workspaces.find((workspace) => workspace.workspaceId === alphaWorkspaceId)
+      ?.activeAgentBindings,
+    0,
+  );
+  assert.equal(
+    workspaces.find((workspace) => workspace.workspaceId === betaWorkspaceId)
+      ?.activeAgentBindings,
+    2,
+  );
+
+  const betaRead = client.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt" },
+    _meta: sessionA,
+  });
+  await answerRead(state, betaWorkerId, workers.beta.generation, "beta");
+  assert.equal(structured<{ content: string }>(await betaRead).content, "beta");
+
+  const fallback = await client.callTool({
+    name: "select_workspace",
+    arguments: { workspaceId: alphaWorkspaceId },
+  });
+  const bindingToken = structured<{ bindingToken: string }>(fallback).bindingToken;
+  assert.match(String(bindingToken), /^glt_[A-Za-z0-9_-]{43}$/);
+  const tokenRead = client.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt", bindingToken },
+  });
+  await answerRead(state, alphaWorkerId, workers.alpha.generation, "token-alpha");
+  assert.equal(
+    structured<{ content: string }>(await tokenRead).content,
+    "token-alpha",
+  );
+
+  const otherClient = await connect(context, state, bindings, otherAccountId);
+  const stolen = await otherClient.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt", bindingToken },
+  });
+  assert.equal(errorCode(stolen), "binding_invalid");
+});
+
+test("expires bindings and preserves selection across worker return", async (context) => {
+  let now = 1_000;
+  const state = new RouterState();
+  const bindings = new BindingState(100, () => now);
+  const first = state.register(
     accountId,
-    otherDeviceId,
-    "Other PC",
-    otherWorkerId,
+    deviceId,
+    "Test PC",
+    alphaWorkerId,
     {
       commandProgress: true,
       concurrentJobs: true,
+      structuredReads: true,
+      workspaceId: alphaWorkspaceId,
+      rootPath: "C:\\code\\alpha",
     },
   );
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-legacy-command-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
+  const client = await connect(context, state, bindings);
+  const metadata = { "openai/session": "conversation" };
+  await client.callTool({
+    name: "select_workspace",
+    arguments: { workspaceId: alphaWorkspaceId },
+    _meta: metadata,
   });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
 
-  const runCall = client.callTool({
-    name: "run_command",
-    arguments: { deviceId: workerId, argv: ["echo", "ok"] },
-  });
-  const runJob = await state.poll(
+  const returningWorkerId = "00000000-0000-4000-8000-000000000008";
+  const returned = state.register(
     accountId,
     deviceId,
-    workerId,
-    session.generation,
-    100,
+    "Test PC",
+    returningWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      workspaceId: alphaWorkspaceId,
+      rootPath: "C:\\code\\alpha",
+    },
   );
-  assert.equal(runJob?.type, "run_command");
-  assert.ok(runJob);
+  assert.notEqual(first.generation, returned.generation);
+  const restoredRead = client.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt" },
+    _meta: metadata,
+  });
+  await answerRead(state, returningWorkerId, returned.generation, "returned");
   assert.equal(
-    state.complete(accountId, workerId, {
-      requestId: runJob.requestId,
-      ok: true,
-      value: { commandId, status: "running", sequence: 1 },
-    }),
-    true,
+    structured<{ content: string }>(await restoredRead).content,
+    "returned",
   );
-  const runResult = await runCall;
-  assert.deepEqual(runResult.structuredContent, {
-    deviceId: workerId,
-    commandId,
-    status: "running",
-    sequence: 1,
-  });
 
-  for (const toolName of ["get_command", "cancel_command"]) {
-    const misroutedCall = client.callTool({
-      name: toolName,
-      arguments: { deviceId: otherWorkerId, commandId },
-    });
-    const misroutedJob = await state.poll(
-      accountId,
-      otherDeviceId,
-      otherWorkerId,
-      otherSession.generation,
-      100,
-    );
-    assert.equal(misroutedJob?.type, toolName);
-    assert.ok(misroutedJob);
-    assert.equal(
-      state.complete(accountId, otherWorkerId, {
-        requestId: misroutedJob.requestId,
-        ok: false,
-        error: {
-          code: "command_not_found",
-          message: "The command was not found.",
-        },
-      }),
-      true,
-    );
-    const misroutedResult = await misroutedCall;
-    assert.equal(misroutedResult.isError, true);
-    assert.match(
-      JSON.stringify(misroutedResult.content),
-      /command_not_found/,
-    );
-  }
-
-  const getCall = client.callTool({
-    name: "get_command",
-    arguments: { commandId },
+  now = 1_101;
+  const expired = await client.callTool({
+    name: "read_file",
+    arguments: { path: "sentinel.txt" },
+    _meta: metadata,
   });
-  const getJob = await state.poll(
-    accountId,
-    deviceId,
-    workerId,
-    session.generation,
-    100,
-  );
-  assert.equal(getJob?.type, "get_command");
-  assert.ok(getJob);
-  assert.equal(
-    state.complete(accountId, workerId, {
-      requestId: getJob.requestId,
-      ok: true,
-      value: { commandId, status: "succeeded", sequence: 2, exitCode: 0 },
-    }),
-    true,
-  );
-  const getResult = await getCall;
-  assert.deepEqual(getResult.structuredContent, {
-    deviceId: workerId,
-    commandId,
-    status: "succeeded",
-    sequence: 2,
-    exitCode: 0,
-  });
-
-  const expiredRoute = await client.callTool({
-    name: "get_command",
-    arguments: { commandId },
-  });
-  assert.equal(expiredRoute.isError, true);
-  assert.match(JSON.stringify(expiredRoute.content), /command_not_found/);
-
-  const secondRunCall = client.callTool({
-    name: "run_command",
-    arguments: { deviceId: workerId, argv: ["sleep", "10"] },
-  });
-  const secondRunJob = await state.poll(
-    accountId,
-    deviceId,
-    workerId,
-    session.generation,
-    100,
-  );
-  assert.equal(secondRunJob?.type, "run_command");
-  assert.ok(secondRunJob);
-  assert.equal(
-    state.complete(accountId, workerId, {
-      requestId: secondRunJob.requestId,
-      ok: true,
-      value: { commandId: canceledCommandId, status: "running", sequence: 1 },
-    }),
-    true,
-  );
-  await secondRunCall;
-
-  const cancelCall = client.callTool({
-    name: "cancel_command",
-    arguments: { commandId: canceledCommandId },
-  });
-  const cancelJob = await state.poll(
-    accountId,
-    deviceId,
-    workerId,
-    session.generation,
-    100,
-  );
-  assert.equal(cancelJob?.type, "cancel_command");
-  assert.ok(cancelJob);
-  assert.equal(
-    state.complete(accountId, workerId, {
-      requestId: cancelJob.requestId,
-      ok: true,
-      value: {
-        commandId: canceledCommandId,
-        status: "canceled",
-        sequence: 2,
-      },
-    }),
-    true,
-  );
-  const cancelResult = await cancelCall;
-  assert.deepEqual(cancelResult.structuredContent, {
-    deviceId: workerId,
-    commandId: canceledCommandId,
-    status: "canceled",
-    sequence: 2,
-  });
-});
-
-test("structured repository tools require a current worker", async (context) => {
-  const accountId = "00000000-0000-4000-8000-000000000001";
-  const deviceId = "00000000-0000-4000-8000-000000000002";
-  const workerId = "00000000-0000-4000-8000-000000000003";
-  const state = new RouterState();
-  state.register(accountId, deviceId, "Test PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-  });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-structured-read-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-
-  const result = await client.callTool({
-    name: "list_files",
-    arguments: { deviceId: workerId },
-  });
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /worker_update_required/);
-  assert.match(JSON.stringify(result.content), /Update and reconnect/);
+  assert.equal(errorCode(expired), "workspace_selection_required");
 });

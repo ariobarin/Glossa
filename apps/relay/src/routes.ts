@@ -15,6 +15,7 @@ import { requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { parseDeviceToken } from "./device-token.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { handleMcpRequest } from "./mcp.js";
+import { BindingState } from "./binding-state.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import type { RouterState } from "./router-state.js";
 
@@ -110,6 +111,7 @@ type DeadlineRunner = <T>(operation: Promise<T>, deadlineAt: number) => Promise<
 
 export interface RouteDependencies {
   authFactory?: AuthFactory;
+  bindings?: BindingState;
   enrollmentRateLimiter?: FixedWindowRateLimiter;
   deviceRateLimiter?: FixedWindowRateLimiter;
   beforeDeadline?: DeadlineRunner;
@@ -329,6 +331,7 @@ export function buildRoutes(
       config.GLOSSA_DEVICE_AUTH_RATE_LIMIT,
       config.GLOSSA_RATE_LIMIT_WINDOW_MS,
     );
+  const bindings = dependencies.bindings ?? new BindingState();
 
   router.use((request, response, next) => {
     if (config.NODE_ENV === "production" && !request.secure) {
@@ -712,7 +715,14 @@ export function buildRoutes(
     async (request: AuthenticatedRequest, response: Response) => {
       const accountId = await activeAccountId(request, response, store);
       if (!accountId) return;
-      await handleMcpRequest(request, response, config, state, accountId);
+      await handleMcpRequest(
+        request,
+        response,
+        config,
+        state,
+        accountId,
+        bindings,
+      );
     },
   );
 

@@ -36,6 +36,7 @@ Glossa executes commands with the permissions and environment of the local accou
 - require account ID in every query;
 - never fetch by resource ID and check ownership afterward when an account-scoped query is possible;
 - use opaque random identifiers;
+- scope conversation bindings and fallback tokens to the authenticated account;
 - bind local device credentials to the authenticated subject before reuse;
 - verify account isolation with direct integration checks before deployment.
 

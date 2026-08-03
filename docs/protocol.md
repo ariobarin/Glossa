@@ -97,11 +97,12 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
-MCP initialization advertises public tool-contract version `0.1.0-beta.13`. Bump this version whenever a public tool name, input or output schema, annotation, or result contract changes so connector refreshes and production scans can distinguish contracts.
+MCP initialization advertises public tool-contract version `0.1.0-beta.14`. Bump this version whenever a public tool name, input or output schema, annotation, or result contract changes so connector refreshes and production scans can distinguish contracts.
 
 Tools:
 
-- `list_devices`
+- `list_workspaces`
+- `select_workspace`
 - `logout`
 - `read_file`
 - `list_files`
@@ -113,9 +114,11 @@ Tools:
 - `get_command`
 - `cancel_command`
 
-`list_devices` returns an object with `product`, `documentationUrl`, `devices`, `availability`, and `message`. `product` gives the agent a stable, concise Glossa identity in both online and offline states. `documentationUrl` always links to the official setup and reconnect guide for the current deployment: the managed relay uses `https://glossa.sh/docs/quickstart`, while a custom relay uses `https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md`.
+`list_workspaces` returns `product`, `documentationUrl`, `workspaces`, `availability`, and `message`. Each online workspace includes its stable UUID, optional user label, enrolled device name, canonical exposed root path, and current active binding count. Agents use the label and path to help the user choose, then pass the UUID once to `select_workspace`.
 
-The result includes stable product metadata with the same `contractVersion` advertised during MCP initialization, plus one device entry for every active worker. Its `deviceId` is the ephemeral worker identifier accepted by file and command tools, `name` is the enrolled computer name, and `workspaceLabel` is present only when the user explicitly supplied one. Each entry reports `path: "."`; local absolute paths and derived repository names are never returned. When no workers are active, `devices` is empty and `availability` is `"offline"`. The managed-relay `message` asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, wait for the workspace to appear, and retry. A custom relay instead points the agent to the platform-specific worker command in the self-hosting guide. When one or more workers are active, `availability` is `"online"` and `message` confirms that workspaces are available. The offline result is a successful, user-safe response rather than a tool error. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
+`select_workspace` binds one authenticated account and conversation to one workspace. Selecting again atomically replaces that binding. Normal calls correlate the binding with hashed `openai/session` metadata. A client without that metadata receives an opaque fallback token and passes it as `bindingToken` on later calls. Bindings renew on tool use and expire after 15 minutes of inactivity. File and command tools remain visible while unbound, request selection instead of routing, and never require the workspace UUID after selection. Online root paths and bindings remain process-local and are not persisted.
+
+When no current workers have workspace identity, `workspaces` is empty and `availability` is `"offline"`. The managed-relay message asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, wait for the workspace to appear, and retry. A custom relay points to the self-hosting guide. Legacy workers can remain connected but are not selectable.
 
 `logout` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
 

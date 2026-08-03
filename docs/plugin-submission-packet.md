@@ -38,7 +38,8 @@ Proposed full description:
 
 | Tool | Read only | Destructive | Open world | Explanation |
 | --- | --- | --- | --- | --- |
-| `list_devices` | Yes | No | No | Reads the online workers associated with the signed-in account. |
+| `list_workspaces` | Yes | No | No | Reads online exposed roots and their active binding counts for the signed-in account. |
+| `select_workspace` | No | No | No | Replaces this conversation's current workspace binding. |
 | `logout` | Yes | No | No | Returns a browser logout link and instructions for switching Glossa accounts. It does not revoke credentials or navigate for the user. |
 | `read_file` | Yes | No | No | Reads one relative UTF-8 file inside the exposed root. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |

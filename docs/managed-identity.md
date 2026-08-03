@@ -45,5 +45,5 @@ Before treating an identity change as deployed:
 1. Confirm Auth0 Universal Login offers no provider other than Google.
 2. Confirm Google displays its account chooser even when an Auth0 session existed previously.
 3. Complete CLI and ChatGPT authorization with the same Google account.
-4. Start a worker and confirm `list_devices` returns it.
+4. Start a worker and confirm `list_workspaces` returns it.
 5. Attempt authentication with a non-Google Auth0 subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.
