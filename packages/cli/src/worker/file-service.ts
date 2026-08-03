@@ -31,6 +31,41 @@ function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+const fileWriteTails = new Map<string, Promise<void>>();
+
+async function withFileWriteLock<T>(
+  target: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const normalized = path.normalize(target);
+  const key = process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  const predecessor = fileWriteTails.get(key);
+  let release!: () => void;
+  const tail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fileWriteTails.set(key, tail);
+  if (predecessor) await predecessor;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (fileWriteTails.get(key) === tail) fileWriteTails.delete(key);
+  }
+}
+
+async function requireRevision(target: string, expectedSha256: string): Promise<void> {
+  let actual: string | null = null;
+  try {
+    actual = sha256(await readFile(target));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (actual !== expectedSha256) {
+    throw new WorkerError("stale_revision", "The file revision has changed.");
+  }
+}
+
 export interface ReadTextResult {
   content: string;
   sha256: string;
@@ -1185,42 +1220,34 @@ export class FileService {
     }
 
     let target = await this.policy.resolveWritableFile(relativePath);
-    let existingMode: number | undefined;
-    try {
-      const existingStat = await stat(target);
-      if (existingStat.isFile()) existingMode = existingStat.mode & 0o7777;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    if (expectedSha256) {
-      let actual: string | null = null;
+    return await withFileWriteLock(target, async () => {
+      let existingMode: number | undefined;
       try {
-        const existing = await readFile(target);
-        actual = sha256(existing);
+        const existingStat = await stat(target);
+        if (existingStat.isFile()) existingMode = existingStat.mode & 0o7777;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
-      if (actual !== expectedSha256) {
-        throw new WorkerError("stale_revision", "The file revision has changed.");
-      }
-    }
+      if (expectedSha256) await requireRevision(target, expectedSha256);
 
-    const temporary = path.join(path.dirname(target), `.glossa-${randomUUID()}.tmp`);
-    try {
-      await writeFile(temporary, bytes, { flag: "wx", mode: 0o600 });
-      target = await this.policy.resolveWritableFile(relativePath);
-      const tempStat = await lstat(temporary);
-      if (!tempStat.isFile() || tempStat.isSymbolicLink()) {
-        throw new WorkerError("unsafe_temporary_file", "The atomic write temporary file changed.");
+      const temporary = path.join(path.dirname(target), `.glossa-${randomUUID()}.tmp`);
+      try {
+        await writeFile(temporary, bytes, { flag: "wx", mode: 0o600 });
+        target = await this.policy.resolveWritableFile(relativePath);
+        const tempStat = await lstat(temporary);
+        if (!tempStat.isFile() || tempStat.isSymbolicLink()) {
+          throw new WorkerError("unsafe_temporary_file", "The atomic write temporary file changed.");
+        }
+        if (existingMode !== undefined && process.platform !== "win32") {
+          await chmod(temporary, existingMode);
+        }
+        if (expectedSha256) await requireRevision(target, expectedSha256);
+        await rename(temporary, target);
+      } finally {
+        await rm(temporary, { force: true });
       }
-      if (existingMode !== undefined && process.platform !== "win32") {
-        await chmod(temporary, existingMode);
-      }
-      await rename(temporary, target);
-    } finally {
-      await rm(temporary, { force: true });
-    }
 
-    return { sha256: sha256(bytes), bytes: bytes.byteLength };
+      return { sha256: sha256(bytes), bytes: bytes.byteLength };
+    });
   }
 }
