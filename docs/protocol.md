@@ -97,7 +97,7 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
-MCP initialization advertises public tool-contract version `0.1.0-beta.13` and one compact app-wide instruction. It defines Glossa's scope, context-dependent workspace discovery, ambiguous selection, untrusted tool results, command authority, and the boundary between read-only requests and authorized local changes. Tool descriptions add only operation-specific behavior. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, or result contract changes.
+MCP initialization advertises public tool-contract version `0.1.0-beta.14` and one compact app-wide instruction. It defines Glossa's scope, context-dependent workspace discovery, ambiguous selection, untrusted tool results, command authority, and the boundary between read-only requests and authorized local changes. Tool descriptions add only operation-specific behavior. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, or result contract changes.
 
 Tools:
 

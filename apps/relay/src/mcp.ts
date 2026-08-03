@@ -26,7 +26,7 @@ import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
 // Bump when a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "0.1.0-beta.13";
+export const MCP_SERVER_VERSION = "0.1.0-beta.14";
 
 const deviceIdFieldSchema = z
   .string()
