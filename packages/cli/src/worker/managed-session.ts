@@ -40,6 +40,7 @@ export interface ManagedSessionOptions {
   handleProcessSignals?: boolean;
   credentials?: StoredCredentials;
   workspaceLabel?: string;
+  workerVersion?: string;
 }
 
 function report(
@@ -240,6 +241,7 @@ async function connectRemoteWorker(
   const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
+    ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
     ...(options.workspaceLabel
       ? { workspaceLabel: options.workspaceLabel }
       : {}),

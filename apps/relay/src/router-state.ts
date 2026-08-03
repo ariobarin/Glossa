@@ -33,6 +33,7 @@ interface ConnectedWorker {
   concurrentJobs: boolean;
   structuredReads: boolean;
   workspaceLabel?: string;
+  workerVersion?: string;
   sessionDigest: string;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
@@ -94,6 +95,7 @@ export class RouterState {
       concurrentJobs?: boolean;
       structuredReads?: boolean;
       workspaceLabel?: string;
+      workerVersion?: string;
     } = { commandProgress: false },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
@@ -129,6 +131,7 @@ export class RouterState {
       commandProgress: options.commandProgress === true,
       concurrentJobs: options.concurrentJobs === true,
       structuredReads: options.structuredReads === true,
+      ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
       ...(options.workspaceLabel
         ? { workspaceLabel: options.workspaceLabel }
         : {}),
@@ -391,6 +394,12 @@ export class RouterState {
     name: string;
     path: ".";
     workspaceLabel?: string;
+    workerVersion?: string;
+    capabilities: {
+      commandProgress: boolean;
+      concurrentJobs: boolean;
+      structuredReads: boolean;
+    };
   }> {
     this.#pruneStaleWorkers();
     return [...this.#workers.values()]
@@ -399,6 +408,12 @@ export class RouterState {
         deviceId: worker.workerId,
         name: worker.deviceName,
         path: ".",
+        ...(worker.workerVersion ? { workerVersion: worker.workerVersion } : {}),
+        capabilities: {
+          commandProgress: worker.commandProgress,
+          concurrentJobs: worker.concurrentJobs,
+          structuredReads: worker.structuredReads,
+        },
         ...(worker.workspaceLabel
           ? { workspaceLabel: worker.workspaceLabel }
           : {}),

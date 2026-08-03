@@ -148,6 +148,7 @@ async function runWorkspaceSession(
       run: async (signal, onEvent) => {
         await runManagedSession(root, endpoints, {
           credentials,
+          workerVersion: VERSION,
           ...(label ? { workspaceLabel: label } : {}),
           signal,
           onEvent: (event) => {

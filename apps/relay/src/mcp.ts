@@ -26,7 +26,7 @@ import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
 // Bump when a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "0.1.0-beta.15";
+export const MCP_SERVER_VERSION = "0.1.0-beta.16";
 
 const deviceIdFieldSchema = z
   .string()
@@ -95,6 +95,18 @@ const listDevicesOutputSchema = z
               .string()
               .optional()
               .describe("Optional user-chosen label for distinguishing online workspaces."),
+            workerVersion: z
+              .string()
+              .optional()
+              .describe("CLI package version reported by a current worker. Omitted by legacy workers."),
+            capabilities: z
+              .object({
+                commandProgress: z.boolean().describe("Whether incremental command output is supported."),
+                concurrentJobs: z.boolean().describe("Whether independent worker capacity lanes are supported."),
+                structuredReads: z.boolean().describe("Whether list, search, and ranged-read jobs are supported."),
+              })
+              .strict()
+              .describe("Capabilities negotiated by this worker generation."),
           })
           .strict(),
       )
@@ -359,7 +371,7 @@ export const MCP_SERVER_INSTRUCTIONS = "Use Glossa only for work in a local codi
 const MCP_TOOL_COPY = {
   list_devices: {
     title: "Find Glossa Workspaces",
-    description: "Lists online Glossa workspaces and their identifiers. Use it when no earlier Glossa result identifies the workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
+    description: "Lists online Glossa workspaces and their identifiers. Reported worker versions and accepted capabilities identify legacy workers that may require command fallbacks. Use it when no earlier Glossa result identifies the workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
   },
   logout: {
     title: "Get Glossa Sign-Out Steps",

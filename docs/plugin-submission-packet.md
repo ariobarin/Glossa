@@ -14,7 +14,7 @@ This packet centralizes proposed marketplace copy, tool explanations, reviewer s
 - Support: `https://glossa.sh/support`
 - Security: `https://github.com/ariobarin/glossa/blob/main/docs/security.md`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
-- MCP tool contract: `0.1.0-beta.15` (11 tools)
+- MCP tool contract: `0.1.0-beta.16` (11 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 Proposed short description:
@@ -79,11 +79,11 @@ The reset command targets only `.review-workspace` beside this repository's scri
 
 Before submitting:
 
-- Create a dedicated Google reviewer account that satisfies the review program's credential and MFA requirements.
+- Create a dedicated Google reviewer account whose username and password work without MFA, SMS, email confirmation, or private-network access.
 - Enter its credentials only in the portal's protected reviewer fields. Never commit them.
 - Run the worker under a dedicated operating-system account with no developer credentials or access to private data.
 - Verify the account, OAuth consent, fixture reset, worker connection, the routing evaluation set, and all twelve reviewer cases below from an unrelated network.
-- Reconnect the ChatGPT integration in a fresh conversation and verify discovery reports contract `0.1.0-beta.15`, the app-wide instructions, all 11 documented tools, `run_command.waitMs`, and `get_command.deviceId` plus `afterSequence`.
+- Reconnect the ChatGPT integration in a fresh conversation and verify discovery reports contract `0.1.0-beta.16`, the app-wide instructions, all 11 documented tools, `run_command.waitMs`, and `get_command.deviceId` plus `afterSequence`.
 - Reset the fixture before review and after any test run that changes it.
 
 ## Nine positive tests
@@ -111,8 +111,7 @@ Complete these at submission time because they cannot be safely or accurately st
 - Verified publisher organization and submitter permissions
 - Reviewer username and password
 - Domain-verification challenge token
-- Final logo and screenshots
-- Content security policy generated from the deployed plugin
+- Final logo; do not submit screenshots because Glossa has no plugin UI
 - Supported countries
 - Policy attestations
 - Initial release notes
@@ -123,4 +122,4 @@ Suggested release note after the public execution profile is resolved:
 
 ## Submission gate
 
-Do not submit this packet until the production privacy, terms, and support pages are live, the MCP scan reports contract `0.1.0-beta.15` and matches the server instructions plus all 11 documented schemas and annotations, the reviewer account and isolated worker are continuously available, and the unrestricted command-execution decision is resolved.
+Do not submit this packet until the npm CLI has left beta, the public product is no longer described as an open beta, the production privacy, terms, and support pages are live, the MCP scan reports contract `0.1.0-beta.16` and matches the server instructions plus all 11 documented schemas and annotations, the reviewer account and isolated worker are continuously available, and the unrestricted command-execution decision is resolved.

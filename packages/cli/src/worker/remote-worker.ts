@@ -37,6 +37,7 @@ export interface RemoteWorkerOptions {
   origin: string;
   deviceToken: string;
   workspaceLabel?: string;
+  workerVersion?: string;
   worker: WorkerHandler;
   signal: AbortSignal;
   fetcher?: Fetcher;
@@ -161,6 +162,7 @@ export class RemoteWorker {
   readonly #origin: URL;
   readonly #deviceToken: string;
   readonly #workspaceLabel: string | undefined;
+  readonly #workerVersion: string | undefined;
   readonly #worker: WorkerHandler;
   readonly #signal: AbortSignal;
   readonly #fetcher: Fetcher;
@@ -176,6 +178,7 @@ export class RemoteWorker {
     this.#origin = new URL(options.origin);
     this.#deviceToken = options.deviceToken;
     this.#workspaceLabel = options.workspaceLabel;
+    this.#workerVersion = options.workerVersion;
     this.#worker = options.worker;
     this.#signal = options.signal;
     this.#fetcher = options.fetcher ?? fetch;
@@ -249,7 +252,19 @@ export class RemoteWorker {
       workerId: this.#workerId,
       capabilities: { commandProgress: true, concurrentJobs: true },
     };
+    const versionedStructuredBody = this.#workerVersion
+      ? { ...structuredBody, workerVersion: this.#workerVersion }
+      : undefined;
     const attempts: Array<{ body: object; legacyRelay: boolean }> = [
+      ...(versionedStructuredBody && this.#workspaceLabel
+        ? [{
+            body: {
+              ...versionedStructuredBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
       ...(this.#workspaceLabel
         ? [{
             body: {
@@ -258,6 +273,9 @@ export class RemoteWorker {
             },
             legacyRelay: false,
           }]
+        : []),
+      ...(versionedStructuredBody
+        ? [{ body: versionedStructuredBody, legacyRelay: false }]
         : []),
       {
         body: structuredBody,
