@@ -92,7 +92,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.15");
+  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.16");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for work in a local coding workspace/);
@@ -164,7 +164,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     byName.get("list_devices")?.description ?? "",
-    /no earlier Glossa result identifies.*ambiguous.*unique --label.*empty result includes setup guidance/,
+    /worker versions.*capabilities.*command fallbacks.*no earlier Glossa result identifies.*ambiguous.*unique --label.*empty result includes setup guidance/,
   );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_devices")?.outputSchema),
@@ -173,6 +173,12 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const listDevicesSchema = byName.get("list_devices")?.outputSchema as JsonSchemaNode;
   assert.ok(
     listDevicesSchema.properties?.devices?.items?.properties?.workspaceLabel,
+  );
+  assert.ok(
+    listDevicesSchema.properties?.devices?.items?.properties?.workerVersion,
+  );
+  assert.ok(
+    listDevicesSchema.properties?.devices?.items?.properties?.capabilities,
   );
 
   for (const toolName of ["get_command", "cancel_command"]) {
@@ -274,7 +280,16 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.deepEqual(onlineResult.structuredContent, {
     product,
     documentationUrl: managedDocumentationUrl,
-    devices: [{ deviceId: onlineWorkerId, name: "Test PC", path: "." }],
+    devices: [{
+      deviceId: onlineWorkerId,
+      name: "Test PC",
+      path: ".",
+      capabilities: {
+        commandProgress: false,
+        concurrentJobs: false,
+        structuredReads: false,
+      },
+    }],
     availability: "online",
     message: "Glossa workspaces are available.",
   });
@@ -328,6 +343,12 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     "00000000-0000-4000-8000-000000000004",
     "Self-hosted PC",
     "00000000-0000-4000-8000-000000000005",
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      workerVersion: "0.1.0-beta.13",
+    },
   );
   const selfHostedOnlineResult = await selfHostedClient.callTool({
     name: "list_devices",
@@ -347,6 +368,22 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     (selfHostedOnlineResult.structuredContent as { availability?: unknown })
       .availability,
     "online",
+  );
+  assert.deepEqual(
+    (selfHostedOnlineResult.structuredContent as {
+      devices?: unknown;
+    }).devices,
+    [{
+      deviceId: "00000000-0000-4000-8000-000000000005",
+      name: "Self-hosted PC",
+      path: ".",
+      workerVersion: "0.1.0-beta.13",
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+      },
+    }],
   );
 
   const logout = await client.callTool({

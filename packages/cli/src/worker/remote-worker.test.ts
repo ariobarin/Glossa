@@ -54,6 +54,58 @@ test("reports retry, connection, and graceful disconnection", async () => {
   ]);
 });
 
+test("reports its package version and falls back for older relays", async () => {
+  const controller = new AbortController();
+  const registerBodies: Array<Record<string, unknown>> = [];
+  const generation = "00000000-0000-4000-8000-000000000001";
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      registerBodies.push(body);
+      if ("workerVersion" in body) {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    workerVersion: "0.1.0-beta.13",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.equal(registerBodies.length, 2);
+  assert.equal(registerBodies[0]?.workerVersion, "0.1.0-beta.13");
+  assert.equal("workerVersion" in registerBodies[1]!, false);
+  assert.deepEqual(registerBodies[1]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+  });
+});
+
 test("falls back without a label when the relay does not accept labels", async () => {
   const controller = new AbortController();
   const registerBodies: Array<Record<string, unknown>> = [];

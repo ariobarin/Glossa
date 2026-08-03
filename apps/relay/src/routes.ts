@@ -48,6 +48,11 @@ const registerSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     workspaceLabel: workspaceLabelSchema.optional(),
+    workerVersion: z
+      .string()
+      .max(64)
+      .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/)
+      .optional(),
     capabilities: z
       .object({
         commandProgress: z.literal(true).optional(),
@@ -487,6 +492,9 @@ export function buildRoutes(
         structuredReads:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.structuredReads === true,
+        ...("workerVersion" in parsed.data && parsed.data.workerVersion
+          ? { workerVersion: parsed.data.workerVersion }
+          : {}),
         ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
           ? { workspaceLabel: parsed.data.workspaceLabel }
           : {}),

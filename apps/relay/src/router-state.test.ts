@@ -21,6 +21,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
       concurrentJobs: true,
       structuredReads: true,
       workspaceLabel: "frontend",
+      workerVersion: "0.1.0-beta.13",
     },
   );
   state.register(accountId, deviceId, "Test PC", secondWorkerId);
@@ -38,8 +39,23 @@ test("routes multiple workers enrolled on one computer independently", async () 
       name: "Test PC",
       path: ".",
       workspaceLabel: "frontend",
+      workerVersion: "0.1.0-beta.13",
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+      },
     },
-    { deviceId: secondWorkerId, name: "Test PC", path: "." },
+    {
+      deviceId: secondWorkerId,
+      name: "Test PC",
+      path: ".",
+      capabilities: {
+        commandProgress: false,
+        concurrentJobs: false,
+        structuredReads: false,
+      },
+    },
   ]);
 
   const job: WorkerJob = {
@@ -68,7 +84,16 @@ test("routes multiple workers enrolled on one computer independently", async () 
   state.unregisterWorker(accountId, deviceId, firstWorkerId);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 1);
   assert.deepEqual(state.listDevices(accountId), [
-    { deviceId: secondWorkerId, name: "Test PC", path: "." },
+    {
+      deviceId: secondWorkerId,
+      name: "Test PC",
+      path: ".",
+      capabilities: {
+        commandProgress: false,
+        concurrentJobs: false,
+        structuredReads: false,
+      },
+    },
   ]);
 });
 
