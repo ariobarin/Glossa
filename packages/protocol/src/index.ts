@@ -279,7 +279,7 @@ export const runCommandRequestSchema = z
       .max(MAX_COMMAND_FAST_WAIT_MS)
       .optional()
       .describe(
-        "How long run_command waits for fast completion before returning a running command handle. Defaults to 750 and cannot exceed 5000.",
+        "How long run_command waits for fast completion before returning a running command handle. Use 0 for commands expected to run longer than a few seconds. Use 1500 to 2000 for short checks expected to finish near one second. Defaults to 750 and cannot exceed 5000.",
       ),
   })
   .strict()
