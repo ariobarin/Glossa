@@ -49,6 +49,10 @@ const environmentSchema = z
       .positive()
       .max(19_000)
       .default(18_000),
+    GLOSSA_TIMING_LOGS: z
+      .enum(["0", "1"])
+      .default("0")
+      .transform((value) => value === "1"),
   })
   .superRefine((environment, context) => {
     if (

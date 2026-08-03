@@ -91,6 +91,10 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 
 One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path. Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
 
+## Request profiling
+
+Set `GLOSSA_TIMING_LOGS=1` to emit one metadata-only JSON timing event after each handled relay route response. Events contain only a bounded operation label, HTTP status, and total relay duration. MCP operation labels include only known tool names; device identifiers, paths, command arguments, output, tokens, account identifiers, and request bodies are never logged. Requests rejected by application-level parsing before route handling are outside this timing boundary. Profiling is disabled by default and adds no response listener on the hot path when disabled.
+
 ## Hosted request deadlines
 
 The hosting layer imposes a bounded request window. Therefore:

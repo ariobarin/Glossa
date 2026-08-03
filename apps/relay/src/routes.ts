@@ -15,6 +15,11 @@ import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import type { RouterState } from "./router-state.js";
+import {
+  consoleRelayTimingSink,
+  relayTimingMiddleware,
+  type RelayTimingSink,
+} from "./relay-timing.js";
 
 export const MAX_RELAY_JSON_BYTES = 16 * MAX_TEXT_BYTES;
 
@@ -109,6 +114,7 @@ export interface RouteDependencies {
   enrollmentRateLimiter?: FixedWindowRateLimiter;
   deviceRateLimiter?: FixedWindowRateLimiter;
   beforeDeadline?: DeadlineRunner;
+  timingSink?: RelayTimingSink;
 }
 
 function publicDevice(device: DeviceRecord, state: RouterState) {
@@ -325,6 +331,9 @@ export function buildRoutes(
       config.GLOSSA_DEVICE_AUTH_RATE_LIMIT,
       config.GLOSSA_RATE_LIMIT_WINDOW_MS,
     );
+  const timingSink = dependencies.timingSink ??
+    (config.GLOSSA_TIMING_LOGS ? consoleRelayTimingSink : undefined);
+  if (timingSink) router.use(relayTimingMiddleware(timingSink));
 
   router.use((request, response, next) => {
     if (config.NODE_ENV === "production" && !request.secure) {
