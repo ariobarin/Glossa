@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Connect ChatGPT to a local workspace." />
+    <meta name="description" content="Install Glossa, connect one folder, and confirm it works." />
     <meta name="theme-color" content="#111016" />
     <title>Quickstart | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=39" />
     <script type="module" src="/copy.js?v=7"></script>
   </head>
-  <body class="docs-shell">
+  <body class="docs-shell docs-shell-focused">
     <!-- Generated from site/docs/quickstart.md. Run npm run docs:build after editing Markdown. -->
     <header class="site-header page-width">
       <a class="brand" href="/" aria-label="Glossa home">
@@ -26,209 +26,73 @@
     </header>
 
     <main class="docs-main">
-      <div class="docs-layout has-toc">
-      <nav class="docs-sidebar" aria-label="Documentation">
-        <section>
-          <h2>Getting started</h2>
-          <ul>
-          <li><a class="is-current" aria-current="page" href="/docs/quickstart">Quickstart</a></li>
-          </ul>
-        </section>
-        <section>
-          <h2>Learn</h2>
-          <ul>
-          <li><a href="/docs/why">Why Glossa</a></li>
-          </ul>
-        </section>
-        <section>
-          <h2>Safety</h2>
-          <ul>
-          <li><a href="/security">Security overview</a></li>
-          <li><a href="/docs/security">Technical security</a></li>
-          <li><a href="/privacy">Privacy</a></li>
-          </ul>
-        </section>
-        <section>
-          <h2>Help</h2>
-          <ul>
-          <li><a href="/support">Support</a></li>
-          </ul>
-        </section>
-        <section>
-          <h2>Legal</h2>
-          <ul>
-          <li><a href="/terms">Terms</a></li>
-          </ul>
-        </section>
-      </nav>
+      <div class="docs-layout docs-layout-focused">
+
       <div class="docs-page">
       <header class="docs-intro">
-        <div class="docs-kicker">Getting started</div>
-        <div class="docs-title-row">
-          <h1>Quickstart</h1>
-          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
-        </div>
-        <script type="application/json" data-page-markdown>"# Quickstart\n\nConnect ChatGPT to a local workspace.\n\n## Before you begin\n\nMake sure you have:\n\n- Node.js 22.9 or newer if you use the recommended npm install\n- [Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta) enabled in ChatGPT\n\n> Glossa can modify files and run commands on your computer. Review the [security model](/docs/security).\n\n## Step 1: Install Glossa\n\n:::docs-tabs {\"id\":\"install\",\"storage\":\"glossa-install-method-v2\",\"param\":\"install\",\"label\":\"Install with\",\"ariaLabel\":\"Install method\",\"wide\":true}\n:::docs-tab {\"value\":\"npm\",\"label\":\"npm (Recommended)\",\"selected\":true}\nInstall the beta on Windows, macOS, or Linux:\n\n```shell\nnpm install --global @ariobarin/glossa@beta\n```\n:::docs-tab-end\n:::docs-tab {\"value\":\"direct\",\"label\":\"Direct installer\"}\nInstall a self-contained executable without Node.js or npm.\n\n:::docs-tabs {\"id\":\"direct\",\"storage\":\"glossa-direct-platform-v2\",\"param\":\"platform\",\"label\":\"Platform\",\"ariaLabel\":\"Direct installer platform\",\"nested\":true}\n:::docs-tab {\"value\":\"windows\",\"label\":\"Windows\",\"selected\":true}\n```powershell\nirm https://glossa.sh/install | iex\n```\n:::docs-tab-end\n:::docs-tab {\"value\":\"macos\",\"label\":\"macOS\"}\n```shell\ncurl -fsSL https://glossa.sh/install.sh | sh\n```\n:::docs-tab-end\n:::docs-tab {\"value\":\"linux\",\"label\":\"Linux\"}\n```shell\ncurl -fsSL https://glossa.sh/install.sh | sh\n```\n:::docs-tab-end\n:::docs-tabs-end\n:::docs-tab-end\n:::docs-tabs-end\n\nConfirm Glossa is available:\n\n```shell\nglossa --version\n```\n\nGlossa checks for updates at most once per day before connecting a workspace and\nprints a notice by default. After disconnecting every running Glossa workspace,\ncheck or install an update:\n\n```shell\nglossa update --check\nglossa update\n```\n\nUse `glossa update --policy auto` to install an available update before the next\nworkspace connects, or `glossa update --policy off` to disable automatic checks.\nThe open beta follows the `beta` channel. Run `glossa update --channel stable`\nto switch to stable releases once one is published.\n\n## Step 2: Start a workspace\n\nOpen a terminal in the directory you want ChatGPT to use:\n\n```shell\nglossa\n```\n\nWith no directory argument, Glossa exposes the current directory and signs in\nautomatically. To expose a different directory, run `glossa \u003cdirectory>`.\n\n> Keep this terminal open. Closing it disconnects that local workspace from ChatGPT.\n\n## Step 3: Connect ChatGPT\n\n1. Open **Settings > Plugins/Apps** and enable **Developer Mode**.\n2. Choose **Create**.\n3. Name the app **Glossa** and enter this MCP server URL:\n\n```text\nhttps://mcp.glossa.sh/mcp\n```\n\n4. Choose **OAuth**.\n5. Sign in with the same Google account used by the Glossa CLI, then choose **Create**.\n\n## Step 4: Verify the connection\n\nRun `glossa status` in another terminal to check the account, relay, enrolled device, and active worker.\n\n### Try a read\n\nIn ChatGPT, select Glossa and send:\n\n```text\nUse Glossa to list my connected workspaces.\n```\n\nIf Glossa lists the workspace, the connection is ready. Ask it to read a file\nnext.\n\n## What next\n\n- Read [why Glossa works this way](/docs/why).\n- Review the complete [security model](/docs/security).\n- Visit [support](/support) if the worker, OAuth flow, or app does not connect.\n"</script>
-        <p class="docs-summary">Connect ChatGPT to a local workspace.</p>
+        <h1>Connect ChatGPT to a local workspace</h1>
+        <p class="docs-summary">Install Glossa, connect one folder, and confirm it works.</p>
       </header>
 
       <article class="docs-content">
-
-<section class="doc-section">
-<h2 id="before-you-begin"><a class="heading-anchor" href="#before-you-begin" aria-label="Link to Before you begin"></a>Before you begin</h2>
-<p>Make sure you have:</p>
-<ul>
-<li>Node.js 22.9 or newer if you use the recommended npm install</li>
-<li><a href="https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta">Developer Mode</a> enabled in ChatGPT</li>
-</ul>
 <blockquote>
-<p>Glossa can modify files and run commands on your computer. Review the <a href="/docs/security">security model</a>.</p>
+<p>Glossa can edit files and run commands with the permissions of the account that starts it. Expose only a folder you trust. Review the <a href="/docs/security">security model</a>.</p>
 </blockquote>
-</section>
 <section class="doc-section">
-<h2 id="step-1-install-glossa"><a class="heading-anchor" href="#step-1-install-glossa" aria-label="Link to Step 1: Install Glossa"></a>Step 1: Install Glossa</h2>
-<div class="docs-switcher" data-docs-tabs data-tabs-storage="glossa-install-method-v2" data-tabs-param="install">
-  <p class="docs-switcher-label">Install with</p>
-  <div class="docs-tabs docs-tabs-wide" role="tablist" aria-label="Install method">
-    <button id="install-npm-tab" type="button" role="tab" aria-selected="true" aria-controls="install-npm" data-docs-tab="npm">npm (Recommended)</button>
-    <button id="install-direct-tab" type="button" role="tab" aria-selected="false" aria-controls="install-direct" data-docs-tab="direct" tabindex="-1">Direct installer</button>
-  </div>
-  <div id="install-npm" class="docs-tab-panel" role="tabpanel" aria-labelledby="install-npm-tab" data-docs-tab-panel="npm">
-<p>Install the beta on Windows, macOS, or Linux:</p>
+<h2 id="1-install-glossa">1. Install Glossa</h2>
+<p>Requires Node.js 22.9 or newer.</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-1" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
   <pre><code class="language-shell" id="docs-quickstart-code-1">npm install --global @ariobarin/glossa@beta</code></pre>
 </div>
-  </div>
-  <div id="install-direct" class="docs-tab-panel" role="tabpanel" aria-labelledby="install-direct-tab" data-docs-tab-panel="direct" hidden>
-<p>Install a self-contained executable without Node.js or npm.</p>
-<div class="docs-switcher docs-switcher-nested" data-docs-tabs data-tabs-storage="glossa-direct-platform-v2" data-tabs-param="platform">
-  <p class="docs-switcher-label">Platform</p>
-  <div class="docs-tabs" role="tablist" aria-label="Direct installer platform">
-    <button id="direct-windows-tab" type="button" role="tab" aria-selected="true" aria-controls="direct-windows" data-docs-tab="windows">Windows</button>
-    <button id="direct-macos-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-macos" data-docs-tab="macos" tabindex="-1">macOS</button>
-    <button id="direct-linux-tab" type="button" role="tab" aria-selected="false" aria-controls="direct-linux" data-docs-tab="linux" tabindex="-1">Linux</button>
-  </div>
-  <div id="direct-windows" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-windows-tab" data-docs-tab-panel="windows">
+</section>
+<section class="doc-section">
+<h2 id="2-start-glossa">2. Start Glossa</h2>
+<p>Open a terminal in the folder you want ChatGPT to use, then run:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-2" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-powershell" id="docs-quickstart-code-2">irm https://glossa.sh/install | iex</code></pre>
+  <pre><code class="language-shell" id="docs-quickstart-code-2">glossa</code></pre>
 </div>
-  </div>
-  <div id="direct-macos" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-macos-tab" data-docs-tab-panel="macos" hidden>
+<p>Sign in if prompted, and keep this terminal open.</p>
+</section>
+<section class="doc-section">
+<h2 id="3-add-glossa-to-chatgpt">3. Add Glossa to ChatGPT</h2>
+<p>ChatGPT Pro supports Glossa&#39;s read and fetch tools. Full file and command access
+requires ChatGPT Business, Enterprise, or Edu.</p>
+<ol>
+<li>In ChatGPT web, follow <a href="https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta">OpenAI&#39;s Developer Mode guide</a> to enable Developer Mode and create a custom app.</li>
+<li>Name it <strong>Glossa</strong> and enter this MCP server URL:</li>
+</ol>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-3" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-3">curl -fsSL https://glossa.sh/install.sh | sh</code></pre>
+  <pre><code class="language-text" id="docs-quickstart-code-3">https://mcp.glossa.sh/mcp</code></pre>
 </div>
-  </div>
-  <div id="direct-linux" class="docs-tab-panel" role="tabpanel" aria-labelledby="direct-linux-tab" data-docs-tab-panel="linux" hidden>
+<ol start="3">
+<li>Choose <strong>OAuth</strong>, then <strong>Scan Tools</strong>.</li>
+<li>Sign in with the same Google account used by Glossa, wait for the scan to finish, then choose <strong>Create</strong>.</li>
+</ol>
+</section>
+<section class="doc-section">
+<h2 id="4-test-the-connection">4. Test the connection</h2>
+<p>In ChatGPT, select Glossa and send:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-4" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-4">curl -fsSL https://glossa.sh/install.sh | sh</code></pre>
+  <pre><code class="language-text" id="docs-quickstart-code-4">Use Glossa to list my connected workspaces.</code></pre>
 </div>
-  </div>
-</div>
-  </div>
-</div>
-<p>Confirm Glossa is available:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-5" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-5">glossa --version</code></pre>
-</div>
-<p>Glossa checks for updates at most once per day before connecting a workspace and
-prints a notice by default. After disconnecting every running Glossa workspace,
-check or install an update:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-6" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-6">glossa update --check
-glossa update</code></pre>
-</div>
-<p>Use <code>glossa update --policy auto</code> to install an available update before the next
-workspace connects, or <code>glossa update --policy off</code> to disable automatic checks.
-The open beta follows the <code>beta</code> channel. Run <code>glossa update --channel stable</code>
-to switch to stable releases once one is published.</p>
-</section>
-<section class="doc-section">
-<h2 id="step-2-start-a-workspace"><a class="heading-anchor" href="#step-2-start-a-workspace" aria-label="Link to Step 2: Start a workspace"></a>Step 2: Start a workspace</h2>
-<p>Open a terminal in the directory you want ChatGPT to use:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-7" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-7">glossa</code></pre>
-</div>
-<p>With no directory argument, Glossa exposes the current directory and signs in
-automatically. To expose a different directory, run <code>glossa &lt;directory&gt;</code>.</p>
-<blockquote>
-<p>Keep this terminal open. Closing it disconnects that local workspace from ChatGPT.</p>
-</blockquote>
-</section>
-<section class="doc-section">
-<h2 id="step-3-connect-chatgpt"><a class="heading-anchor" href="#step-3-connect-chatgpt" aria-label="Link to Step 3: Connect ChatGPT"></a>Step 3: Connect ChatGPT</h2>
-<ol>
-<li>Open <strong>Settings &gt; Plugins/Apps</strong> and enable <strong>Developer Mode</strong>.</li>
-<li>Choose <strong>Create</strong>.</li>
-<li>Name the app <strong>Glossa</strong> and enter this MCP server URL:</li>
-</ol>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-8" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-text" id="docs-quickstart-code-8">https://mcp.glossa.sh/mcp</code></pre>
-</div>
-<ol start="4">
-<li>Choose <strong>OAuth</strong>.</li>
-<li>Sign in with the same Google account used by the Glossa CLI, then choose <strong>Create</strong>.</li>
-</ol>
-</section>
-<section class="doc-section">
-<h2 id="step-4-verify-the-connection"><a class="heading-anchor" href="#step-4-verify-the-connection" aria-label="Link to Step 4: Verify the connection"></a>Step 4: Verify the connection</h2>
-<p>Run <code>glossa status</code> in another terminal to check the account, relay, enrolled device, and active worker.</p>
-<h3 id="try-a-read"><a class="heading-anchor" href="#try-a-read" aria-label="Link to Try a read"></a>Try a read</h3>
-<p>In ChatGPT, select Glossa and send:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-9" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-text" id="docs-quickstart-code-9">Use Glossa to list my connected workspaces.</code></pre>
-</div>
-<p>If Glossa lists the workspace, the connection is ready. Ask it to read a file
-next.</p>
-</section>
-<section class="doc-section">
-<h2 id="what-next"><a class="heading-anchor" href="#what-next" aria-label="Link to What next"></a>What next</h2>
-<ul>
-<li>Read <a href="/docs/why">why Glossa works this way</a>.</li>
-<li>Review the complete <a href="/docs/security">security model</a>.</li>
-<li>Visit <a href="/support">support</a> if the worker, OAuth flow, or app does not connect.</li>
-</ul>
+<p>If your workspace appears, Glossa is ready. Having trouble? Visit <a href="/support">support</a>.</p>
 </section>
       </article>
       </div>
 
-      <nav class="docs-toc" aria-label="On this page">
-        <strong>On this page</strong>
-        <ol>
-          <li><a href="#before-you-begin">Before you begin</a></li>
-          <li><a href="#step-1-install-glossa">Step 1: Install Glossa</a></li>
-          <li><a href="#step-2-start-a-workspace">Step 2: Start a workspace</a></li>
-          <li><a href="#step-3-connect-chatgpt">Step 3: Connect ChatGPT</a></li>
-          <li><a href="#step-4-verify-the-connection">Step 4: Verify the connection</a></li>
-          <li><a href="#what-next">What next</a></li>
-        </ol>
-      </nav>
+
       </div>
     </main>
 
