@@ -1,21 +1,23 @@
 # Why Glossa?
 
-Codex can run out before your ideas do.
+The work rarely ends when the usage window does.
 
-## Your plan still has code left in it
+## The limit can arrive mid-thought
 
-When Codex reaches its limit but ChatGPT is still available, most people stop coding and wait. Glossa lets you keep going. It connects a regular [ChatGPT](https://chatgpt.com/chat) conversation to the project on your computer, so ChatGPT can inspect files, make changes, and run commands instead of only telling you what to do.
+A repository can be open, the problem fully loaded, and the next change already clear when Codex reaches its limit. The work has not reached a natural stopping point. Only the available Codex usage has.
 
-## Keep the problem warm
+## Momentum has a half-life
 
-The expensive part of coding is getting the whole problem into your head. Your project is open. The decisions are fresh. You know what should happen next. Glossa keeps that momentum alive instead of letting a usage window end it.
+Writing the next edit is rarely the expensive part. Holding the architecture, the tradeoffs, and the unfinished thought together is. Waiting for another usage window means rebuilding that context before progress resumes.
 
-## Use the ChatGPT you already have
+## ChatGPT can continue the work
 
-Glossa is not another model or another subscription. ChatGPT does the thinking. Glossa gives it a way to work on your local code. The access you might have used for one-off questions can become more progress on the project you actually care about.
+Glossa connects a regular [ChatGPT](https://chatgpt.com/chat) conversation to a local project. That conversation can inspect files, make changes, run commands, and verify results instead of stopping at suggestions.
 
-## Everyone else stopped. You kept going.
+## More of the plan becomes useful
 
-Codex is done for now. Your project is not.
+Glossa is not another model or another subscription. It gives available ChatGPT access a way to keep working on the codebase.
+
+**Codex is done for now. The project is not.**
 
 <p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>
