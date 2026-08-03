@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmod, lstat, mkdtemp, mkdir, opendir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -190,6 +191,46 @@ test("serializes guarded writes across file service instances", async (context) 
       (await readdir(root)).filter((name) => name.startsWith(".glossa-")),
       [],
     );
+  }
+});
+
+test("serializes guarded writes through Windows file aliases", {
+  skip: process.platform !== "win32",
+}, async (context) => {
+  const root = await temporaryDirectory(context);
+  const longName = "long-alias-target-name.txt";
+  await writeFile(path.join(root, longName), "content");
+  const listing = execFileSync(
+    process.env.ComSpec ?? "cmd.exe",
+    ["/d", "/c", "dir", "/x", root],
+    { encoding: "utf8", windowsHide: true },
+  );
+  const shortName = listing.match(
+    /(\S*~\S*)\s+long-alias-target-name\.txt\s*$/im,
+  )?.[1];
+  if (!shortName) {
+    context.skip("The test volume does not expose 8.3 file aliases.");
+    return;
+  }
+
+  assert.notEqual(longName.toLowerCase(), shortName.toLowerCase());
+  const longFiles = new FileService(await PathPolicy.create(root));
+  const shortFiles = new FileService(await PathPolicy.create(root));
+
+  for (let trial = 0; trial < 10; trial += 1) {
+    const original = await longFiles.readText(longName);
+    const contents = [`long-${trial}`, `short-${trial}`] as const;
+    const results: PromiseSettledResult<unknown>[] = await Promise.allSettled([
+      longFiles.writeText(longName, contents[0], original.sha256),
+      shortFiles.writeText(shortName, contents[1], original.sha256),
+    ]);
+
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.ok(rejected && rejected.status === "rejected");
+    assert.equal((rejected.reason as WorkerError).code, "stale_revision");
+    const finalContent = await readFile(path.join(root, longName), "utf8");
+    assert.ok(finalContent === contents[0] || finalContent === contents[1]);
   }
 });
 
