@@ -14,7 +14,7 @@ This packet centralizes proposed marketplace copy, tool explanations, reviewer s
 - Support: `https://glossa.sh/support`
 - Security: `https://github.com/ariobarin/glossa/blob/main/docs/security.md`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
-- MCP tool contract: `0.1.0-beta.14` (11 tools)
+- MCP tool contract: `0.1.0-beta.15` (11 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 Proposed short description:
@@ -83,7 +83,7 @@ Before submitting:
 - Enter its credentials only in the portal's protected reviewer fields. Never commit them.
 - Run the worker under a dedicated operating-system account with no developer credentials or access to private data.
 - Verify the account, OAuth consent, fixture reset, worker connection, the routing evaluation set, and all twelve reviewer cases below from an unrelated network.
-- Reconnect the ChatGPT integration in a fresh conversation and verify discovery reports contract `0.1.0-beta.14`, the app-wide instructions, all 11 documented tools, `run_command.waitMs`, and `get_command.deviceId` plus `afterSequence`.
+- Reconnect the ChatGPT integration in a fresh conversation and verify discovery reports contract `0.1.0-beta.15`, the app-wide instructions, all 11 documented tools, `run_command.waitMs`, and `get_command.deviceId` plus `afterSequence`.
 - Reset the fixture before review and after any test run that changes it.
 
 ## Nine positive tests
@@ -123,4 +123,4 @@ Suggested release note after the public execution profile is resolved:
 
 ## Submission gate
 
-Do not submit this packet until the production privacy, terms, and support pages are live, the MCP scan reports contract `0.1.0-beta.14` and matches the server instructions plus all 11 documented schemas and annotations, the reviewer account and isolated worker are continuously available, and the unrestricted command-execution decision is resolved.
+Do not submit this packet until the production privacy, terms, and support pages are live, the MCP scan reports contract `0.1.0-beta.15` and matches the server instructions plus all 11 documented schemas and annotations, the reviewer account and isolated worker are continuously available, and the unrestricted command-execution decision is resolved.

@@ -26,7 +26,7 @@ import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
 // Bump when a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "0.1.0-beta.14";
+export const MCP_SERVER_VERSION = "0.1.0-beta.15";
 
 const deviceIdFieldSchema = z
   .string()
@@ -447,9 +447,23 @@ const safeWorkerMessages: Record<string, string> = {
   invalid_range: "The requested file range is invalid.",
 };
 
+const MAX_MIRRORED_STRUCTURED_RESULT_BYTES = 16 * 1024;
+
 function structuredResult(value: Record<string, unknown>) {
+  const serialized = JSON.stringify(value);
+  const serializedBytes = Buffer.byteLength(serialized, "utf8");
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    content: [
+      {
+        type: "text" as const,
+        text: serializedBytes <= MAX_MIRRORED_STRUCTURED_RESULT_BYTES
+          ? serialized
+          : JSON.stringify({
+              notice: "Full result is available in structuredContent.",
+              structuredContentBytes: serializedBytes,
+            }),
+      },
+    ],
     structuredContent: value,
   };
 }
