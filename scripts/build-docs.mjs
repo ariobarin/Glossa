@@ -115,160 +115,13 @@ function slugifyHeading(value) {
     .replace(/^-|-$/g, "");
 }
 
-function parseDirectiveOptions(line, directive, sourceLabel) {
-  const prefix = `:::${directive} `;
-  if (!line.startsWith(prefix)) {
-    throw new Error(`${sourceLabel} has an invalid ${directive} directive`);
-  }
-
-  try {
-    return JSON.parse(line.slice(prefix.length));
-  } catch {
-    throw new Error(`${sourceLabel} has invalid JSON in a ${directive} directive`);
-  }
-}
-
-function findDirectiveEnd(lines, sourceLabel) {
-  let depth = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    if (lines[index].startsWith(":::docs-tabs ")) depth += 1;
-    if (lines[index] === ":::docs-tabs-end") {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-
-  throw new Error(`${sourceLabel} has an unclosed docs-tabs directive`);
-}
-
-function parseDirectiveTabs(lines, lexer, sourceLabel) {
-  const tabs = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    while (lines[index]?.trim() === "") index += 1;
-    if (index >= lines.length) break;
-
-    const options = parseDirectiveOptions(lines[index], "docs-tab", sourceLabel);
-    const contentStart = index + 1;
-    let nestedTabs = 0;
-    let contentEnd = -1;
-
-    for (index = contentStart; index < lines.length; index += 1) {
-      if (lines[index].startsWith(":::docs-tabs ")) nestedTabs += 1;
-      if (lines[index] === ":::docs-tabs-end") nestedTabs -= 1;
-      if (lines[index] === ":::docs-tab-end" && nestedTabs === 0) {
-        contentEnd = index;
-        break;
-      }
-    }
-
-    if (contentEnd === -1) {
-      throw new Error(`${sourceLabel} has an unclosed docs-tab directive`);
-    }
-
-    if (!options.value || !options.label) {
-      throw new Error(`${sourceLabel} docs-tab directives need value and label`);
-    }
-
-    const markdown = lines.slice(contentStart, contentEnd).join("\n").trim();
-    tabs.push({
-      ...options,
-      tokens: lexer.blockTokens(markdown ? `${markdown}\n` : ""),
-    });
-    index = contentEnd + 1;
-  }
-
-  if (tabs.length < 2) {
-    throw new Error(`${sourceLabel} docs-tabs directives need at least two tabs`);
-  }
-
-  if (tabs.filter((tab) => tab.selected).length > 1) {
-    throw new Error(`${sourceLabel} docs-tabs directives can select only one tab`);
-  }
-
-  if (!tabs.some((tab) => tab.selected)) tabs[0].selected = true;
-  return tabs;
-}
-
-function createDocsTabsExtension(sourceLabel) {
-  return {
-    name: "docsTabs",
-    level: "block",
-    start(source) {
-      const index = source.indexOf(":::docs-tabs ");
-      return index === -1 ? undefined : index;
-    },
-    tokenizer(source) {
-      if (!source.startsWith(":::docs-tabs ")) return undefined;
-
-      const lines = source.split("\n");
-      const end = findDirectiveEnd(lines, sourceLabel);
-      const raw = lines.slice(0, end + 1).join("\n")
-        + (end < lines.length - 1 ? "\n" : "");
-      const options = parseDirectiveOptions(lines[0], "docs-tabs", sourceLabel);
-      const tabs = parseDirectiveTabs(
-        lines.slice(1, end),
-        this.lexer,
-        sourceLabel,
-      );
-
-      if (!options.id || !options.storage || !options.label || !options.ariaLabel) {
-        throw new Error(
-          `${sourceLabel} docs-tabs directives need id, storage, label, and ariaLabel`,
-        );
-      }
-
-      return {
-        type: "docsTabs",
-        raw,
-        options,
-        tabs,
-      };
-    },
-    renderer(token) {
-      const { options, tabs } = token;
-      const containerClass = options.nested
-        ? "docs-switcher docs-switcher-nested"
-        : "docs-switcher";
-      const tabsClass = options.wide ? "docs-tabs docs-tabs-wide" : "docs-tabs";
-      const buttons = tabs.map((tab) => {
-        const tabId = `${options.id}-${tab.value}-tab`;
-        const panelId = `${options.id}-${tab.value}`;
-        return `    <button id="${escapeHtml(tabId)}" type="button" role="tab" aria-selected="${tab.selected ? "true" : "false"}" aria-controls="${escapeHtml(panelId)}" data-docs-tab="${escapeHtml(tab.value)}"${tab.selected ? "" : " tabindex=\"-1\""}>${escapeHtml(tab.label)}</button>`;
-      }).join("\n");
-      const panels = tabs.map((tab) => {
-        const tabId = `${options.id}-${tab.value}-tab`;
-        const panelId = `${options.id}-${tab.value}`;
-        return `  <div id="${escapeHtml(panelId)}" class="docs-tab-panel" role="tabpanel" aria-labelledby="${escapeHtml(tabId)}" data-docs-tab-panel="${escapeHtml(tab.value)}"${tab.selected ? "" : " hidden"}>
-${this.parser.parse(tab.tokens).trimEnd()}
-  </div>`;
-      }).join("\n");
-      const paramAttribute = options.param
-        ? ` data-tabs-param="${escapeHtml(options.param)}"`
-        : "";
-
-      return `<div class="${containerClass}" data-docs-tabs data-tabs-storage="${escapeHtml(options.storage)}"${paramAttribute}>
-  <p class="docs-switcher-label">${escapeHtml(options.label)}</p>
-  <div class="${tabsClass}" role="tablist" aria-label="${escapeHtml(options.ariaLabel)}">
-${buttons}
-  </div>
-${panels}
-</div>
-`;
-    },
-  };
-}
-
-function createMarkdown(sourceLabel, route) {
+function createMarkdown(route) {
   const headingIds = new Map();
   let codeIndex = 0;
   const markdown = new Marked();
 
   markdown.use({
     gfm: true,
-    extensions: [createDocsTabsExtension(sourceLabel)],
     renderer: {
       heading(token) {
         const content = this.parser.parseInline(token.tokens);
@@ -307,7 +160,7 @@ function createMarkdown(sourceLabel, route) {
 }
 
 function readPage(source, sourceLabel, route) {
-  const markdown = createMarkdown(sourceLabel, route);
+  const markdown = createMarkdown(route);
   const normalizedSource = source.replaceAll("\r\n", "\n");
   const tokens = markdown.lexer(normalizedSource.trim());
   const titleIndex = tokens.findIndex(
@@ -407,6 +260,16 @@ function renderPage(pageConfig, page) {
   const copyPageButton = pageConfig.copyPage === false
     ? ""
     : `          <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>`;
+  const layoutClass = sectionNavigation ? " has-toc" : "";
+  const introduction = `      <header class="docs-intro">
+        <div class="docs-kicker">${escapeHtml(pageConfig.group)}</div>
+        <div class="docs-title-row">
+          <h1>${escapeHtml(page.title)}</h1>
+${copyPageButton}
+        </div>
+        <script type="application/json" data-page-markdown>${serializedSource}</script>
+        <p class="docs-summary">${page.summaryHtml}</p>
+      </header>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -436,18 +299,10 @@ function renderPage(pageConfig, page) {
     </header>
 
     <main class="docs-main">
-      <div class="docs-layout${sectionNavigation ? " has-toc" : ""}">
+      <div class="docs-layout${layoutClass}">
 ${sidebar}
       <div class="docs-page">
-      <header class="docs-intro">
-        <div class="docs-kicker">${escapeHtml(pageConfig.group)}</div>
-        <div class="docs-title-row">
-          <h1>${escapeHtml(page.title)}</h1>
-${copyPageButton}
-        </div>
-        <script type="application/json" data-page-markdown>${serializedSource}</script>
-        <p class="docs-summary">${page.summaryHtml}</p>
-      </header>
+${introduction}
 
       <article class="docs-content">
 ${body}

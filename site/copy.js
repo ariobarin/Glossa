@@ -6,13 +6,6 @@ export function chooseActiveSection(sections, threshold = 140) {
     ?? null;
 }
 
-export function tabSelectionUrl(href, param, value, hiddenHashTarget) {
-  const url = new URL(href);
-  url.searchParams.set(param, value);
-  if (hiddenHashTarget) url.hash = "";
-  return url;
-}
-
 function resetAfter(callback) {
   window.setTimeout(callback, RESET_DELAY);
 }
@@ -101,182 +94,6 @@ function initPageCopy() {
   });
 }
 
-function readStorage(key) {
-  if (!key) return null;
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStorage(key, value) {
-  if (!key) return;
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    return;
-  }
-}
-
-function readUrlValue(controller) {
-  const params = new URLSearchParams(window.location.search);
-  const queryValue = controller.param ? params.get(controller.param) : null;
-  if (controller.values.includes(queryValue)) return queryValue;
-
-  let hashId;
-  try {
-    hashId = decodeURIComponent(window.location.hash.slice(1));
-  } catch {
-    return null;
-  }
-  if (!hashId) return null;
-  const hashTarget = document.getElementById(hashId);
-  const panel = controller.panels.find((candidate) => (
-    candidate.id === hashId || (hashTarget && candidate.contains(hashTarget))
-  ));
-  return panel?.dataset.docsTabPanel ?? null;
-}
-
-function writeUrlValue(controller, value) {
-  if (!controller.param || !window.history?.replaceState) return;
-
-  try {
-    const currentUrl = new URL(window.location.href);
-    let hashId = "";
-    try {
-      hashId = decodeURIComponent(currentUrl.hash.slice(1));
-    } catch {
-      hashId = "";
-    }
-    const hashTarget = hashId ? document.getElementById(hashId) : null;
-    const url = tabSelectionUrl(
-      currentUrl,
-      controller.param,
-      value,
-      Boolean(hashTarget?.closest("[hidden]")),
-    );
-    window.history.replaceState(window.history.state, "", url);
-  } catch {
-    return;
-  }
-}
-
-function applyTabSelection(controller, value) {
-  if (!controller.values.includes(value)) return false;
-
-  for (const tab of controller.tabs) {
-    const selected = tab.dataset.docsTab === value;
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-  }
-
-  for (const panel of controller.panels) {
-    panel.hidden = panel.dataset.docsTabPanel !== value;
-  }
-
-  return true;
-}
-
-function initDocsTabs() {
-  const controllers = [...document.querySelectorAll("[data-docs-tabs]")]
-    .map((tabSet) => {
-      const tabList = tabSet.querySelector(":scope > .docs-tabs");
-      const tabs = [...(tabList?.querySelectorAll("[data-docs-tab]") ?? [])];
-      const panels = [
-        ...tabSet.querySelectorAll(":scope > [data-docs-tab-panel]"),
-      ];
-      return {
-        tabs,
-        panels,
-        values: tabs.map((tab) => tab.dataset.docsTab),
-        storageKey: tabSet.dataset.tabsStorage,
-        param: tabSet.dataset.tabsParam,
-      };
-    })
-    .filter((controller) => (
-      controller.tabs.length > 0 && controller.panels.length > 0
-    ));
-
-  const select = (controller, value, options = {}) => {
-    const { focus = false, persist = true, updateUrl = false } = options;
-    if (!applyTabSelection(controller, value)) return;
-    if (persist) writeStorage(controller.storageKey, value);
-    if (updateUrl) writeUrlValue(controller, value);
-
-    for (const peer of controllers) {
-      if (
-        peer !== controller
-        && peer.storageKey === controller.storageKey
-        && peer.values.includes(value)
-      ) {
-        applyTabSelection(peer, value);
-      }
-    }
-
-    if (focus) {
-      controller.tabs.find((tab) => tab.dataset.docsTab === value)?.focus();
-    }
-  };
-
-  const applyInitialSelections = () => {
-    for (const controller of controllers) {
-      const selectedTab = controller.tabs.find(
-        (tab) => tab.getAttribute("aria-selected") === "true",
-      );
-      const urlValue = readUrlValue(controller);
-      const storedValue = readStorage(controller.storageKey);
-      const initialValue = urlValue
-        ?? (controller.values.includes(storedValue) ? storedValue : null)
-        ?? selectedTab?.dataset.docsTab
-        ?? controller.values[0];
-      select(controller, initialValue, { persist: false });
-    }
-  };
-
-  for (const controller of controllers) {
-    for (const tab of controller.tabs) {
-      tab.addEventListener("click", () => {
-        select(controller, tab.dataset.docsTab, { updateUrl: true });
-      });
-      tab.addEventListener("keydown", (event) => {
-        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-          return;
-        }
-        event.preventDefault();
-
-        const currentIndex = controller.tabs.indexOf(tab);
-        const nextIndex = event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? controller.tabs.length - 1
-            : (
-              currentIndex
-              + (event.key === "ArrowRight" ? 1 : -1)
-              + controller.tabs.length
-            ) % controller.tabs.length;
-        select(
-          controller,
-          controller.tabs[nextIndex].dataset.docsTab,
-          { focus: true, updateUrl: true },
-        );
-      });
-    }
-  }
-
-  window.addEventListener("popstate", applyInitialSelections);
-  window.addEventListener("hashchange", applyInitialSelections);
-  window.addEventListener("storage", (event) => {
-    if (!event.key || !event.newValue) return;
-    for (const controller of controllers) {
-      if (controller.storageKey === event.key) {
-        select(controller, event.newValue, { persist: false });
-      }
-    }
-  });
-  applyInitialSelections();
-}
-
 function initSectionNavigation() {
   const links = [...document.querySelectorAll(".docs-toc a[href^='#']")];
   const headings = links
@@ -333,7 +150,6 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
   for (const initialize of [
     initCodeCopy,
     initPageCopy,
-    initDocsTabs,
     initSectionNavigation,
   ]) {
     try {
