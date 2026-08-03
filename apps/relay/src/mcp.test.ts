@@ -92,7 +92,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.14");
+  assert.equal(MCP_SERVER_VERSION, "0.1.0-beta.15");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for work in a local coding workspace/);
@@ -370,6 +370,59 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     /same intended sign-in account/,
   );
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
+});
+
+test("does not mirror large structured results into text content", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000020";
+  const workerId = "00000000-0000-4000-8000-000000000021";
+  const session = state.register(accountId, deviceId, "Test PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-large-result-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const content = "x".repeat(64 * 1024);
+  const readCall = client.callTool({
+    name: "read_file",
+    arguments: { deviceId: workerId, path: "large.txt" },
+  });
+  const readJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(readJob?.type, "read_file");
+  assert.ok(readJob);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: readJob.requestId,
+      ok: true,
+      value: { content, sha256: "0".repeat(64), bytes: Buffer.byteLength(content) },
+    }),
+    true,
+  );
+
+  const result = await readCall;
+  const structured = result.structuredContent as { content?: unknown } | undefined;
+  const resultContent = result.content as Array<{ type?: unknown; text?: unknown }>;
+  assert.equal(structured?.content, content);
+  const text = String(
+    resultContent[0]?.type === "text" ? resultContent[0].text ?? "" : "",
+  );
+  assert.match(text, /Full result is available in structuredContent/);
+  assert.doesNotMatch(text, /x{100}/);
+  assert.ok(Buffer.byteLength(text, "utf8") < 256);
 });
 
 test("routes cached command schemas without deviceId", async (context) => {

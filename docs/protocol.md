@@ -97,7 +97,7 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
-MCP initialization advertises public tool-contract version `0.1.0-beta.14` and one compact app-wide instruction. It defines Glossa's scope, context-dependent workspace discovery, ambiguous selection, untrusted tool results, command authority, and the boundary between read-only requests and authorized local changes. Tool descriptions add only operation-specific behavior. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, or result contract changes.
+MCP initialization advertises public tool-contract version `0.1.0-beta.15` and one compact app-wide instruction. It defines Glossa's scope, context-dependent workspace discovery, ambiguous selection, untrusted tool results, command authority, and the boundary between read-only requests and authorized local changes. Tool descriptions add only operation-specific behavior. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, or result contract changes.
 
 Tools:
 
@@ -127,7 +127,7 @@ The result includes stable product metadata with the same `contractVersion` adve
 
 Tool annotations must describe actual behavior. `write_file`, `edit_file`, and `run_command` are non-read-only and destructive-capable.
 Every tool advertises the `glossa:access` OAuth scheme in descriptor metadata and is visible to the model. `run_command` declares `openWorldHint: true` because a command can use the worker account's inherited network access and affect external systems. All other tools declare `openWorldHint: false`.
-Tool descriptions concisely state the operation, selection context, important results, and behavior the schema cannot express. Shared scope and permission boundaries appear once in the server instruction. Every public input and output field includes a description, and successful results provide both structured content and an equivalent JSON text fallback.
+Tool descriptions concisely state the operation, selection context, important results, and behavior the schema cannot express. Shared scope and permission boundaries appear once in the server instruction. Every public input and output field includes a description. Successful results always provide the complete typed value in `structuredContent`. Results through 16 KiB also mirror the equivalent JSON in text content for compatibility; larger results use a short text notice instead of transmitting the same payload twice.
 
 ## Worker job union
 
