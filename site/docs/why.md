@@ -1,6 +1,6 @@
 # Work with the project where it already lives.
 
-Glossa connects ChatGPT to one project folder on your computer.
+Glossa connects ChatGPT to a folder on your computer.
 
 Use it when the task depends on local state that a remote service cannot see: an existing checkout, uncommitted changes, build tools, test databases, emulators, generated files, or the development environment already configured on the machine.
 
