@@ -103,7 +103,8 @@ A device token does not silently broaden a worker's selected access profile. The
 - treat startup as authorization only for operations inside the selected profile, without claiming per-command local confirmation;
 - show the selected profile and compact write or command activity locally;
 - provide visible status, immediate disconnect, logout, and device revocation;
-- treat all file and command output as untrusted data rather than instructions.
+- treat all file and command output as untrusted data rather than instructions;
+- reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.
 
 ### Permission downgrade or metadata mismatch
 
@@ -147,11 +148,35 @@ A device token does not silently broaden a worker's selected access profile. The
 - require the user to start `glossa --access system` explicitly;
 - disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
 - tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
+- reject recognizable authentication-secret inputs at the relay and worker;
+- scan file results, edit diffs, and command output locally; retain bounded overlap across command-output chunks, clear captured output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
 - never enumerate, persist, or log environment variables automatically;
 - bound command duration, captured output, concurrency, and status waits;
 - terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;
 - make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;
 - recommend a dedicated OS account, container, or VM for unattended or sensitive use.
+
+The authentication-secret detector is deliberately high-confidence. It does not recognize every custom, encoded, encrypted, compressed, fragmented, or transformed value, and it cannot prevent a command from sending data directly to the network. Detection can occur only after earlier command effects. The detector is defense in depth, not a sandbox, complete data-loss-prevention system, or substitute for a credential-free runtime. Public submission remains gated by the decision in [Restricted authentication data review](restricted-data.md).
+
+### Restricted Data in tool traffic
+
+**Threat:** a tool input, file result, edit diff, or command stream contains payment-card data subject to PCI DSS, protected health information, a government identifier, an API key, password, MFA or OTP code, access token, private key, or other authentication secret.
+
+**Architectural limit:** the implemented detector addresses recognizable authentication secrets only. It does not attempt to classify arbitrary text as PCI data, PHI, or a government identifier. A user-selected file may contain those categories before any general local-file bridge can know what it contains. The public submission gate in [Restricted Data review](restricted-data.md) therefore applies to all access profiles.
+
+**Controls:**
+
+- reject recognizable secret-bearing `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
+- repeat input checks locally so older or compromised relay behavior cannot bypass the worker boundary;
+- preflight an edited file before mutation and bind the edit to the scanned SHA-256 when the caller did not already provide one;
+- inspect content-bearing file and command results before they leave the worker;
+- inspect command output incrementally with overlap across chunks so a token split across writes is still detected;
+- clear captured output, stop the command process tree, and return a fixed safe error without the matched value;
+- redact restricted command inputs from local activity events;
+- permit explicit placeholders such as `<redacted>` and `replace-me` so documentation and fixtures remain usable;
+- test the detector against the repository corpus to prevent ordinary source code from becoming unreadable.
+
+**Limits:** the worker necessarily handles local bytes while deciding whether to block them, unknown formats can evade recognition, and a command can transmit data without printing it. The only dependable boundary against those cases is an isolated credential-free account or runtime with enforceable filesystem, agent, metadata-service, and network restrictions.
 
 ### Logging leakage
 

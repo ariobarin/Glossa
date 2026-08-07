@@ -78,7 +78,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 
 - active worker connections
 - device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
-- pending jobs
+- pending jobs after relay-side profile and recognizable-authentication-secret input checks
 - request waiters
 - one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
 - recent nonces and bounded rate-limit counters
@@ -91,11 +91,12 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - path enforcement and atomic structured file operations
 - local process execution only under `system`
 - complete inherited local environment, credentials, operating-system permissions, and network access only when a system command is started
+- high-confidence authentication-secret input and result checks, including bounded per-stream command scan tails
 - temporary active command state
 
 One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path.
 
-Current workers report their CLI package version, selected access profile, and bounded capability flags. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false and command lifecycle operations when `runCommands` is false. The worker repeats the same checks locally. A profile-less legacy worker is conservatively classified as `system`, matching its historical command authority rather than presenting it as safer than it is.
+Current workers report their CLI package version, selected access profile, and bounded capability flags. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false, command lifecycle operations when `runCommands` is false, and recognizable authentication-secret material in mutation or command inputs. The worker repeats the permission and restricted-input checks locally and suppresses recognizable credential material in content-bearing results. A profile-less legacy worker is conservatively classified as `system`, matching its historical command authority rather than presenting it as safer than it is.
 
 Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
 
@@ -111,7 +112,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
-- command execution continues locally beyond the initiating request;
+- command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
 - current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
 - `get_command` may wait up to 15 seconds and can wake as soon as command output or status changes;
 - `cancel_command` uses a separate bounded request;

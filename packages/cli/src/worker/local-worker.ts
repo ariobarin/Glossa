@@ -1,5 +1,8 @@
 import {
+  containsRestrictedAuthenticationData,
   DEFAULT_WORKER_ACCESS_PROFILE,
+  RESTRICTED_DATA_ERROR_CODE,
+  RESTRICTED_DATA_ERROR_MESSAGE,
   workerPermissions,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -9,6 +12,65 @@ import { CommandService } from "./command-service.js";
 import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
 import { PathPolicy } from "./path-policy.js";
+
+function restrictedDataError(): WorkerError {
+  return new WorkerError(
+    RESTRICTED_DATA_ERROR_CODE,
+    RESTRICTED_DATA_ERROR_MESSAGE,
+  );
+}
+
+function jobInputContainsRestrictedData(job: WorkerJob): boolean {
+  switch (job.type) {
+    case "read_file":
+      return containsRestrictedAuthenticationData(job.path);
+    case "list_files":
+      return containsRestrictedAuthenticationData({
+        path: job.path,
+        cursor: job.cursor,
+      });
+    case "search_text":
+      return containsRestrictedAuthenticationData({
+        query: job.query,
+        path: job.path,
+        extensions: job.extensions,
+      });
+    case "read_file_range":
+      return containsRestrictedAuthenticationData(job.path);
+    case "write_file":
+      return containsRestrictedAuthenticationData({
+        path: job.path,
+        content: job.content,
+      });
+    case "edit_file":
+      return containsRestrictedAuthenticationData({
+        path: job.path,
+        edits: job.edits,
+      });
+    case "run_command":
+      return containsRestrictedAuthenticationData({
+        argv: job.argv,
+        shellCommand: job.shellCommand,
+        stdin: job.stdin,
+      });
+    case "get_command":
+    case "cancel_command":
+      return false;
+  }
+}
+
+function resultMayContainRestrictedData(job: WorkerJob): boolean {
+  return (
+    job.type === "read_file" ||
+    job.type === "list_files" ||
+    job.type === "search_text" ||
+    job.type === "read_file_range" ||
+    job.type === "edit_file" ||
+    job.type === "run_command" ||
+    job.type === "get_command" ||
+    job.type === "cancel_command"
+  );
+}
 
 export class LocalWorker {
   private constructor(
@@ -55,6 +117,8 @@ export class LocalWorker {
         );
       }
 
+      if (jobInputContainsRestrictedData(job)) throw restrictedDataError();
+
       let value: unknown;
       switch (job.type) {
         case "read_file":
@@ -96,13 +160,18 @@ export class LocalWorker {
             job.expectedSha256,
           );
           break;
-        case "edit_file":
+        case "edit_file": {
+          const current = await this.files.readText(job.path);
+          if (containsRestrictedAuthenticationData(current.content)) {
+            throw restrictedDataError();
+          }
           value = await this.files.editText(
             job.path,
             job.edits,
-            job.expectedSha256,
+            job.expectedSha256 ?? current.sha256,
           );
           break;
+        }
         case "run_command":
           value = await this.commands.start({
             ...(job.argv ? { argv: job.argv } : {}),
@@ -122,6 +191,12 @@ export class LocalWorker {
         case "cancel_command":
           value = await this.commands.cancel(job.commandId);
           break;
+      }
+      if (
+        resultMayContainRestrictedData(job) &&
+        containsRestrictedAuthenticationData(value)
+      ) {
+        throw restrictedDataError();
       }
       return { requestId: job.requestId, ok: true, value };
     } catch (error) {

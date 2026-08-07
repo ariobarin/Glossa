@@ -469,3 +469,42 @@ test("reports when an older relay drops a requested workspace label", () => {
     undefined,
   );
 });
+
+test("redacts restricted inputs from local activity events", async () => {
+  const key = "sk-proj-" + "A".repeat(32);
+  const job: WorkerJob = {
+    type: "run_command",
+    requestId: "00000000-0000-4000-8000-000000000008",
+    argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+    stdin: `OPENAI_API_KEY=${key}`,
+    timeoutMs: 1_000,
+  };
+  const events: unknown[] = [];
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const worker = visibleWorker(
+      {
+        async handle(requestedJob) {
+          return {
+            requestId: requestedJob.requestId,
+            ok: false,
+            error: {
+              code: "restricted_data_blocked",
+              message: "blocked",
+            },
+          };
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    await worker.handle(job);
+  } finally {
+    console.error = originalError;
+  }
+
+  const serialized = JSON.stringify(events);
+  assert.doesNotMatch(serialized, new RegExp(key));
+  assert.doesNotMatch(serialized, /OPENAI_API_KEY/);
+  assert.match(serialized, /restricted input blocked/);
+});

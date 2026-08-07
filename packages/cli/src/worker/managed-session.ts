@@ -1,4 +1,5 @@
 import {
+  containsRestrictedAuthenticationData,
   DEFAULT_WORKER_ACCESS_PROFILE,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -80,25 +81,86 @@ function activityResultLabel(
   return `${job.type} completed`;
 }
 
+function activitySafeJob(job: WorkerJob): WorkerJob {
+  if (!containsRestrictedAuthenticationData(job)) return job;
+
+  switch (job.type) {
+    case "read_file":
+      return { ...job, path: "[restricted input blocked]" };
+    case "list_files":
+      return {
+        ...job,
+        path: "[restricted input blocked]",
+        cursor: undefined,
+      };
+    case "search_text":
+      return {
+        ...job,
+        query: "[restricted input blocked]",
+        path: undefined,
+        extensions: undefined,
+      };
+    case "read_file_range":
+      return { ...job, path: "[restricted input blocked]" };
+    case "write_file":
+      return {
+        ...job,
+        path: "[restricted input blocked]",
+        content: "[restricted input blocked]",
+      };
+    case "edit_file":
+      return {
+        ...job,
+        path: "[restricted input blocked]",
+        edits: [{
+          oldText: "[restricted input blocked]",
+          newText: "",
+        }],
+      };
+    case "run_command":
+      return {
+        type: "run_command",
+        requestId: job.requestId,
+        argv: ["[restricted input blocked]"],
+        timeoutMs: job.timeoutMs,
+        ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
+      };
+    case "get_command":
+    case "cancel_command":
+      return job;
+  }
+}
+
 export function visibleWorker(
   worker: WorkerHandler,
   options: ManagedSessionOptions,
 ): WorkerHandler {
   return {
     async handle(job: WorkerJob): Promise<WorkerResult> {
-      options.onEvent?.({ type: "activity", phase: "started", job });
+      const visibleJob = activitySafeJob(job);
+      options.onEvent?.({ type: "activity", phase: "started", job: visibleJob });
       try {
         const result = await worker.handle(job);
         report(
           options,
-          { type: "activity", phase: "returned", job, ok: result.ok },
+          {
+            type: "activity",
+            phase: "returned",
+            job: visibleJob,
+            ok: result.ok,
+          },
           `${activityResultLabel(job, result)} (${job.requestId}).`,
         );
         return result;
       } catch (error) {
         report(
           options,
-          { type: "activity", phase: "returned", job, ok: false },
+          {
+            type: "activity",
+            phase: "returned",
+            job: visibleJob,
+            ok: false,
+          },
           `${job.type} failed (${job.requestId}).`,
         );
         throw error;

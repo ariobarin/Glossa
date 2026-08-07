@@ -96,6 +96,8 @@ node /path/to/glossa/packages/cli/dist/main.js
 
 The worker defaults to `workspace` access: structured reads and guarded writes stay inside the selected project, and commands are disabled. Start it with `--access read-only` for inspection or `--access system` only when commands are required. A system-profile command has the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched it and is not confined to the selected project.
 
+The relay rejects recognizable authentication secrets in mutation and command inputs, and the worker suppresses recognizable credential material in file and command results. This detector is deliberately high-confidence and incomplete. It cannot stop transformed values or a command that transmits data directly over the network. Operate sensitive `system` workers inside a credential-free OS account, container, or VM with appropriate network controls; do not present the detector as a sandbox.
+
 ## ChatGPT
 
 Add `https://mcp.example.com/mcp` as a custom MCP app in ChatGPT Developer Mode. This is a private app for your account or workspace. It is separate from the public Glossa app and the managed relay.

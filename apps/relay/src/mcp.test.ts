@@ -104,6 +104,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Change and fix requests authorize only scoped edits/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /A build request authorizes the requested build command only when system access is already enabled/);
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /Never request, pass, or return Restricted Data.*access credentials,? or authentication secrets/,
+  );
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /local worker suppresses recognizable credential material.*defense in depth, not a sandbox/,
+  );
 
   const { tools } = await client.listTools();
   assert.deepEqual(
@@ -147,6 +155,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(
     byName.get("run_command")?.description ?? "",
     /Do not use it for general web research, credential or environment inspection, bypassing file-tool boundaries/,
+  );
+  assert.match(
+    byName.get("run_command")?.description ?? "",
+    /Inputs that appear to contain access credentials are rejected.*output appears to contain them.*suppresses the output and stops the command/,
   );
   assert.match(
     byName.get("run_command")?.description ?? "",
@@ -222,7 +234,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("edit_file")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("edit_file")?.annotations?.openWorldHint, false);
   assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
-  assert.match(byName.get("read_file")?.description ?? "", /use read_file_range/);
+  assert.match(byName.get("read_file")?.description ?? "", /access credentials or authentication secrets.*use read_file_range/);
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
   assert.match(byName.get("write_file")?.description ?? "", /use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
@@ -495,6 +507,129 @@ test("returns actionable permission errors without dispatching forbidden work", 
   assert.match(JSON.stringify(commandResult.content), /command_access_disabled/);
   assert.match(JSON.stringify(commandResult.content), /Do not retry/);
   assert.match(JSON.stringify(commandResult.content), /system access/);
+});
+
+test("blocks recognizable authentication data without dispatch or disclosure", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000040";
+  const workerId = "00000000-0000-4000-8000-000000000041";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+    accessProfile: "system",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-restricted-data-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const key = "sk-proj-" + "A".repeat(32);
+  for (const call of [
+    client.callTool({
+      name: "read_file",
+      arguments: { deviceId: workerId, path: key },
+    }),
+    client.callTool({
+      name: "search_text",
+      arguments: { deviceId: workerId, query: key },
+    }),
+    client.callTool({
+      name: "write_file",
+      arguments: { deviceId: workerId, path: "secret.txt", content: key },
+    }),
+    client.callTool({
+      name: "run_command",
+      arguments: {
+        deviceId: workerId,
+        argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+      },
+    }),
+  ]) {
+    const result = await call;
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result.content), /restricted_data_blocked/);
+    assert.match(JSON.stringify(result.content), /access credentials or authentication secrets/);
+    assert.doesNotMatch(JSON.stringify(result.content), new RegExp(key));
+  }
+
+  assert.equal(
+    await state.poll(
+      accountId,
+      deviceId,
+      workerId,
+      session.generation,
+      5,
+    ),
+    null,
+  );
+
+  const readCall = client.callTool({
+    name: "read_file",
+    arguments: { deviceId: workerId, path: "secret.txt" },
+  });
+  const readJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(readJob?.type, "read_file");
+  assert.ok(readJob);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: readJob.requestId,
+      ok: false,
+      error: {
+        code: "restricted_data_blocked",
+        message: key,
+      },
+    }),
+    true,
+  );
+  const readResult = await readCall;
+  assert.equal(readResult.isError, true);
+  assert.match(JSON.stringify(readResult.content), /restricted_data_blocked/);
+  assert.doesNotMatch(JSON.stringify(readResult.content), new RegExp(key));
+});
+
+test("redacts restricted legacy device metadata from list_devices", async (context) => {
+  const state = new RouterState();
+  const key = "sk-proj-" + "A".repeat(32);
+  const workerId = "00000000-0000-4000-8000-000000000042";
+  state.register(
+    accountId,
+    "00000000-0000-4000-8000-000000000043",
+    key,
+    workerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      accessProfile: "workspace",
+      workspaceLabel: key,
+    },
+  );
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-restricted-metadata-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({ name: "list_devices", arguments: {} });
+  assert.equal(result.isError, undefined);
+  const serialized = JSON.stringify(result.structuredContent);
+  assert.doesNotMatch(serialized, new RegExp(key));
+  assert.match(serialized, /restricted device name blocked/);
+  assert.doesNotMatch(serialized, /workspaceLabel/);
 });
 
 test("does not mirror large structured results into text content", async (context) => {
