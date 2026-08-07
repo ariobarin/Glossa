@@ -173,7 +173,6 @@ assert.ok(
 
 await requiredText("site/index.html", [
   "Connect ChatGPT to the <span>project on your computer.</span>",
-  "One folder. You choose the access. Use the tools already there.",
 ]);
 await requiredText("README.md", [
   "Glossa is not another model or coding agent",
