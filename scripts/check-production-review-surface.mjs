@@ -54,10 +54,10 @@ await check("homepage production positioning", async () => {
     /npm install -g @ariobarin\/glossa<\/code>/,
     "homepage does not contain the stable npm install command",
   );
-  requireMatch(
+  forbidMatch(
     source,
-    /One folder\. You choose the access\. Use the tools already there\./,
-    "homepage does not contain the concise access summary",
+    /hero-footnote|One folder\. You choose the access\. Use the tools already there\./,
+    "homepage restored the intentionally removed hero footnote",
   );
   forbidMatch(
     source,
