@@ -3,12 +3,15 @@ import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  containsRestrictedAuthenticationData,
   DEFAULT_COMMAND_FAST_WAIT_MS,
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_COMMAND_FAST_WAIT_MS,
   MAX_COMMAND_STATUS_WAIT_MS,
   MAX_COMMAND_TIMEOUT_MS,
+  RESTRICTED_DATA_ERROR_CODE,
+  RESTRICTED_DATA_ERROR_MESSAGE,
 } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
 import type { PathPolicy } from "./path-policy.js";
@@ -56,6 +59,7 @@ interface RenderedStream {
 
 const STREAM_HEAD_BYTES = Math.floor(MAX_COMMAND_OUTPUT_BYTES / 3);
 const STREAM_TAIL_BYTES = MAX_COMMAND_OUTPUT_BYTES - STREAM_HEAD_BYTES;
+const RESTRICTED_SCAN_TAIL_BYTES = 1024;
 
 interface CommandRecord {
   id: string;
@@ -69,10 +73,61 @@ interface CommandRecord {
   signal?: NodeJS.Signals | null;
   stdout: CapturedStream;
   stderr: CapturedStream;
+  stdoutScanTail: Buffer;
+  stderrScanTail: Buffer;
+  restrictedDataDetected: boolean;
   completion: Promise<void>;
   complete: () => void;
   requestedTerminal?: "canceled" | "timed_out";
   timeout?: NodeJS.Timeout;
+}
+
+function restrictedDataError(): WorkerError {
+  return new WorkerError(
+    RESTRICTED_DATA_ERROR_CODE,
+    RESTRICTED_DATA_ERROR_MESSAGE,
+  );
+}
+
+function scanOutputChunk(
+  previousTail: Buffer,
+  chunk: Buffer,
+): { detected: boolean; tail: Buffer } {
+  const combined = previousTail.byteLength === 0
+    ? chunk
+    : Buffer.concat([previousTail, chunk]);
+  const tail = combined.byteLength <= RESTRICTED_SCAN_TAIL_BYTES
+    ? Buffer.from(combined)
+    : Buffer.from(
+        combined.subarray(combined.byteLength - RESTRICTED_SCAN_TAIL_BYTES),
+      );
+  return {
+    detected: containsRestrictedAuthenticationData(combined.toString("utf8")),
+    tail,
+  };
+}
+
+function recordCommandOutput(
+  record: CommandRecord,
+  streamName: "stdout" | "stderr",
+  chunk: Buffer,
+): void {
+  if (record.restrictedDataDetected || chunk.byteLength === 0) return;
+  const tailName = streamName === "stdout" ? "stdoutScanTail" : "stderrScanTail";
+  const scan = scanOutputChunk(record[tailName], chunk);
+  record[tailName] = scan.tail;
+  if (scan.detected) {
+    record.restrictedDataDetected = true;
+    record.stdout = emptyCapture();
+    record.stderr = emptyCapture();
+    if (record.status === "running") {
+      record.requestedTerminal = "canceled";
+      void terminateProcessTree(record.child).catch(() => undefined);
+    }
+    markChanged(record);
+    return;
+  }
+  if (capture(record, record[streamName], chunk)) markChanged(record);
 }
 
 function appendTail(existing: Buffer, chunk: Buffer): Buffer {
@@ -340,6 +395,15 @@ export class CommandService {
         "Command start wait must be between 0 and 5 seconds.",
       );
     }
+    if (
+      containsRestrictedAuthenticationData({
+        argv: options.argv,
+        shellCommand: options.shellCommand,
+        stdin: options.stdin,
+      })
+    ) {
+      throw restrictedDataError();
+    }
     const cwd = this.policy.root;
     const invocation = options.argv
       ? { file: options.argv[0]!, args: options.argv.slice(1) }
@@ -366,6 +430,9 @@ export class CommandService {
       startedAt: Date.now(),
       stdout: emptyCapture(),
       stderr: emptyCapture(),
+      stdoutScanTail: Buffer.alloc(0),
+      stderrScanTail: Buffer.alloc(0),
+      restrictedDataDetected: false,
       completion,
       complete,
     };
@@ -379,17 +446,17 @@ export class CommandService {
     this.#activeCommandId = id;
 
     child.stdout.on("data", (chunk: Buffer) => {
-      if (capture(record, record.stdout, chunk)) markChanged(record);
+      recordCommandOutput(record, "stdout", chunk);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      if (capture(record, record.stderr, chunk)) markChanged(record);
+      recordCommandOutput(record, "stderr", chunk);
     });
     child.once("error", (error) => {
       if (record.status !== "running") return;
       if (record.timeout) clearTimeout(record.timeout);
       record.status = "failed";
       record.finishedAt = Date.now();
-      capture(record, record.stderr, Buffer.from(error.message, "utf8"));
+      recordCommandOutput(record, "stderr", Buffer.from(error.message, "utf8"));
       this.#activeCommandId = null;
       markChanged(record);
       record.complete();
@@ -412,11 +479,12 @@ export class CommandService {
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", resolve);
       child.once("error", reject);
-    }).catch(async (error: unknown) => {
+    }).catch(async () => {
       await record.completion;
+      if (record.restrictedDataDetected) throw restrictedDataError();
       throw new WorkerError(
         "command_spawn_failed",
-        error instanceof Error ? error.message : "Command failed to start.",
+        "The command could not be started.",
       );
     });
     if (record.status === "running" && waitMs > 0) {
@@ -492,6 +560,7 @@ export class CommandService {
   }
 
   private snapshot(record: CommandRecord): CommandSnapshot {
+    if (record.restrictedDataDetected) throw restrictedDataError();
     const output = renderOutput(
       record.stdout,
       record.stderr,

@@ -1,10 +1,20 @@
-import { workspaceLabelSchema } from "@glossa/protocol";
+import {
+  DEFAULT_WORKER_ACCESS_PROFILE,
+  workerAccessProfileSchema,
+  workspaceLabelSchema,
+  type WorkerAccessProfile,
+} from "@glossa/protocol";
 import type { UpdateChannel, UpdatePolicy } from "./update-state.js";
 
 export class UsageError extends Error {}
 
 export type CliInvocation =
-  | { command: "workspace"; path?: string; label?: string }
+  | {
+      command: "workspace";
+      path?: string;
+      label?: string;
+      accessProfile: WorkerAccessProfile;
+    }
   | { command: "status" }
   | { command: "devices"; action: "revoke"; deviceId: string }
   | { command: "logout" }
@@ -28,6 +38,8 @@ const retiredCommands = new Set([
 function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
   let label: string | undefined;
+  let accessProfile = DEFAULT_WORKER_ACCESS_PROFILE;
+  let accessProfileSet = false;
   let optionsEnded = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -48,6 +60,21 @@ function parseWorkspace(args: string[]): CliInvocation {
       }
       label = parsed.data;
       index += 1;
+    } else if (!optionsEnded && argument === "--access") {
+      if (accessProfileSet) {
+        throw new UsageError("Glossa accepts at most one access profile.");
+      }
+      const value = args[index + 1];
+      if (value === undefined || value === "--") {
+        throw new UsageError("Use --access <read-only|workspace|system>.");
+      }
+      const parsed = workerAccessProfileSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new UsageError("Access must be read-only, workspace, or system.");
+      }
+      accessProfile = parsed.data;
+      accessProfileSet = true;
+      index += 1;
     } else if (!optionsEnded && argument.startsWith("-")) {
       throw new UsageError(`Unknown option: ${argument}`);
     } else if (selectedPath) {
@@ -63,6 +90,7 @@ function parseWorkspace(args: string[]): CliInvocation {
     command: "workspace",
     ...(selectedPath ? { path: selectedPath } : {}),
     ...(label ? { label } : {}),
+    accessProfile,
   };
 }
 

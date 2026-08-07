@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Glossa lets ChatGPT keep coding on a local project when Codex usage runs out." />
+    <meta name="description" content="Glossa connects ChatGPT to a folder on your computer." />
     <meta name="theme-color" content="#111016" />
     <title>Why | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
@@ -65,16 +65,17 @@
       <header class="docs-intro">
         <div class="docs-kicker">Learn</div>
         <div class="docs-title-row">
-          <h1>Codex is done for now. The project is not.</h1>
+          <h1>Work with the project where it already lives.</h1>
 
         </div>
-        <script type="application/json" data-page-markdown>"# Codex is done for now. The project is not.\n\nGlossa lets ChatGPT keep coding on a local project when Codex usage runs out.\n\nGlossa connects a regular [ChatGPT](https://chatgpt.com/chat) conversation to the project. ChatGPT can inspect files, make changes, run commands, and verify results instead of stopping at suggestions.\n\nThat turns available ChatGPT access into more progress on the codebase, without waiting for another Codex usage window or rebuilding the problem later.\n\n\u003cp class=\"docs-action-row\">\u003ca class=\"primary-action\" href=\"/docs/quickstart\">Quickstart\u003c/a>\u003c/p>\n"</script>
-        <p class="docs-summary">Glossa lets ChatGPT keep coding on a local project when Codex usage runs out.</p>
+        <script type="application/json" data-page-markdown>"# Work with the project where it already lives.\n\nGlossa connects ChatGPT to one project folder on your computer.\n\nUse it when the task depends on local state that a remote service cannot see: an existing checkout, uncommitted changes, build tools, test databases, emulators, generated files, or the development environment already configured on the machine.\n\nA small local worker makes an outbound connection to Glossa. You choose the folder and access level. The default allows file edits while keeping commands off; command access requires an explicit restart in `system` mode.\n\nGlossa does not add another model, planner, agent loop, or conversation store. General questions, writing, and web research stay in ChatGPT. Use Glossa when the work genuinely needs the local project or its toolchain.\n\n\u003cp class=\"docs-action-row\">\u003ca class=\"primary-action\" href=\"/docs/quickstart\">Quickstart\u003c/a>\u003c/p>\n"</script>
+        <p class="docs-summary">Glossa connects ChatGPT to one project folder on your computer.</p>
       </header>
 
       <article class="docs-content">
-<p>Glossa connects a regular <a href="https://chatgpt.com/chat">ChatGPT</a> conversation to the project. ChatGPT can inspect files, make changes, run commands, and verify results instead of stopping at suggestions.</p>
-<p>That turns available ChatGPT access into more progress on the codebase, without waiting for another Codex usage window or rebuilding the problem later.</p>
+<p>Use it when the task depends on local state that a remote service cannot see: an existing checkout, uncommitted changes, build tools, test databases, emulators, generated files, or the development environment already configured on the machine.</p>
+<p>A small local worker makes an outbound connection to Glossa. You choose the folder and access level. The default allows file edits while keeping commands off; command access requires an explicit restart in <code>system</code> mode.</p>
+<p>Glossa does not add another model, planner, agent loop, or conversation store. General questions, writing, and web research stay in ChatGPT. Use Glossa when the work genuinely needs the local project or its toolchain.</p>
 <p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>
       </article>
       </div>

@@ -1,4 +1,12 @@
 import { z } from "zod";
+import { stringContainsRestrictedAuthenticationData } from "./restricted-data.js";
+
+export {
+  containsRestrictedAuthenticationData,
+  RESTRICTED_DATA_ERROR_CODE,
+  RESTRICTED_DATA_ERROR_MESSAGE,
+  stringContainsRestrictedAuthenticationData,
+} from "./restricted-data.js";
 
 export const MAX_TEXT_BYTES = 1024 * 1024;
 export const MAX_EDIT_DIFF_BYTES = 128 * 1024;
@@ -23,7 +31,10 @@ export const deviceNameSchema = z
   .trim()
   .min(1)
   .max(80)
-  .regex(/^[^\u0000-\u001f\u007f]+$/, "Device name contains control characters");
+  .regex(/^[^\u0000-\u001f\u007f]+$/, "Device name contains control characters")
+  .refine((value) => !stringContainsRestrictedAuthenticationData(value), {
+    message: "Device name appears to contain restricted authentication data.",
+  });
 
 export const workspaceLabelSchema = z
   .string()
@@ -33,7 +44,39 @@ export const workspaceLabelSchema = z
   .regex(
     /^[^\u0000-\u001f\u007f]+$/,
     "Workspace label contains control characters",
-  );
+  )
+  .refine((value) => !stringContainsRestrictedAuthenticationData(value), {
+    message: "Workspace label appears to contain restricted authentication data.",
+  });
+
+export const workerAccessProfileSchema = z.enum([
+  "read-only",
+  "workspace",
+  "system",
+]);
+
+export type WorkerAccessProfile = z.infer<typeof workerAccessProfileSchema>;
+
+export const DEFAULT_WORKER_ACCESS_PROFILE: WorkerAccessProfile = "workspace";
+
+export interface WorkerPermissions {
+  readFiles: true;
+  writeFiles: boolean;
+  runCommands: boolean;
+}
+
+export function workerPermissions(
+  accessProfile: WorkerAccessProfile,
+): WorkerPermissions {
+  switch (accessProfile) {
+    case "read-only":
+      return { readFiles: true, writeFiles: false, runCommands: false };
+    case "workspace":
+      return { readFiles: true, writeFiles: true, runCommands: false };
+    case "system":
+      return { readFiles: true, writeFiles: true, runCommands: true };
+  }
+}
 
 export const relativePathSchema = z
   .string()

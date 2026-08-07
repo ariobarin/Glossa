@@ -1,5 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { WorkerJob, WorkerResult } from "@glossa/protocol";
+import {
+  workerPermissions,
+  type WorkerAccessProfile,
+  type WorkerJob,
+  type WorkerPermissions,
+  type WorkerResult,
+} from "@glossa/protocol";
 
 const WORKER_STALE_MS = 45_000;
 const WORKER_PRUNE_INTERVAL_MS = 5_000;
@@ -32,6 +38,7 @@ interface ConnectedWorker {
   commandProgress: boolean;
   concurrentJobs: boolean;
   structuredReads: boolean;
+  accessProfile: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
   sessionDigest: string;
@@ -74,6 +81,28 @@ function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
   return compatible;
 }
 
+function jobPermissionError(
+  worker: ConnectedWorker,
+  job: WorkerJob,
+): "write_access_disabled" | "command_access_disabled" | null {
+  const permissions = workerPermissions(worker.accessProfile);
+  if (
+    (job.type === "write_file" || job.type === "edit_file") &&
+    !permissions.writeFiles
+  ) {
+    return "write_access_disabled";
+  }
+  if (
+    (job.type === "run_command" ||
+      job.type === "get_command" ||
+      job.type === "cancel_command") &&
+    !permissions.runCommands
+  ) {
+    return "command_access_disabled";
+  }
+  return null;
+}
+
 
 export class RouterState {
   readonly #workers = new Map<string, ConnectedWorker>();
@@ -94,6 +123,7 @@ export class RouterState {
       commandProgress: boolean;
       concurrentJobs?: boolean;
       structuredReads?: boolean;
+      accessProfile?: WorkerAccessProfile;
       workspaceLabel?: string;
       workerVersion?: string;
     } = { commandProgress: false },
@@ -131,6 +161,9 @@ export class RouterState {
       commandProgress: options.commandProgress === true,
       concurrentJobs: options.concurrentJobs === true,
       structuredReads: options.structuredReads === true,
+      // A missing profile identifies a legacy worker, whose historical behavior
+      // included full command authority. New workers always declare a profile.
+      accessProfile: options.accessProfile ?? "system",
       ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
       ...(options.workspaceLabel
         ? { workspaceLabel: options.workspaceLabel }
@@ -282,6 +315,10 @@ export class RouterState {
     if (!worker || worker.accountId !== accountId) {
       return Promise.reject(new Error("device_offline"));
     }
+    const permissionError = jobPermissionError(worker, job);
+    if (permissionError) {
+      return Promise.reject(new Error(permissionError));
+    }
 
     const deliverableJob = compatibleJob(worker, job);
     const waitingPoll = worker.pollWaiter;
@@ -395,6 +432,8 @@ export class RouterState {
     path: ".";
     workspaceLabel?: string;
     workerVersion?: string;
+    accessProfile: WorkerAccessProfile;
+    permissions: WorkerPermissions;
     capabilities: {
       commandProgress: boolean;
       concurrentJobs: boolean;
@@ -409,6 +448,8 @@ export class RouterState {
         name: worker.deviceName,
         path: ".",
         ...(worker.workerVersion ? { workerVersion: worker.workerVersion } : {}),
+        accessProfile: worker.accessProfile,
+        permissions: workerPermissions(worker.accessProfile),
         capabilities: {
           commandProgress: worker.commandProgress,
           concurrentJobs: worker.concurrentJobs,
@@ -423,6 +464,25 @@ export class RouterState {
   activeWorkerCount(accountId: string, deviceId: string): number {
     this.#pruneStaleWorkers();
     return this.#workerCountsByDevice.get(deviceKey(accountId, deviceId)) ?? 0;
+  }
+
+  workerAccessProfile(
+    accountId: string,
+    workerId: string,
+  ): WorkerAccessProfile | null {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId ? worker.accessProfile : null;
+  }
+
+  supportsFileWrites(accountId: string, workerId: string): boolean {
+    const accessProfile = this.workerAccessProfile(accountId, workerId);
+    return accessProfile !== null && workerPermissions(accessProfile).writeFiles;
+  }
+
+  supportsCommands(accountId: string, workerId: string): boolean {
+    const accessProfile = this.workerAccessProfile(accountId, workerId);
+    return accessProfile !== null && workerPermissions(accessProfile).runCommands;
   }
 
   supportsCommandProgress(accountId: string, workerId: string): boolean {

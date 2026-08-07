@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   workerJobSchema,
+  type WorkerAccessProfile,
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
@@ -18,6 +19,7 @@ interface RegisteredSession {
   legacyRelay: boolean;
   concurrentJobs: boolean;
   structuredReads: boolean;
+  accessProfileAccepted: boolean;
   workspaceLabelAccepted: boolean;
   workerToken?: string;
 }
@@ -36,6 +38,7 @@ export interface WorkerHandler {
 export interface RemoteWorkerOptions {
   origin: string;
   deviceToken: string;
+  accessProfile?: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
   worker: WorkerHandler;
@@ -55,6 +58,7 @@ export type RemoteWorkerStatus =
       state: "connected";
       reconnected: boolean;
       legacyRelay: boolean;
+      accessProfileAccepted?: boolean;
       workspaceLabelAccepted?: boolean;
     }
   | { state: "retrying"; error: Error; retryInMs: number }
@@ -161,6 +165,7 @@ export function reconnectDelayMs(
 export class RemoteWorker {
   readonly #origin: URL;
   readonly #deviceToken: string;
+  readonly #accessProfile: WorkerAccessProfile | undefined;
   readonly #workspaceLabel: string | undefined;
   readonly #workerVersion: string | undefined;
   readonly #worker: WorkerHandler;
@@ -177,6 +182,7 @@ export class RemoteWorker {
   constructor(options: RemoteWorkerOptions) {
     this.#origin = new URL(options.origin);
     this.#deviceToken = options.deviceToken;
+    this.#accessProfile = options.accessProfile;
     this.#workspaceLabel = options.workspaceLabel;
     this.#workerVersion = options.workerVersion;
     this.#worker = options.worker;
@@ -205,6 +211,7 @@ export class RemoteWorker {
             state: "connected",
             reconnected: connectedBefore,
             legacyRelay: session.legacyRelay,
+            accessProfileAccepted: session.accessProfileAccepted,
             workspaceLabelAccepted: session.workspaceLabelAccepted,
           });
           connectedBefore = true;
@@ -255,7 +262,19 @@ export class RemoteWorker {
     const versionedStructuredBody = this.#workerVersion
       ? { ...structuredBody, workerVersion: this.#workerVersion }
       : undefined;
+    const preferredProfileBody = this.#accessProfile
+      ? {
+          ...(versionedStructuredBody ?? structuredBody),
+          accessProfile: this.#accessProfile,
+          ...(this.#workspaceLabel
+            ? { workspaceLabel: this.#workspaceLabel }
+            : {}),
+        }
+      : undefined;
     const attempts: Array<{ body: object; legacyRelay: boolean }> = [
+      ...(preferredProfileBody
+        ? [{ body: preferredProfileBody, legacyRelay: false }]
+        : []),
       ...(versionedStructuredBody && this.#workspaceLabel
         ? [{
             body: {
@@ -345,6 +364,10 @@ export class RemoteWorker {
           !attempt.legacyRelay && supportsCapability(value, "concurrentJobs"),
         structuredReads:
           !attempt.legacyRelay && supportsCapability(value, "structuredReads"),
+        accessProfileAccepted:
+          this.#accessProfile === undefined ||
+          ("accessProfile" in value &&
+            value.accessProfile === this.#accessProfile),
         workspaceLabelAccepted:
           this.#workspaceLabel === undefined ||
           ("workspaceLabel" in value &&

@@ -5,6 +5,8 @@ import type { StoredCredentials } from "../config-store.js";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
+  accessProfileNotice,
+  accessProfileSummary,
   combinedCompatibilityNotice,
   deviceForSession,
   reenrollRejectedDevice,
@@ -391,15 +393,54 @@ test("combines compatibility warnings so later notices cannot replace them", () 
   const labelNotice =
     "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
   assert.equal(
-    combinedCompatibilityNotice(labelNotice, true),
+    combinedCompatibilityNotice(labelNotice, undefined, true),
     labelNotice + " The relay needs an update before this computer can expose several workspaces at once.",
   );
-  assert.equal(combinedCompatibilityNotice(labelNotice, false), labelNotice);
   assert.equal(
-    combinedCompatibilityNotice(undefined, true),
+    combinedCompatibilityNotice(labelNotice, undefined, false),
+    labelNotice,
+  );
+  assert.equal(
+    combinedCompatibilityNotice(undefined, undefined, true),
     "The relay needs an update before this computer can expose several workspaces at once.",
   );
-  assert.equal(combinedCompatibilityNotice(undefined, false), undefined);
+  assert.equal(
+    combinedCompatibilityNotice(undefined, undefined, false),
+    undefined,
+  );
+});
+
+test("describes and reports access profile compatibility", () => {
+  assert.match(accessProfileSummary("read-only"), /cannot modify.*run commands/i);
+  assert.match(accessProfileSummary("workspace"), /modify files.*commands are disabled/i);
+  assert.match(
+    accessProfileSummary("system"),
+    /full environment.*permissions.*credentials.*network access/i,
+  );
+  assert.equal(
+    accessProfileNotice(
+      {
+        state: "connected",
+        reconnected: false,
+        legacyRelay: false,
+        accessProfileAccepted: false,
+      },
+      "workspace",
+    ),
+    "The relay needs an update before this access profile can be shown to connected clients. Local profile enforcement remains active.",
+  );
+  assert.equal(
+    accessProfileNotice(
+      {
+        state: "connected",
+        reconnected: false,
+        legacyRelay: false,
+        accessProfileAccepted: true,
+      },
+      "workspace",
+    ),
+    undefined,
+  );
 });
 
 test("reports when an older relay drops a requested workspace label", () => {
@@ -427,4 +468,43 @@ test("reports when an older relay drops a requested workspace label", () => {
     ),
     undefined,
   );
+});
+
+test("redacts restricted inputs from local activity events", async () => {
+  const key = "sk-proj-" + "A".repeat(32);
+  const job: WorkerJob = {
+    type: "run_command",
+    requestId: "00000000-0000-4000-8000-000000000008",
+    argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+    stdin: `OPENAI_API_KEY=${key}`,
+    timeoutMs: 1_000,
+  };
+  const events: unknown[] = [];
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const worker = visibleWorker(
+      {
+        async handle(requestedJob) {
+          return {
+            requestId: requestedJob.requestId,
+            ok: false,
+            error: {
+              code: "restricted_data_blocked",
+              message: "blocked",
+            },
+          };
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    await worker.handle(job);
+  } finally {
+    console.error = originalError;
+  }
+
+  const serialized = JSON.stringify(events);
+  assert.doesNotMatch(serialized, new RegExp(key));
+  assert.doesNotMatch(serialized, /OPENAI_API_KEY/);
+  assert.match(serialized, /restricted input blocked/);
 });

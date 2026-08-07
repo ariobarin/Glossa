@@ -1,37 +1,45 @@
-# Your worker controls workspace access.
+# Security and permissions
 
-Glossa does not copy your selected folder into the hosted relay. The local worker reads files and runs commands. Requested file contents, command details, and command results are transmitted through the relay to the connected client.
+Glossa connects one project folder to an authenticated client through a local worker. The worker performs file operations and, only in `system` mode, local commands. The relay routes requests while the worker is online; it does not store a repository copy.
 
-> **Command access is powerful.** Commands run with the full environment and permissions of the operating-system account that launched Glossa. File boundaries do not turn shell commands into a sandbox.
+## Access profiles
 
-## What you authorize
+| Profile | Read files | Edit files inside the project | Run commands |
+| --- | --- | --- | --- |
+| `read-only` | Yes | No | No |
+| `workspace` (default) | Yes | Yes | No |
+| `system` | Yes | Yes | Yes |
 
-- You choose one local directory when you start Glossa.
-- Connected clients can read and modify files inside that root.
-- Connected clients can run commands with the worker account's authority.
-- Press Ctrl+C in the worker terminal to start disconnecting. The worker is disconnected when the process exits.
+The selected profile appears in the local terminal and in `list_devices`. Both the relay and the local worker enforce it.
 
-## What the relay stores
+> **`system` is powerful and is not sandboxed.** Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. Commands are not confined to the selected project and can affect local or external systems.
 
-The hosted relay keeps only account, device, routing, and metadata-only audit records needed to operate the service. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
+## What Glossa enforces
 
-## How boundaries are enforced
+- Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes.
+- File changes require `workspace` or `system`; commands require an explicit `system` session.
+- OAuth, account scoping, device credentials, and HTTPS protect the relay connection.
+- The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
+- Press Ctrl+C or `q` in the worker terminal to disconnect immediately.
 
-- Path containment and process controls are enforced on the local worker.
-- Every relay resource is scoped to the authenticated account.
-- The relay database stores only salted hashes of random device secrets.
-- The worker keeps its recoverable device secret in the operating-system credential store, or uses a warned local file fallback whose access controls depend on the operating system.
-- Hosted logs contain operational metadata rather than request or response content.
+## Sensitive data
 
-## Use Glossa safely
+The public Glossa app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Keep these categories out of the exposed project.
 
-- Start with a folder you can safely test.
-- Never expose your home directory, a filesystem root, or a folder containing credentials.
-- Run the worker under a dedicated operating-system account when you need a stronger boundary.
-- Use a container or virtual machine when operating-system isolation is required.
+Glossa blocks recognizable authentication-secret patterns in text inputs and results. This can prevent common accidental disclosures, but it is not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, or transformed values may not be recognized, and a command can send data over the network without printing it.
+
+When credentials must be unreachable, run `system` in a credential-free dedicated operating-system account, container, or virtual machine with only the project and tools it needs.
+
+## Safer use
+
+- Start with the default `workspace` mode for ordinary code changes.
+- Use `read-only` for inspection when no edits are needed.
+- Enable `system` only for a task that needs the local toolchain.
+- Expose a narrow project, never a home directory, filesystem root, credential store, or secrets directory.
+- Stop the worker if the activity shown in the terminal is unexpected.
+
+For implementation details and residual risks, read the [technical threat model](/docs/security). Data handling is described in the [privacy policy](/privacy).
 
 ## Report a security issue
 
-Do not publish credentials, private source code, exploit details, or personal data. Follow the private-contact process on the [support page](/support).
-
-Maintainers and reviewers can read the complete [threat model and controls](/docs/security).
+Do not publish credentials, private source code, exploit details, or personal data. Use the [private security reporting process](https://github.com/ariobarin/glossa/security/advisories/new). See [support](/support) if private reporting is unavailable.

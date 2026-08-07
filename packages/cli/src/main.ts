@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import type { WorkerAccessProfile } from "@glossa/protocol";
 import { loadAuthConfig } from "./auth-config.js";
 import { validCredentials } from "./auth-session.js";
 import {
@@ -55,7 +56,7 @@ const DISTRIBUTION = __GLOSSA_DISTRIBUTION__;
 const HELP = `Glossa ${VERSION}
 
 Usage:
-  glossa [--label <name>] [directory]
+  glossa [--access <read-only|workspace|system>] [--label <name>] [directory]
   glossa status
   glossa devices revoke <id>
   glossa logout
@@ -66,6 +67,9 @@ Usage:
   glossa --version
 
 Running glossa opens one workspace in an interactive terminal.
+Access defaults to workspace: guarded file reads and writes, with commands disabled.
+Use read-only to prevent file changes. Use system only when ChatGPT must run commands;
+those commands inherit this account's permissions, environment, credentials, and network.
 Update checks run at most once per day before a workspace connects.
 
 Keys:
@@ -135,6 +139,7 @@ async function revokeKnownDevice(deviceId: string): Promise<void> {
 async function runWorkspaceSession(
   path: string | undefined,
   label: string | undefined,
+  accessProfile: WorkerAccessProfile,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const lease = await acquireWorkspaceLease(root);
@@ -149,6 +154,7 @@ async function runWorkspaceSession(
         await runManagedSession(root, endpoints, {
           credentials,
           workerVersion: VERSION,
+          accessProfile,
           ...(label ? { workspaceLabel: label } : {}),
           signal,
           onEvent: (event) => {
@@ -182,8 +188,11 @@ async function runWorkspaceSession(
 async function runWorkspace(
   path: string | undefined,
   label: string | undefined,
+  accessProfile: WorkerAccessProfile,
 ): Promise<void> {
-  await withWorkspaceLease(async () => await runWorkspaceSession(path, label));
+  await withWorkspaceLease(
+    async () => await runWorkspaceSession(path, label, accessProfile),
+  );
 }
 
 async function refreshUpdateInfo(timeoutMs: number): Promise<UpdateInfo> {
@@ -288,7 +297,11 @@ async function main(): Promise<void> {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
     if (await updateBeforeWorkspace()) return;
-    await runWorkspace(invocation.path, invocation.label);
+    await runWorkspace(
+      invocation.path,
+      invocation.label,
+      invocation.accessProfile,
+    );
   } else if (invocation.command === "status") {
     await showStatus();
   } else if (invocation.command === "logout") {

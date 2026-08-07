@@ -186,7 +186,8 @@ test("uses worker credentials without repeating device authentication", async (c
   const current = await register({
     workerId,
     workspaceLabel: "frontend",
-    workerVersion: "0.1.0-beta.13",
+    workerVersion: "1.0.0",
+    accessProfile: "workspace",
     capabilities: {
       commandProgress: true,
       concurrentJobs: true,
@@ -199,13 +200,25 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
   assert.equal(state.supportsStructuredReads(accountId, deviceId), false);
+  assert.equal(state.workerAccessProfile(accountId, deviceId), "system");
+  assert.equal(state.supportsFileWrites(accountId, deviceId), true);
+  assert.equal(state.supportsCommands(accountId, deviceId), true);
   assert.equal(state.supportsCommandProgress(accountId, workerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
   assert.equal(state.supportsStructuredReads(accountId, workerId), true);
+  assert.equal(state.workerAccessProfile(accountId, workerId), "workspace");
+  assert.equal(state.supportsFileWrites(accountId, workerId), true);
+  assert.equal(state.supportsCommands(accountId, workerId), false);
   const currentWorker = state.listDevices(accountId)
     .find((entry) => entry.deviceId === workerId);
   assert.equal(currentWorker?.workspaceLabel, "frontend");
-  assert.equal(currentWorker?.workerVersion, "0.1.0-beta.13");
+  assert.equal(currentWorker?.workerVersion, "1.0.0");
+  assert.equal(currentWorker?.accessProfile, "workspace");
+  assert.deepEqual(currentWorker?.permissions, {
+    readFiles: true,
+    writeFiles: true,
+    runCommands: false,
+  });
   assert.deepEqual(currentWorker?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
@@ -214,6 +227,8 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(deviceAuthentications, 2);
   assert.equal(typeof current.workerToken, "string");
   assert.equal(typeof current.generation, "string");
+  assert.equal(legacy.accessProfile, "system");
+  assert.equal(current.accessProfile, "workspace");
   assert.equal(current.workspaceLabel, "frontend");
   assert.deepEqual(current.capabilities, {
     commandProgress: true,

@@ -16,14 +16,29 @@ const environmentSchema = z
     GLOSSA_PUBLIC_ORIGIN: z.string().url(),
     GLOSSA_AUTH0_ISSUER: z.string().url(),
     GLOSSA_AUTH0_AUDIENCE: z.string().url(),
+    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: z
+      .string()
+      .trim()
+      .min(2)
+      .max(2048)
+      .optional(),
+    // Backward-compatible single-prefix input for existing self-hosted deployments.
     GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: z
       .string()
       .trim()
       .min(2)
-      .refine((value) => value.endsWith("|"), {
-        message: "Auth0 subject prefix must end with |.",
+      .max(128)
+      .refine((value) => !value.includes(","), {
+        message: "Use GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES for multiple providers.",
       })
-      .default("google-oauth2|"),
+      .optional(),
+    // Exact identities are useful for tightly scoped reviewer or service accounts.
+    GLOSSA_AUTH0_ALLOWED_SUBJECTS: z
+      .string()
+      .trim()
+      .min(3)
+      .max(8192)
+      .optional(),
     GLOSSA_MCP_REQUIRED_SCOPE: z.string().default("glossa:access"),
     GLOSSA_DEVICE_ENROLL_SCOPE: z.string().default("glossa:device"),
     GLOSSA_RATE_LIMIT_WINDOW_MS: z.coerce
@@ -56,6 +71,16 @@ const environmentSchema = z
   })
   .superRefine((environment, context) => {
     if (
+      environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES &&
+      environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES"],
+        message: "Configure either plural or legacy singular Auth0 subject prefixes, not both.",
+      });
+    }
+    if (
       environment.NODE_ENV === "production" &&
       new URL(environment.GLOSSA_PUBLIC_ORIGIN).protocol !== "https:"
     ) {
@@ -67,8 +92,86 @@ const environmentSchema = z
     }
   });
 
-export type RelayConfig = z.infer<typeof environmentSchema>;
+type ParsedEnvironment = z.infer<typeof environmentSchema>;
+
+const auth0SubjectPrefixSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(128)
+  .refine((value) => value.endsWith("|"), {
+    message: "Auth0 subject prefix must end with |.",
+  });
+
+const auth0ExactSubjectSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(255)
+  .regex(/^[^\s,|]+\|[^\s,]+$/, {
+    message: "Exact Auth0 subjects must include a provider prefix and user identifier.",
+  });
+
+export type RelayConfig = Omit<
+  ParsedEnvironment,
+  | "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES"
+  | "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX"
+  | "GLOSSA_AUTH0_ALLOWED_SUBJECTS"
+> & {
+  GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: readonly string[];
+  GLOSSA_AUTH0_ALLOWED_SUBJECTS: readonly string[];
+};
+
+function commaSeparatedValues(
+  raw: string,
+  schema: z.ZodType<string>,
+  maximum: number,
+  duplicateMessage: string,
+): string[] {
+  return z
+    .array(schema)
+    .min(1)
+    .max(maximum)
+    .refine((values) => new Set(values).size === values.length, {
+      message: duplicateMessage,
+    })
+    .parse(raw.split(",").map((value) => value.trim()));
+}
+
+function allowedSubjectPrefixes(environment: ParsedEnvironment): string[] {
+  const raw =
+    environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES ??
+    environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX ??
+    "google-oauth2|";
+  return commaSeparatedValues(
+    raw,
+    auth0SubjectPrefixSchema,
+    8,
+    "Auth0 subject prefixes must be unique.",
+  );
+}
+
+function allowedExactSubjects(environment: ParsedEnvironment): string[] {
+  if (!environment.GLOSSA_AUTH0_ALLOWED_SUBJECTS) return [];
+  return commaSeparatedValues(
+    environment.GLOSSA_AUTH0_ALLOWED_SUBJECTS,
+    auth0ExactSubjectSchema,
+    32,
+    "Exact Auth0 subjects must be unique.",
+  );
+}
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): RelayConfig {
-  return environmentSchema.parse(environment);
+  const parsed = environmentSchema.parse(environment);
+  const {
+    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: _pluralInput,
+    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: _legacyInput,
+    GLOSSA_AUTH0_ALLOWED_SUBJECTS: _exactInput,
+    ...config
+  } = parsed;
+  return {
+    ...config,
+    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: allowedSubjectPrefixes(parsed),
+    GLOSSA_AUTH0_ALLOWED_SUBJECTS: allowedExactSubjects(parsed),
+  };
 }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Use the public issue tracker for setup problems, reproducible bugs, documentation corrections, and feature requests." />
+    <meta name="description" content="Start with the quickstart. For reproducible bugs, setup problems, documentation corrections, and feature requests, use the public issue tracker." />
     <meta name="theme-color" content="#111016" />
     <title>Support | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
@@ -65,37 +65,39 @@
       <header class="docs-intro">
         <div class="docs-kicker">Help</div>
         <div class="docs-title-row">
-          <h1>How can we help?</h1>
+          <h1>Support</h1>
           <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
-        <script type="application/json" data-page-markdown>"# How can we help?\n\nUse the public issue tracker for setup problems, reproducible bugs, documentation corrections, and feature requests.\n\n## Before opening an issue\n\n- Read the [quickstart](/docs/quickstart) for installation and first use.\n- Confirm the worker terminal is still open and shows the expected workspace root.\n- Run `glossa status` in another terminal to validate the account, relay access, enrolled devices, and active workers.\n- Remove source code, local paths, account identifiers, tokens, and credentials from any diagnostic details.\n\n\u003cp class=\"docs-action-row\">\u003ca class=\"primary-action support-action\" href=\"https://github.com/ariobarin/glossa/issues/new\">Open a GitHub issue\u003c/a>\u003c/p>\n\n## Security reports\n\nDo not publish credentials, private source code, exploit details, or personal data in a GitHub issue. Open a minimal issue titled `Security contact request` without sensitive details so the operator can provide a private follow-up route.\n\nFor the current trust boundaries and known limits, read the [Glossa security page](/security).\n\n## Account and data requests\n\nTo request account or device deletion, open a minimal issue titled `Account deletion request`. Do not include an email address, Auth0 subject, device token, access token, local path, or other private identifier. The operator will provide a private verification route before changing account data.\n\n## Immediate disconnect\n\nPress Ctrl+C in the worker terminal to end useful workspace access. Run `glossa logout` to sign out locally and in the browser. Disconnect the Glossa app or plugin in ChatGPT to revoke client authorization.\n"</script>
-        <p class="docs-summary">Use the public issue tracker for setup problems, reproducible bugs, documentation corrections, and feature requests.</p>
+        <script type="application/json" data-page-markdown>"# Support\n\nStart with the [quickstart](/docs/quickstart). For reproducible bugs, setup problems, documentation corrections, and feature requests, use the public issue tracker.\n\n\u003cp class=\"docs-action-row\">\u003ca class=\"primary-action support-action\" href=\"https://github.com/ariobarin/glossa/issues/new/choose\">Open a GitHub issue\u003c/a>\u003c/p>\n\n## Common fixes\n\n- **No online workspace:** keep the worker terminal open and confirm ChatGPT and the CLI use the same Glossa account.\n- **Wrong workspace:** stop the worker and restart it in the intended project, optionally with a unique `--label`.\n- **Permission error:** restart with broader access only when the task genuinely requires it. Do not try to bypass the selected profile.\n- **`restricted_data_blocked`:** remove the credential from the request or reproduce the problem with a non-sensitive placeholder such as `\u003credacted>`. Do not retry with encoding, another tool, or a shell workaround.\n- **Account mismatch:** stop workers, run `glossa logout`, disconnect Glossa in ChatGPT, and authorize both sides again with the intended account.\n- **Tools changed:** run **Scan Tools** again after a Glossa update.\n\nBefore posting diagnostics, remove source code, local paths, account identifiers, tokens, credentials, and command output.\n\n## Security reports\n\nDo not put vulnerability details or sensitive data in a public issue. Use [GitHub's private vulnerability report](https://github.com/ariobarin/glossa/security/advisories/new). Include the affected version, impact, reproduction steps, and a safe way to contact you.\n\nRead the [security overview](/security) for the current product boundary.\n\n## Account and data requests\n\nOpen a minimal public issue titled `Account deletion request` without private identifiers. The operator will provide a private verification route before changing account data.\n\n## Disconnect immediately\n\nPress Ctrl+C or `q` in the worker terminal to end workspace access. Run `glossa logout` to remove local credentials and open browser sign-out. Disconnect Glossa in ChatGPT to revoke the client's authorization.\n"</script>
+        <p class="docs-summary">Start with the <a href="/docs/quickstart">quickstart</a>. For reproducible bugs, setup problems, documentation corrections, and feature requests, use the public issue tracker.</p>
       </header>
 
       <article class="docs-content">
-
+<p class="docs-action-row"><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new/choose">Open a GitHub issue</a></p>
 <section class="doc-section">
-<h2 id="before-opening-an-issue"><a class="heading-anchor" href="#before-opening-an-issue" aria-label="Link to Before opening an issue"></a>Before opening an issue</h2>
+<h2 id="common-fixes"><a class="heading-anchor" href="#common-fixes" aria-label="Link to Common fixes"></a>Common fixes</h2>
 <ul>
-<li>Read the <a href="/docs/quickstart">quickstart</a> for installation and first use.</li>
-<li>Confirm the worker terminal is still open and shows the expected workspace root.</li>
-<li>Run <code>glossa status</code> in another terminal to validate the account, relay access, enrolled devices, and active workers.</li>
-<li>Remove source code, local paths, account identifiers, tokens, and credentials from any diagnostic details.</li>
+<li><strong>No online workspace:</strong> keep the worker terminal open and confirm ChatGPT and the CLI use the same Glossa account.</li>
+<li><strong>Wrong workspace:</strong> stop the worker and restart it in the intended project, optionally with a unique <code>--label</code>.</li>
+<li><strong>Permission error:</strong> restart with broader access only when the task genuinely requires it. Do not try to bypass the selected profile.</li>
+<li><strong><code>restricted_data_blocked</code>:</strong> remove the credential from the request or reproduce the problem with a non-sensitive placeholder such as <code>&lt;redacted&gt;</code>. Do not retry with encoding, another tool, or a shell workaround.</li>
+<li><strong>Account mismatch:</strong> stop workers, run <code>glossa logout</code>, disconnect Glossa in ChatGPT, and authorize both sides again with the intended account.</li>
+<li><strong>Tools changed:</strong> run <strong>Scan Tools</strong> again after a Glossa update.</li>
 </ul>
-<p class="docs-action-row"><a class="primary-action support-action" href="https://github.com/ariobarin/glossa/issues/new">Open a GitHub issue</a></p>
+<p>Before posting diagnostics, remove source code, local paths, account identifiers, tokens, credentials, and command output.</p>
 </section>
 <section class="doc-section">
 <h2 id="security-reports"><a class="heading-anchor" href="#security-reports" aria-label="Link to Security reports"></a>Security reports</h2>
-<p>Do not publish credentials, private source code, exploit details, or personal data in a GitHub issue. Open a minimal issue titled <code>Security contact request</code> without sensitive details so the operator can provide a private follow-up route.</p>
-<p>For the current trust boundaries and known limits, read the <a href="/security">Glossa security page</a>.</p>
+<p>Do not put vulnerability details or sensitive data in a public issue. Use <a href="https://github.com/ariobarin/glossa/security/advisories/new">GitHub&#39;s private vulnerability report</a>. Include the affected version, impact, reproduction steps, and a safe way to contact you.</p>
+<p>Read the <a href="/security">security overview</a> for the current product boundary.</p>
 </section>
 <section class="doc-section">
 <h2 id="account-and-data-requests"><a class="heading-anchor" href="#account-and-data-requests" aria-label="Link to Account and data requests"></a>Account and data requests</h2>
-<p>To request account or device deletion, open a minimal issue titled <code>Account deletion request</code>. Do not include an email address, Auth0 subject, device token, access token, local path, or other private identifier. The operator will provide a private verification route before changing account data.</p>
+<p>Open a minimal public issue titled <code>Account deletion request</code> without private identifiers. The operator will provide a private verification route before changing account data.</p>
 </section>
 <section class="doc-section">
-<h2 id="immediate-disconnect"><a class="heading-anchor" href="#immediate-disconnect" aria-label="Link to Immediate disconnect"></a>Immediate disconnect</h2>
-<p>Press Ctrl+C in the worker terminal to end useful workspace access. Run <code>glossa logout</code> to sign out locally and in the browser. Disconnect the Glossa app or plugin in ChatGPT to revoke client authorization.</p>
+<h2 id="disconnect-immediately"><a class="heading-anchor" href="#disconnect-immediately" aria-label="Link to Disconnect immediately"></a>Disconnect immediately</h2>
+<p>Press Ctrl+C or <code>q</code> in the worker terminal to end workspace access. Run <code>glossa logout</code> to remove local credentials and open browser sign-out. Disconnect Glossa in ChatGPT to revoke the client&#39;s authorization.</p>
 </section>
       </article>
       </div>
@@ -103,10 +105,10 @@
       <nav class="docs-toc" aria-label="On this page">
         <strong>On this page</strong>
         <ol>
-          <li><a href="#before-opening-an-issue">Before opening an issue</a></li>
+          <li><a href="#common-fixes">Common fixes</a></li>
           <li><a href="#security-reports">Security reports</a></li>
           <li><a href="#account-and-data-requests">Account and data requests</a></li>
-          <li><a href="#immediate-disconnect">Immediate disconnect</a></li>
+          <li><a href="#disconnect-immediately">Disconnect immediately</a></li>
         </ol>
       </nav>
       </div>

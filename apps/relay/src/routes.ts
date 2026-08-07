@@ -5,6 +5,7 @@ import {
   MAX_TEXT_BYTES,
   MAX_WORKER_POLL_MS,
   deviceNameSchema,
+  workerAccessProfileSchema,
   workerResultSchema,
   workspaceLabelSchema,
 } from "@glossa/protocol";
@@ -47,6 +48,7 @@ const workerJobTypeSchema = z.enum([
 const registerSchema = z.union([
   z.object({
     workerId: workerIdSchema,
+    accessProfile: workerAccessProfileSchema.optional(),
     workspaceLabel: workspaceLabelSchema.optional(),
     workerVersion: z
       .string()
@@ -492,6 +494,9 @@ export function buildRoutes(
         structuredReads:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.structuredReads === true,
+        ...("accessProfile" in parsed.data && parsed.data.accessProfile
+          ? { accessProfile: parsed.data.accessProfile }
+          : {}),
         ...("workerVersion" in parsed.data && parsed.data.workerVersion
           ? { workerVersion: parsed.data.workerVersion }
           : {}),
@@ -505,6 +510,7 @@ export function buildRoutes(
       workerId,
       generation: session.generation,
       workerToken: session.workerToken,
+      accessProfile: state.workerAccessProfile(device.accountId, workerId),
       capabilities: {
         commandProgress: state.supportsCommandProgress(device.accountId, workerId),
         concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),

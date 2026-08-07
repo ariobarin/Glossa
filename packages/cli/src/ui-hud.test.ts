@@ -36,6 +36,30 @@ test("keeps the default screen sparse and anchors controls at the bottom", () =>
   assert.match(lines.at(-1)!, /Q Quit/);
 });
 
+
+test("shows the selected access boundary in the workspace screen", () => {
+  const session = applyHudEvent(initialHudState("."), {
+    type: "session",
+    root: "C:\\code\\glossa",
+    deviceName: "Desk",
+    accessProfile: "system",
+  });
+  const output = renderHud(
+    {
+      ...session,
+      connection: "connected",
+      connectedBefore: true,
+    },
+    160,
+    false,
+    20,
+  );
+
+  assert.match(output, /ACCESS/);
+  assert.match(output, /System access/);
+  assert.match(output, /full environment, permissions, credentials, and network access/);
+});
+
 test("retains only notices intended for terminal history", () => {
   const hint = "Follow the quickstart.";
   assert.equal(

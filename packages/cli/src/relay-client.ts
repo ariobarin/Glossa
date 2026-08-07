@@ -107,7 +107,7 @@ function relayError(status: number, data: RelayErrorResponse): Error {
   }
   if (status === 403 && data.error === "identity_provider_not_allowed") {
     return new Error(
-      "This Glossa identity provider is not allowed. Sign in with Google.",
+      "This Glossa identity is not allowed. Sign in with an approved account.",
     );
   }
   if (status === 409 && data.error === "device_name_conflict") {

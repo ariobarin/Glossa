@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/ariobarin/glossa/security/advisories/new
+    about: Do not disclose credentials, private source code, personal data, or vulnerability details in a public issue.
+  - name: Read the Glossa support guide
+    url: https://glossa.sh/support
+    about: Review setup checks, account controls, and safe diagnostic guidance before opening an issue.
