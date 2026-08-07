@@ -125,7 +125,7 @@ await check("rationale keeps the product boundary simple", async () => {
   const source = await publicText("https://glossa.sh/docs/why");
   requireMatch(
     source,
-    /one project folder on your computer/i,
+    /a folder on your computer/i,
     "rationale does not state the product in user language",
   );
   requireMatch(
