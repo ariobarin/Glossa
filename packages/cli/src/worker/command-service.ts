@@ -321,6 +321,10 @@ function renderOutput(
   };
 }
 
+function isWindowsCommandShim(file: string): boolean {
+  return /\.(?:cmd|bat)$/i.test(file);
+}
+
 function shellInvocation(command: string): { file: string; args: string[] } {
   if (process.platform === "win32") {
     const file = process.env.GLOSSA_WINDOWS_SHELL ?? "powershell.exe";
@@ -381,6 +385,16 @@ export class CommandService {
         "Exactly one of argv or shellCommand is required.",
       );
     }
+    if (
+      process.platform === "win32" &&
+      options.argv &&
+      isWindowsCommandShim(options.argv[0]!)
+    ) {
+      throw new WorkerError(
+        "windows_command_shim",
+        "Windows .cmd and .bat command shims must be run through shellCommand.",
+      );
+    }
     const timeoutMs = options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_COMMAND_TIMEOUT_MS) {
       throw new WorkerError(
@@ -409,13 +423,21 @@ export class CommandService {
       ? { file: options.argv[0]!, args: options.argv.slice(1) }
       : shellInvocation(options.shellCommand!);
 
-    const child = spawn(invocation.file, invocation.args, {
-      cwd,
-      env: process.env,
-      detached: process.platform !== "win32",
-      stdio: "pipe",
-      windowsHide: true,
-    });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(invocation.file, invocation.args, {
+        cwd,
+        env: process.env,
+        detached: process.platform !== "win32",
+        stdio: "pipe",
+        windowsHide: true,
+      });
+    } catch {
+      throw new WorkerError(
+        "command_spawn_failed",
+        "The command could not be started.",
+      );
+    }
     let complete!: () => void;
     const completion = new Promise<void>((resolve) => {
       complete = resolve;

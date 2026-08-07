@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { MAX_COMMAND_OUTPUT_BYTES } from "@glossa/protocol";
 import { CommandService } from "./command-service.js";
+import { WorkerError } from "./errors.js";
 import { PathPolicy } from "./path-policy.js";
 
 async function commandFixture(
@@ -21,6 +22,46 @@ async function commandFixture(
   });
   return { root: policy.root, commands };
 }
+
+test("normalizes unresolved direct commands as spawn failures", async (context) => {
+  const { commands } = await commandFixture(context);
+  await assert.rejects(
+    commands.start({
+      argv: ["glossa-command-that-does-not-exist"],
+      timeoutMs: 10_000,
+      waitMs: 0,
+    }),
+    (error: unknown) =>
+      error instanceof WorkerError && error.code === "command_spawn_failed",
+  );
+});
+
+test(
+  "rejects Windows command shims with actionable shell guidance",
+  { skip: process.platform !== "win32" },
+  async (context) => {
+    const { commands } = await commandFixture(context);
+    await assert.rejects(
+      commands.start({
+        argv: ["npm.cmd", "--version"],
+        timeoutMs: 10_000,
+        waitMs: 0,
+      }),
+      (error: unknown) =>
+        error instanceof WorkerError &&
+        error.code === "windows_command_shim" &&
+        /shellCommand/.test(error.message),
+    );
+
+    const native = await commands.start({
+      argv: [process.execPath, "--version"],
+      timeoutMs: 10_000,
+      waitMs: 5_000,
+    });
+    assert.equal(native.status, "succeeded");
+    assert.equal(native.exitCode, 0);
+  },
+);
 
 test("returns completed output for fast commands without a second lookup", async (context) => {
   const { commands } = await commandFixture(context);
