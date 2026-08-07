@@ -171,9 +171,14 @@ assert.ok(
   "MCP must expose the restricted-data boundary and its limitation",
 );
 
-await requiredText("site/index.html", [
+const homepage = await requiredText("site/index.html", [
   "Connect ChatGPT to the <span>project on your computer.</span>",
 ]);
+assert.doesNotMatch(
+  homepage,
+  /hero-footnote|One folder\. You choose the access\. Use the tools already there\./,
+  "homepage must keep the intentionally simplified hero",
+);
 await requiredText("README.md", [
   "Glossa is not another model or coding agent",
   "`workspace` (default)",
