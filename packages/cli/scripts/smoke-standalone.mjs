@@ -28,7 +28,7 @@ const help = run(["--help"]);
 assert.equal(help.status, 0, help.stderr);
 assert.match(help.stdout, /Usage:/);
 for (const usage of [
-  "glossa [--label <name>] [directory]",
+  "glossa [--access <read-only|workspace|system>] [--label <name>] [directory]",
   "glossa status",
   "glossa devices revoke <id>",
   "glossa logout",
