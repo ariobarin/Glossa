@@ -54,6 +54,119 @@ test("reports retry, connection, and graceful disconnection", async () => {
   ]);
 });
 
+
+test("advertises and verifies the selected worker access profile", async () => {
+  const controller = new AbortController();
+  const registerBodies: Array<Record<string, unknown>> = [];
+  const statuses: RemoteWorkerStatus[] = [];
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      registerBodies.push(body);
+      return Response.json({
+        workerId: body.workerId,
+        generation: "00000000-0000-4000-8000-000000000001",
+        accessProfile: body.accessProfile,
+        workspaceLabel: body.workspaceLabel,
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    workerVersion: "1.0.0",
+    workspaceLabel: "review",
+    accessProfile: "system",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+    onStatus: (status) => statuses.push(status),
+  }).run();
+
+  assert.equal(registerBodies.length, 1);
+  assert.equal(registerBodies[0]?.workerVersion, "1.0.0");
+  assert.equal(registerBodies[0]?.workspaceLabel, "review");
+  assert.equal(registerBodies[0]?.accessProfile, "system");
+  const connected = statuses.find((status) => status.state === "connected");
+  assert.equal(connected?.state, "connected");
+  if (connected?.state === "connected") {
+    assert.equal(connected.accessProfileAccepted, true);
+    assert.equal(connected.workspaceLabelAccepted, true);
+  }
+});
+
+
+test("keeps local profile enforcement when an older relay cannot accept profiles", async () => {
+  const controller = new AbortController();
+  const registerBodies: Array<Record<string, unknown>> = [];
+  const statuses: RemoteWorkerStatus[] = [];
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      registerBodies.push(body);
+      if ("accessProfile" in body) {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+      return Response.json({
+        workerId: body.workerId,
+        generation: "00000000-0000-4000-8000-000000000001",
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    workerVersion: "1.0.0",
+    accessProfile: "workspace",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+    onStatus: (status) => statuses.push(status),
+  }).run();
+
+  assert.equal(registerBodies.length, 2);
+  assert.equal(registerBodies[0]?.accessProfile, "workspace");
+  assert.equal("accessProfile" in registerBodies[1]!, false);
+  assert.equal(registerBodies[1]?.workerVersion, "1.0.0");
+  const connected = statuses.find((status) => status.state === "connected");
+  assert.equal(connected?.state, "connected");
+  if (connected?.state === "connected") {
+    assert.equal(connected.accessProfileAccepted, false);
+  }
+});
+
 test("reports its package version and falls back for older relays", async () => {
   const controller = new AbortController();
   const registerBodies: Array<Record<string, unknown>> = [];

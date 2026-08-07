@@ -2,33 +2,55 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseInvocation, UsageError } from "./cli-options.js";
 
-test("uses the default invocation as the workspace entrypoint", () => {
-  assert.deepEqual(parseInvocation([]), { command: "workspace" });
+test("uses workspace access as the default workspace entrypoint", () => {
+  assert.deepEqual(parseInvocation([]), {
+    command: "workspace",
+    accessProfile: "workspace",
+  });
   assert.deepEqual(parseInvocation(["."]), {
     command: "workspace",
     path: ".",
+    accessProfile: "workspace",
   });
   assert.deepEqual(parseInvocation(["--", "-workspace"]), {
     command: "workspace",
     path: "-workspace",
+    accessProfile: "workspace",
   });
   assert.deepEqual(parseInvocation(["--", "--help"]), {
     command: "workspace",
     path: "--help",
+    accessProfile: "workspace",
   });
   assert.deepEqual(parseInvocation(["--", "doctor"]), {
     command: "workspace",
     path: "doctor",
+    accessProfile: "workspace",
   });
   assert.deepEqual(parseInvocation(["--label", "frontend", "."]), {
     command: "workspace",
     path: ".",
     label: "frontend",
+    accessProfile: "workspace",
   });
   assert.deepEqual(parseInvocation([".", "--label", "  API  "]), {
     command: "workspace",
     path: ".",
     label: "API",
+    accessProfile: "workspace",
+  });
+});
+
+test("parses explicit least-privilege and system access profiles", () => {
+  assert.deepEqual(parseInvocation(["--access", "read-only", "."]), {
+    command: "workspace",
+    path: ".",
+    accessProfile: "read-only",
+  });
+  assert.deepEqual(parseInvocation([".", "--access", "system"]), {
+    command: "workspace",
+    path: ".",
+    accessProfile: "system",
   });
 });
 
@@ -94,6 +116,12 @@ test("rejects malformed retained commands and removed flags", () => {
   );
   assert.throws(() => parseInvocation(["logout", "--browser"]), UsageError);
   assert.throws(() => parseInvocation(["--label"]), UsageError);
+  assert.throws(() => parseInvocation(["--access"]), UsageError);
+  assert.throws(() => parseInvocation(["--access", "admin"]), UsageError);
+  assert.throws(
+    () => parseInvocation(["--access", "workspace", "--access", "system"]),
+    UsageError,
+  );
   assert.throws(
     () => parseInvocation(["--label", "one", "--label", "two"]),
     UsageError,

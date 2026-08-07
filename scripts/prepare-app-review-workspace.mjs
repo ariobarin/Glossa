@@ -11,7 +11,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const markerName = ".glossa-review-fixture";
-const markerContent = "glossa-plugin-review-fixture-v1\n";
+const markerContent = "glossa-app-review-fixture-v2\n";
+const acceptedMarkerContents = new Set([
+  markerContent,
+  "glossa-plugin-review-fixture-v1\n",
+]);
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const templateRoot = path.join(repositoryRoot, "review", "fixture-template");
@@ -21,7 +25,7 @@ const reset = args.includes("--reset");
 
 if (args.some((arg) => arg !== "--reset") || args.length > 1) {
   throw new Error(
-    "Usage: node scripts/prepare-plugin-review-workspace.mjs [--reset]",
+    "Usage: node scripts/prepare-app-review-workspace.mjs [--reset]",
   );
 }
 
@@ -42,7 +46,7 @@ async function recognizedFixture(candidate) {
   const marker = await readFile(path.join(candidate, markerName), "utf8").catch(
     () => "",
   );
-  return marker === markerContent;
+  return acceptedMarkerContents.has(marker);
 }
 
 if (await exists(backup)) {
@@ -97,4 +101,4 @@ try {
   throw error;
 }
 
-console.log(`Prepared Glossa plugin review workspace at ${target}`);
+console.log(`Prepared Glossa app review workspace at ${target}`);

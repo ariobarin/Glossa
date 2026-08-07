@@ -1,9 +1,11 @@
-# Codex is done for now. The project is not.
+# Work with the project where it already lives.
 
-Glossa lets ChatGPT keep coding on a local project when Codex usage runs out.
+Glossa connects ChatGPT to a user-selected local development workspace through an outbound worker.
 
-Glossa connects a regular [ChatGPT](https://chatgpt.com/chat) conversation to the project. ChatGPT can inspect files, make changes, run commands, and verify results instead of stopping at suggestions.
+That boundary is useful when the task depends on state that is already on the computer: an existing checkout, uncommitted changes, local build tools, test databases, emulators, generated files, or a development environment that is not available to a remote service.
 
-That turns available ChatGPT access into more progress on the codebase, without waiting for another Codex usage window or rebuilding the problem later.
+Glossa does not add another model, planner, agent loop, or conversation store. It gives ChatGPT a narrow, visible path to the local project and lets the user choose among read-only access, guarded workspace edits, and explicit system-command access.
+
+Use Glossa for work that genuinely requires the local workspace or its toolchain. General questions, writing, web research, and other built-in ChatGPT tasks should stay in ChatGPT without invoking Glossa.
 
 <p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>

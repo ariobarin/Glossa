@@ -68,143 +68,200 @@
           <h1>Core security and threat model</h1>
           <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
-        <script type="application/json" data-page-markdown>"# Core security and threat model\n\nHow Glossa protects local workspaces, accounts, credentials, and data.\n\n## Warning\n\nGlossa executes commands with the permissions and environment of the local account that launched it. File-tool root checks do not sandbox shell commands. A command may access credentials, developer tools, networks, or other files available to that account.\n\n## Trust assumptions\n\n- The Glossa operator controls the hosted relay and identity provider.\n- The authenticated user intends to authorize the connected MCP client.\n- The local computer and operating-system account are trusted.\n- There is no hostile multi-tenant execution on one worker.\n- TLS termination and OAuth token validation are correctly configured.\n\n## Primary assets\n\n- Local source code.\n- Local developer credentials and environment.\n- Device credentials and ephemeral worker credentials.\n- OAuth refresh/access tokens.\n- Account/device ownership relationships.\n- Command results and file contents in transit.\n\n## Primary threats and controls\n\n### Cross-account routing\n\n**Threat:** an authenticated account guesses another device or job ID.\n\n**Controls:**\n\n- include `account_id` in all primary and foreign-key relationships;\n- accept only the configured Auth0 subject prefix;\n- require account ID in every query;\n- never fetch by resource ID and check ownership afterward when an account-scoped query is possible;\n- use opaque random identifiers;\n- bind local device credentials to the authenticated subject before reuse;\n- verify account isolation with direct integration checks before deployment.\n\n### Stolen device token\n\n**Threat:** token grants remote execution on an exposed root.\n\n**Controls:**\n\n- 256-bit random secret;\n- transmit only over HTTPS;\n- store only salted scrypt hash;\n- display or return once;\n- operating-system credential storage, with an explicit warning before a local file fallback;\n- device-specific revocation;\n- failed-authentication rate limiting and constant-time comparison;\n- never log Authorization headers.\n\n### Stolen worker token\n\n**Threat:** an active worker credential is replayed against relay worker endpoints.\n\n**Controls:**\n\n- independent 256-bit random secret for each worker generation;\n- bind the credential to one account, device, worker ID, and generation;\n- store only its SHA-256 digest in relay process memory;\n- invalidate it on reconnect, unregister, device revocation, or liveness expiry;\n- reject mismatched worker IDs and generations;\n- transmit only over HTTPS and never log Authorization headers.\n\n### Malicious or compromised MCP client\n\n**Threat:** authenticated client requests destructive actions.\n\n**Controls:**\n\n- explicit OAuth authorization;\n- accurate MCP tool annotations;\n- narrow exposed root;\n- temporary exposure by default;\n- treat local session startup as authorization for writes and bounded commands without per-operation confirmation;\n- document full shell authority in setup and security guidance before users\n  start a session;\n- show write and command activity locally;\n- visible local status and immediate disconnect;\n- no implicit broad-root exposure.\n\n### Path escape\n\n**Threat:** absolute paths, parent traversal, symlinks, junctions, or writable ancestors escape the root.\n\n**Controls:**\n\n- enforce canonicalization, realpath, symlink, and junction checks for the host operating system;\n- validate existing paths and nearest writable ancestors locally;\n- reject absolute paths and lexical parent escapes;\n- revalidate root-relative paths for every operation;\n- stream directory entries into bounded traversal state, skip links and unavailable files during structured listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;\n- preserve discovered native filenames during structured traversal; prefix POSIX names containing literal backslashes with `./` so they remain safely reusable, and normalize returned separators only on Windows;\n- preserve correct case-sensitive or case-insensitive path comparison for the host;\n- verify Windows junction and reparse-point behavior and POSIX symlink behavior when path enforcement changes.\n\n### Shell authority\n\n**Threat:** a command accesses resources outside the exposed file root.\n\n**Reality:** this is expected shell authority, not a bug in path tools. Command filtering is not a sandbox.\n\n**Controls:**\n\n- state the risk honestly;\n- require explicit session startup, but do not prompt locally for each command;\n- inherit the complete worker process environment, including available developer credentials;\n- never enumerate, persist, or log environment variables automatically;\n- run under a dedicated OS account for unattended use;\n- recommend a container or VM when stronger isolation is required;\n- bound duration and output;\n- terminate process groups and discovered descendants.\n\n### Logging leakage\n\n**Threat:** source code, command output, paths, or tokens reach platform logs.\n\n**Controls:**\n\n- structured metadata logs only;\n- redact headers and bodies;\n- never attach request or response content;\n- never add local absolute paths or derived repository names to relay metadata or logs;\n- retain an optional workspace label only when the user explicitly supplies it, and only for the active worker lifetime;\n- verify log scrubbing before deployment.\n\n### Relay compromise\n\n**Threat:** attacker controls the routing service.\n\n**Controls and limits:**\n\n- relay does not possess local repository clones or developer credentials;\n- device tokens are sufficient to issue jobs while a worker is exposed, so relay compromise remains serious;\n- minimize dependencies and privileges;\n- use managed platform patching, secret scanning, exact dependencies, and rapid device revocation.\n\n## Data retention\n\nDurably retain only what is needed for account/device operation and security:\n\n- device ID, name, platform, created, last seen, and revoked timestamps;\n- OAuth subject identifier;\n- metadata-only audit event type, status, and timestamp;\n- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies.\n\nDo not durably retain:\n\n- file content;\n- command input or output;\n- environment variables;\n- full local paths;\n- repository names unless explicitly chosen by the user;\n- OAuth, device, or worker bearer secrets.\n\nAdditional defenses must extend these controls rather than replace them.\n"</script>
+        <script type="application/json" data-page-markdown>"# Core security and threat model\n\nHow Glossa protects local workspaces, accounts, credentials, and data.\n\n## Security boundary\n\nEach worker exposes one canonical local directory and one access profile:\n\n| Profile | Structured reads | Guarded writes inside root | Commands |\n| --- | --- | --- | --- |\n| `read-only` | Yes | No | No |\n| `workspace` (default) | Yes | Yes | No |\n| `system` | Yes | Yes | Yes |\n\nThe selected profile is visible in the local terminal and returned by `list_devices` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.\n\nA worker from an older release that did not declare a profile is reported as `system`, because that release historically accepted commands. Compatibility never understates legacy authority.\n\n## Warning about system access\n\n`system` access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.\n\nUse the default `workspace` profile when file changes are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.\n\n## Trust assumptions\n\n- The Glossa operator controls the hosted relay and identity provider.\n- The authenticated user intends to authorize the connected MCP client.\n- The local computer and selected operating-system account are trusted for the chosen profile.\n- There is no hostile multi-tenant execution inside one local worker process.\n- TLS termination, OAuth token validation, and deployment secrets are correctly configured.\n- The user understands that `system` is broader than the exposed file root.\n\n## Primary assets\n\n- Local source code and project data.\n- Local developer credentials, environment, tools, and network identity.\n- Device credentials and ephemeral worker credentials.\n- OAuth refresh and access tokens.\n- Account, device, worker, and job ownership relationships.\n- Command details, command results, and file contents in transit.\n\n## Primary threats and controls\n\n### Cross-account routing\n\n**Threat:** an authenticated account guesses another account's device, worker, command, or job identifier.\n\n**Controls:**\n\n- include `account_id` in all primary and foreign-key relationships;\n- validate JWT signature, issuer, audience, expiry, required scope, and explicit Auth0 provider-prefix and exact-subject allowlists;\n- require account ID in every database and in-memory ownership lookup;\n- never fetch by resource ID and check ownership afterward when an account-scoped query is possible;\n- use opaque random identifiers;\n- bind local device credentials to the authenticated subject before reuse;\n- bind ephemeral worker credentials to one account, device, worker ID, and generation;\n- verify account isolation with direct integration checks before deployment.\n\n### Stolen device token\n\n**Threat:** a device token is used to enroll or operate workers for the affected account.\n\n**Controls:**\n\n- generate a 256-bit random secret;\n- transmit it only over HTTPS;\n- store only a salted scrypt hash in the relay database;\n- display or return the raw secret once;\n- store it locally in the operating-system credential store, with an explicit warning before a restricted file fallback;\n- support device-specific revocation;\n- apply failed-authentication rate limiting and constant-time comparison;\n- never log Authorization headers.\n\nA device token does not silently broaden a worker's selected access profile. The relay and worker still enforce that profile for every operation.\n\n### Stolen worker token\n\n**Threat:** an active worker credential is replayed against relay worker endpoints.\n\n**Controls:**\n\n- create an independent 256-bit random secret for each worker generation;\n- bind it to one account, device, worker ID, and generation;\n- store only its SHA-256 digest in relay process memory;\n- invalidate it on reconnect, unregister, device revocation, or liveness expiry;\n- reject mismatched worker IDs and generations;\n- transmit it only over HTTPS and never log Authorization headers;\n- keep the access profile in relay-side worker state and enforce it before queueing work.\n\n### Malicious or compromised MCP client\n\n**Threat:** an authenticated client requests destructive, overbroad, secret-seeking, or unrelated actions.\n\n**Controls:**\n\n- require explicit OAuth authorization and the `glossa:access` scope;\n- publish accurate MCP tool schemas, output contracts, side-effect annotations, and use/disallow descriptions;\n- tell the model not to use Glossa for general questions, web research, built-in ChatGPT tasks, credential inspection, or work unrelated to the local workspace;\n- expose only one narrow root per worker and reject implicit home or filesystem-root exposure;\n- let the user select `read-only`, `workspace`, or explicit `system` authority at startup;\n- enforce the selected authority in both the relay and local worker;\n- treat startup as authorization only for operations inside the selected profile, without claiming per-command local confirmation;\n- show the selected profile and compact write or command activity locally;\n- provide visible status, immediate disconnect, logout, and device revocation;\n- treat all file and command output as untrusted data rather than instructions.\n\n### Permission downgrade or metadata mismatch\n\n**Threat:** the relay, model, documentation, or local worker disagrees about the authority of an online workspace.\n\n**Controls:**\n\n- use one protocol enum and one permission-mapping function across the CLI and relay;\n- include the profile in current worker registration and echo it in the registration response;\n- expose the profile and derived booleans through `list_devices`;\n- reject writes and commands before relay dispatch when permission is absent;\n- reject the same operations again inside `LocalWorker`;\n- return stable, actionable `write_access_disabled` and `command_access_disabled` errors that tell the model not to retry or bypass the boundary;\n- classify profile-less legacy workers as `system` rather than assuming a safer state;\n- cover all profiles at the CLI, relay, MCP, and local-worker test layers.\n\n### Path escape\n\n**Threat:** absolute paths, parent traversal, symlinks, junctions, case aliases, or writable ancestors escape the structured file root.\n\n**Controls:**\n\n- enforce canonicalization, realpath, symlink, junction, and reparse-point checks for the host operating system;\n- validate existing paths and nearest writable ancestors locally;\n- reject absolute paths and lexical parent escapes;\n- revalidate root-relative paths for every structured file operation;\n- stream directory entries into bounded traversal state, skip links and unavailable files during listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;\n- preserve discovered native filenames; prefix POSIX names containing literal backslashes with `./` so they remain safely reusable, and normalize returned separators only on Windows;\n- preserve correct case-sensitive or case-insensitive comparison for the host;\n- verify Windows junction and reparse-point behavior and POSIX symlink behavior whenever path enforcement changes.\n\n### System-command authority\n\n**Threat:** a system-profile command reads secrets, modifies resources outside the root, reaches the network, or affects an external service.\n\n**Reality:** these are possible consequences of the explicitly selected `system` profile, not capabilities of structured file tools. Glossa preserves arbitrary project command execution because using the existing local toolchain is a core function, but it does not describe that authority as sandboxed.\n\n**Controls and limits:**\n\n- make `workspace`, not `system`, the default;\n- require the user to start `glossa --access system` explicitly;\n- disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;\n- tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;\n- never enumerate, persist, or log environment variables automatically;\n- bound command duration, captured output, concurrency, and status waits;\n- terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;\n- make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;\n- recommend a dedicated OS account, container, or VM for unattended or sensitive use.\n\n### Logging leakage\n\n**Threat:** source code, command details, output, paths, tokens, or identities reach platform logs or durable audit storage.\n\n**Controls:**\n\n- record structured operational metadata only;\n- redact headers and bodies;\n- never attach request or response content to logs;\n- never add local absolute paths or path-derived repository names to relay metadata or logs;\n- retain an optional workspace label only when the user supplies it explicitly and only for the active worker lifetime;\n- omit file contents, command arguments, output, environment variables, and bearer tokens from durable audit events;\n- verify log scrubbing before deployment.\n\n### Relay compromise\n\n**Threat:** an attacker controls the routing service or its process memory.\n\n**Controls and limits:**\n\n- the relay does not possess local repository clones or durable developer credentials;\n- device or worker credentials can issue jobs while an authorized worker is exposed, so relay compromise remains serious;\n- relay-side profile enforcement reduces accidental overreach, while local enforcement remains authoritative against a forbidden operation;\n- minimize dependencies and privileges;\n- use managed platform patching, exact dependencies, secret scanning, short-lived worker credentials, and rapid device revocation;\n- keep production content out of logs and durable routing state.\n\nA fully malicious relay can still send any protocol job to a connected worker. The local profile boundary prevents a read-only or workspace worker from executing a command, but a `system` worker intentionally retains broad command authority. Stronger protection requires running that worker inside an isolated OS account, container, or VM.\n\n## Data retention\n\nDurably retain only what is needed for account, device, and security operation:\n\n- device ID, user-supplied name, platform, created, last-seen, and revoked timestamps;\n- OAuth subject identifier;\n- metadata-only audit event type, status, and timestamp;\n- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies.\n\nDo not durably retain:\n\n- file content;\n- command input or output;\n- environment variables;\n- full local paths;\n- repository names unless explicitly supplied as an ephemeral label;\n- OAuth, device, or worker bearer secrets;\n- reviewer passwords or other portal credentials.\n\nAdditional defenses must extend these controls rather than replace them.\n"</script>
         <p class="docs-summary">How Glossa protects local workspaces, accounts, credentials, and data.</p>
       </header>
 
       <article class="docs-content">
 
 <section class="doc-section">
-<h2 id="warning"><a class="heading-anchor" href="#warning" aria-label="Link to Warning"></a>Warning</h2>
-<p>Glossa executes commands with the permissions and environment of the local account that launched it. File-tool root checks do not sandbox shell commands. A command may access credentials, developer tools, networks, or other files available to that account.</p>
+<h2 id="security-boundary"><a class="heading-anchor" href="#security-boundary" aria-label="Link to Security boundary"></a>Security boundary</h2>
+<p>Each worker exposes one canonical local directory and one access profile:</p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Structured reads</th>
+<th>Guarded writes inside root</th>
+<th>Commands</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>read-only</code></td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>workspace</code> (default)</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+</tbody></table>
+<p>The selected profile is visible in the local terminal and returned by <code>list_devices</code> as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.</p>
+<p>A worker from an older release that did not declare a profile is reported as <code>system</code>, because that release historically accepted commands. Compatibility never understates legacy authority.</p>
+</section>
+<section class="doc-section">
+<h2 id="warning-about-system-access"><a class="heading-anchor" href="#warning-about-system-access" aria-label="Link to Warning about system access"></a>Warning about system access</h2>
+<p><code>system</code> access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process&#39;s complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.</p>
+<p>Use the default <code>workspace</code> profile when file changes are sufficient. Enable <code>system</code> only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.</p>
 </section>
 <section class="doc-section">
 <h2 id="trust-assumptions"><a class="heading-anchor" href="#trust-assumptions" aria-label="Link to Trust assumptions"></a>Trust assumptions</h2>
 <ul>
 <li>The Glossa operator controls the hosted relay and identity provider.</li>
 <li>The authenticated user intends to authorize the connected MCP client.</li>
-<li>The local computer and operating-system account are trusted.</li>
-<li>There is no hostile multi-tenant execution on one worker.</li>
-<li>TLS termination and OAuth token validation are correctly configured.</li>
+<li>The local computer and selected operating-system account are trusted for the chosen profile.</li>
+<li>There is no hostile multi-tenant execution inside one local worker process.</li>
+<li>TLS termination, OAuth token validation, and deployment secrets are correctly configured.</li>
+<li>The user understands that <code>system</code> is broader than the exposed file root.</li>
 </ul>
 </section>
 <section class="doc-section">
 <h2 id="primary-assets"><a class="heading-anchor" href="#primary-assets" aria-label="Link to Primary assets"></a>Primary assets</h2>
 <ul>
-<li>Local source code.</li>
-<li>Local developer credentials and environment.</li>
+<li>Local source code and project data.</li>
+<li>Local developer credentials, environment, tools, and network identity.</li>
 <li>Device credentials and ephemeral worker credentials.</li>
-<li>OAuth refresh/access tokens.</li>
-<li>Account/device ownership relationships.</li>
-<li>Command results and file contents in transit.</li>
+<li>OAuth refresh and access tokens.</li>
+<li>Account, device, worker, and job ownership relationships.</li>
+<li>Command details, command results, and file contents in transit.</li>
 </ul>
 </section>
 <section class="doc-section">
 <h2 id="primary-threats-and-controls"><a class="heading-anchor" href="#primary-threats-and-controls" aria-label="Link to Primary threats and controls"></a>Primary threats and controls</h2>
 <h3 id="cross-account-routing"><a class="heading-anchor" href="#cross-account-routing" aria-label="Link to Cross-account routing"></a>Cross-account routing</h3>
-<p><strong>Threat:</strong> an authenticated account guesses another device or job ID.</p>
+<p><strong>Threat:</strong> an authenticated account guesses another account&#39;s device, worker, command, or job identifier.</p>
 <p><strong>Controls:</strong></p>
 <ul>
 <li>include <code>account_id</code> in all primary and foreign-key relationships;</li>
-<li>accept only the configured Auth0 subject prefix;</li>
-<li>require account ID in every query;</li>
+<li>validate JWT signature, issuer, audience, expiry, required scope, and explicit Auth0 provider-prefix and exact-subject allowlists;</li>
+<li>require account ID in every database and in-memory ownership lookup;</li>
 <li>never fetch by resource ID and check ownership afterward when an account-scoped query is possible;</li>
 <li>use opaque random identifiers;</li>
 <li>bind local device credentials to the authenticated subject before reuse;</li>
+<li>bind ephemeral worker credentials to one account, device, worker ID, and generation;</li>
 <li>verify account isolation with direct integration checks before deployment.</li>
 </ul>
 <h3 id="stolen-device-token"><a class="heading-anchor" href="#stolen-device-token" aria-label="Link to Stolen device token"></a>Stolen device token</h3>
-<p><strong>Threat:</strong> token grants remote execution on an exposed root.</p>
+<p><strong>Threat:</strong> a device token is used to enroll or operate workers for the affected account.</p>
 <p><strong>Controls:</strong></p>
 <ul>
-<li>256-bit random secret;</li>
-<li>transmit only over HTTPS;</li>
-<li>store only salted scrypt hash;</li>
-<li>display or return once;</li>
-<li>operating-system credential storage, with an explicit warning before a local file fallback;</li>
-<li>device-specific revocation;</li>
-<li>failed-authentication rate limiting and constant-time comparison;</li>
+<li>generate a 256-bit random secret;</li>
+<li>transmit it only over HTTPS;</li>
+<li>store only a salted scrypt hash in the relay database;</li>
+<li>display or return the raw secret once;</li>
+<li>store it locally in the operating-system credential store, with an explicit warning before a restricted file fallback;</li>
+<li>support device-specific revocation;</li>
+<li>apply failed-authentication rate limiting and constant-time comparison;</li>
 <li>never log Authorization headers.</li>
 </ul>
+<p>A device token does not silently broaden a worker&#39;s selected access profile. The relay and worker still enforce that profile for every operation.</p>
 <h3 id="stolen-worker-token"><a class="heading-anchor" href="#stolen-worker-token" aria-label="Link to Stolen worker token"></a>Stolen worker token</h3>
 <p><strong>Threat:</strong> an active worker credential is replayed against relay worker endpoints.</p>
 <p><strong>Controls:</strong></p>
 <ul>
-<li>independent 256-bit random secret for each worker generation;</li>
-<li>bind the credential to one account, device, worker ID, and generation;</li>
+<li>create an independent 256-bit random secret for each worker generation;</li>
+<li>bind it to one account, device, worker ID, and generation;</li>
 <li>store only its SHA-256 digest in relay process memory;</li>
 <li>invalidate it on reconnect, unregister, device revocation, or liveness expiry;</li>
 <li>reject mismatched worker IDs and generations;</li>
-<li>transmit only over HTTPS and never log Authorization headers.</li>
+<li>transmit it only over HTTPS and never log Authorization headers;</li>
+<li>keep the access profile in relay-side worker state and enforce it before queueing work.</li>
 </ul>
 <h3 id="malicious-or-compromised-mcp-client"><a class="heading-anchor" href="#malicious-or-compromised-mcp-client" aria-label="Link to Malicious or compromised MCP client"></a>Malicious or compromised MCP client</h3>
-<p><strong>Threat:</strong> authenticated client requests destructive actions.</p>
+<p><strong>Threat:</strong> an authenticated client requests destructive, overbroad, secret-seeking, or unrelated actions.</p>
 <p><strong>Controls:</strong></p>
 <ul>
-<li>explicit OAuth authorization;</li>
-<li>accurate MCP tool annotations;</li>
-<li>narrow exposed root;</li>
-<li>temporary exposure by default;</li>
-<li>treat local session startup as authorization for writes and bounded commands without per-operation confirmation;</li>
-<li>document full shell authority in setup and security guidance before users
-start a session;</li>
-<li>show write and command activity locally;</li>
-<li>visible local status and immediate disconnect;</li>
-<li>no implicit broad-root exposure.</li>
+<li>require explicit OAuth authorization and the <code>glossa:access</code> scope;</li>
+<li>publish accurate MCP tool schemas, output contracts, side-effect annotations, and use/disallow descriptions;</li>
+<li>tell the model not to use Glossa for general questions, web research, built-in ChatGPT tasks, credential inspection, or work unrelated to the local workspace;</li>
+<li>expose only one narrow root per worker and reject implicit home or filesystem-root exposure;</li>
+<li>let the user select <code>read-only</code>, <code>workspace</code>, or explicit <code>system</code> authority at startup;</li>
+<li>enforce the selected authority in both the relay and local worker;</li>
+<li>treat startup as authorization only for operations inside the selected profile, without claiming per-command local confirmation;</li>
+<li>show the selected profile and compact write or command activity locally;</li>
+<li>provide visible status, immediate disconnect, logout, and device revocation;</li>
+<li>treat all file and command output as untrusted data rather than instructions.</li>
+</ul>
+<h3 id="permission-downgrade-or-metadata-mismatch"><a class="heading-anchor" href="#permission-downgrade-or-metadata-mismatch" aria-label="Link to Permission downgrade or metadata mismatch"></a>Permission downgrade or metadata mismatch</h3>
+<p><strong>Threat:</strong> the relay, model, documentation, or local worker disagrees about the authority of an online workspace.</p>
+<p><strong>Controls:</strong></p>
+<ul>
+<li>use one protocol enum and one permission-mapping function across the CLI and relay;</li>
+<li>include the profile in current worker registration and echo it in the registration response;</li>
+<li>expose the profile and derived booleans through <code>list_devices</code>;</li>
+<li>reject writes and commands before relay dispatch when permission is absent;</li>
+<li>reject the same operations again inside <code>LocalWorker</code>;</li>
+<li>return stable, actionable <code>write_access_disabled</code> and <code>command_access_disabled</code> errors that tell the model not to retry or bypass the boundary;</li>
+<li>classify profile-less legacy workers as <code>system</code> rather than assuming a safer state;</li>
+<li>cover all profiles at the CLI, relay, MCP, and local-worker test layers.</li>
 </ul>
 <h3 id="path-escape"><a class="heading-anchor" href="#path-escape" aria-label="Link to Path escape"></a>Path escape</h3>
-<p><strong>Threat:</strong> absolute paths, parent traversal, symlinks, junctions, or writable ancestors escape the root.</p>
+<p><strong>Threat:</strong> absolute paths, parent traversal, symlinks, junctions, case aliases, or writable ancestors escape the structured file root.</p>
 <p><strong>Controls:</strong></p>
 <ul>
-<li>enforce canonicalization, realpath, symlink, and junction checks for the host operating system;</li>
+<li>enforce canonicalization, realpath, symlink, junction, and reparse-point checks for the host operating system;</li>
 <li>validate existing paths and nearest writable ancestors locally;</li>
 <li>reject absolute paths and lexical parent escapes;</li>
-<li>revalidate root-relative paths for every operation;</li>
-<li>stream directory entries into bounded traversal state, skip links and unavailable files during structured listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;</li>
-<li>preserve discovered native filenames during structured traversal; prefix POSIX names containing literal backslashes with <code>./</code> so they remain safely reusable, and normalize returned separators only on Windows;</li>
-<li>preserve correct case-sensitive or case-insensitive path comparison for the host;</li>
-<li>verify Windows junction and reparse-point behavior and POSIX symlink behavior when path enforcement changes.</li>
+<li>revalidate root-relative paths for every structured file operation;</li>
+<li>stream directory entries into bounded traversal state, skip links and unavailable files during listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;</li>
+<li>preserve discovered native filenames; prefix POSIX names containing literal backslashes with <code>./</code> so they remain safely reusable, and normalize returned separators only on Windows;</li>
+<li>preserve correct case-sensitive or case-insensitive comparison for the host;</li>
+<li>verify Windows junction and reparse-point behavior and POSIX symlink behavior whenever path enforcement changes.</li>
 </ul>
-<h3 id="shell-authority"><a class="heading-anchor" href="#shell-authority" aria-label="Link to Shell authority"></a>Shell authority</h3>
-<p><strong>Threat:</strong> a command accesses resources outside the exposed file root.</p>
-<p><strong>Reality:</strong> this is expected shell authority, not a bug in path tools. Command filtering is not a sandbox.</p>
-<p><strong>Controls:</strong></p>
+<h3 id="system-command-authority"><a class="heading-anchor" href="#system-command-authority" aria-label="Link to System-command authority"></a>System-command authority</h3>
+<p><strong>Threat:</strong> a system-profile command reads secrets, modifies resources outside the root, reaches the network, or affects an external service.</p>
+<p><strong>Reality:</strong> these are possible consequences of the explicitly selected <code>system</code> profile, not capabilities of structured file tools. Glossa preserves arbitrary project command execution because using the existing local toolchain is a core function, but it does not describe that authority as sandboxed.</p>
+<p><strong>Controls and limits:</strong></p>
 <ul>
-<li>state the risk honestly;</li>
-<li>require explicit session startup, but do not prompt locally for each command;</li>
-<li>inherit the complete worker process environment, including available developer credentials;</li>
+<li>make <code>workspace</code>, not <code>system</code>, the default;</li>
+<li>require the user to start <code>glossa --access system</code> explicitly;</li>
+<li>disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;</li>
+<li>tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;</li>
 <li>never enumerate, persist, or log environment variables automatically;</li>
-<li>run under a dedicated OS account for unattended use;</li>
-<li>recommend a container or VM when stronger isolation is required;</li>
-<li>bound duration and output;</li>
-<li>terminate process groups and discovered descendants.</li>
+<li>bound command duration, captured output, concurrency, and status waits;</li>
+<li>terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;</li>
+<li>make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;</li>
+<li>recommend a dedicated OS account, container, or VM for unattended or sensitive use.</li>
 </ul>
 <h3 id="logging-leakage"><a class="heading-anchor" href="#logging-leakage" aria-label="Link to Logging leakage"></a>Logging leakage</h3>
-<p><strong>Threat:</strong> source code, command output, paths, or tokens reach platform logs.</p>
+<p><strong>Threat:</strong> source code, command details, output, paths, tokens, or identities reach platform logs or durable audit storage.</p>
 <p><strong>Controls:</strong></p>
 <ul>
-<li>structured metadata logs only;</li>
+<li>record structured operational metadata only;</li>
 <li>redact headers and bodies;</li>
-<li>never attach request or response content;</li>
-<li>never add local absolute paths or derived repository names to relay metadata or logs;</li>
-<li>retain an optional workspace label only when the user explicitly supplies it, and only for the active worker lifetime;</li>
+<li>never attach request or response content to logs;</li>
+<li>never add local absolute paths or path-derived repository names to relay metadata or logs;</li>
+<li>retain an optional workspace label only when the user supplies it explicitly and only for the active worker lifetime;</li>
+<li>omit file contents, command arguments, output, environment variables, and bearer tokens from durable audit events;</li>
 <li>verify log scrubbing before deployment.</li>
 </ul>
 <h3 id="relay-compromise"><a class="heading-anchor" href="#relay-compromise" aria-label="Link to Relay compromise"></a>Relay compromise</h3>
-<p><strong>Threat:</strong> attacker controls the routing service.</p>
+<p><strong>Threat:</strong> an attacker controls the routing service or its process memory.</p>
 <p><strong>Controls and limits:</strong></p>
 <ul>
-<li>relay does not possess local repository clones or developer credentials;</li>
-<li>device tokens are sufficient to issue jobs while a worker is exposed, so relay compromise remains serious;</li>
+<li>the relay does not possess local repository clones or durable developer credentials;</li>
+<li>device or worker credentials can issue jobs while an authorized worker is exposed, so relay compromise remains serious;</li>
+<li>relay-side profile enforcement reduces accidental overreach, while local enforcement remains authoritative against a forbidden operation;</li>
 <li>minimize dependencies and privileges;</li>
-<li>use managed platform patching, secret scanning, exact dependencies, and rapid device revocation.</li>
+<li>use managed platform patching, exact dependencies, secret scanning, short-lived worker credentials, and rapid device revocation;</li>
+<li>keep production content out of logs and durable routing state.</li>
 </ul>
+<p>A fully malicious relay can still send any protocol job to a connected worker. The local profile boundary prevents a read-only or workspace worker from executing a command, but a <code>system</code> worker intentionally retains broad command authority. Stronger protection requires running that worker inside an isolated OS account, container, or VM.</p>
 </section>
 <section class="doc-section">
 <h2 id="data-retention"><a class="heading-anchor" href="#data-retention" aria-label="Link to Data retention"></a>Data retention</h2>
-<p>Durably retain only what is needed for account/device operation and security:</p>
+<p>Durably retain only what is needed for account, device, and security operation:</p>
 <ul>
-<li>device ID, name, platform, created, last seen, and revoked timestamps;</li>
+<li>device ID, user-supplied name, platform, created, last-seen, and revoked timestamps;</li>
 <li>OAuth subject identifier;</li>
 <li>metadata-only audit event type, status, and timestamp;</li>
 <li>optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies.</li>
@@ -215,8 +272,9 @@ start a session;</li>
 <li>command input or output;</li>
 <li>environment variables;</li>
 <li>full local paths;</li>
-<li>repository names unless explicitly chosen by the user;</li>
-<li>OAuth, device, or worker bearer secrets.</li>
+<li>repository names unless explicitly supplied as an ephemeral label;</li>
+<li>OAuth, device, or worker bearer secrets;</li>
+<li>reviewer passwords or other portal credentials.</li>
 </ul>
 <p>Additional defenses must extend these controls rather than replace them.</p>
 </section>
@@ -226,7 +284,8 @@ start a session;</li>
       <nav class="docs-toc" aria-label="On this page">
         <strong>On this page</strong>
         <ol>
-          <li><a href="#warning">Warning</a></li>
+          <li><a href="#security-boundary">Security boundary</a></li>
+          <li><a href="#warning-about-system-access">Warning about system access</a></li>
           <li><a href="#trust-assumptions">Trust assumptions</a></li>
           <li><a href="#primary-assets">Primary assets</a></li>
           <li><a href="#primary-threats-and-controls">Primary threats and controls</a></li>

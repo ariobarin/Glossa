@@ -9,8 +9,9 @@ OAuth-capable MCP client
         v
 hosted relay
   +-- OAuth token verification
-  +-- MCP adapter
-  +-- account and device routing
+  +-- MCP adapter and exact tool contracts
+  +-- account, device, and worker routing
+  +-- access-profile permission gate
   +-- in-memory jobs
   +-- metadata persistence in Postgres
         ^
@@ -18,10 +19,11 @@ hosted relay
         | ephemeral worker credential for repeated polling
         |
 glossa process on user device
-  +-- canonical root
+  +-- canonical root and visible access profile
+  +-- independent permission enforcement
   +-- linked-path enforcement
   +-- atomic file operations
-  +-- bounded one-shot commands
+  +-- optional bounded commands under system access
 ```
 
 ## Why the relay stays small
@@ -36,7 +38,7 @@ Users do not operate networking, identity, or database infrastructure.
 
 The authorization server handles discovery, login, consent, and access tokens. The relay validates issuer, audience, expiry, and the `glossa:access` scope. It atomically creates an account for a new authenticated subject and rejects accounts marked disabled. Already-admitted accounts use a lock-only `SELECT FOR NO KEY UPDATE`, avoiding a new account row version on every authenticated request while retaining the original queue ordering and serialization with direct operator updates to `disabled_at`. The admission upsert runs only for a new subject, a legacy active account whose admission timestamp is absent, or a concurrent-create race.
 
-The managed service accepts only Auth0 subjects from the Google social connection. The relay enforces the configured subject prefix in addition to JWT validation, so enabling another connection in Auth0 does not grant it Glossa access. Self-hosted relays explicitly select their own allowed Auth0 subject prefix.
+The managed service uses the Google social connection for regular users and can explicitly enable a dedicated Auth0 database connection for OpenAI review. The relay enforces a bounded provider-prefix allowlist plus an optional exact-subject allowlist in addition to JWT validation. Managed review keeps Google as the only provider-wide prefix and admits only the dedicated database reviewer's exact Auth0 subject, so enabling the connection does not admit every database identity. Production review credentials and the exact subject are manually provisioned, independent of operator accounts, and excluded from source control. Self-hosted relays may select provider prefixes, exact subjects, or both; the legacy singular prefix setting remains compatible.
 
 ### CLI user identity
 
@@ -75,7 +77,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
-- device IDs, ephemeral worker IDs, connection generations, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
+- device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs
 - request waiters
 - one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
@@ -84,12 +86,18 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Worker
 
 - exposed canonical root
-- path enforcement
-- local process execution
-- complete inherited local environment and developer credentials
+- selected `read-only`, `workspace`, or `system` profile
+- local permission enforcement independent of the relay
+- path enforcement and atomic structured file operations
+- local process execution only under `system`
+- complete inherited local environment, credentials, operating-system permissions, and network access only when a system command is started
 - temporary active command state
 
-One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path. Current workers report their CLI package version and negotiate bounded concurrent job delivery and structured repository reads. The relay exposes that version and the accepted capability flags only as active routing metadata, allowing clients to identify stale workers without receiving local paths. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
+One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path.
+
+Current workers report their CLI package version, selected access profile, and bounded capability flags. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false and command lifecycle operations when `runCommands` is false. The worker repeats the same checks locally. A profile-less legacy worker is conservatively classified as `system`, matching its historical command authority rather than presenting it as safer than it is.
+
+Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
 
 ## Request profiling
 
@@ -102,7 +110,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - worker long polls return within 20 seconds; when a concurrent lane becomes free, the worker supersedes a stale capacity poll with a one-shot refresh for only the newly available job types;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
-- `run_command` returns after the worker accepts the command and supplies the worker ID and command ID;
+- `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request;
 - current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
 - `get_command` may wait up to 15 seconds and can wake as soon as command output or status changes;

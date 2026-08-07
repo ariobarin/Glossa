@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { subjectUsesAllowedProvider } from "./auth.js";
+import { subjectIsAllowedIdentity } from "./auth.js";
 import { loadConfig } from "./config.js";
 
 function config(environment: NodeJS.ProcessEnv = {}) {
@@ -17,28 +17,95 @@ function config(environment: NodeJS.ProcessEnv = {}) {
 test("managed identity defaults to Google subjects", () => {
   const managed = config();
 
+  assert.deepEqual(managed.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES, [
+    "google-oauth2|",
+  ]);
+  assert.deepEqual(managed.GLOSSA_AUTH0_ALLOWED_SUBJECTS, []);
   assert.equal(
-    subjectUsesAllowedProvider(managed, "google-oauth2|123456789"),
+    subjectIsAllowedIdentity(managed, "google-oauth2|123456789"),
     true,
   );
-  assert.equal(subjectUsesAllowedProvider(managed, "github|123456789"), false);
+  assert.equal(subjectIsAllowedIdentity(managed, "auth0|reviewer"), false);
 });
 
-test("self-hosted relays can select another Auth0 provider", () => {
+test("managed review can allow one exact database identity alongside Google", () => {
+  const reviewReady = config({
+    GLOSSA_AUTH0_ALLOWED_SUBJECTS: "auth0|openai-reviewer",
+  });
+
+  assert.deepEqual(reviewReady.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES, [
+    "google-oauth2|",
+  ]);
+  assert.deepEqual(reviewReady.GLOSSA_AUTH0_ALLOWED_SUBJECTS, [
+    "auth0|openai-reviewer",
+  ]);
+  assert.equal(
+    subjectIsAllowedIdentity(reviewReady, "google-oauth2|123456789"),
+    true,
+  );
+  assert.equal(
+    subjectIsAllowedIdentity(reviewReady, "auth0|openai-reviewer"),
+    true,
+  );
+  assert.equal(subjectIsAllowedIdentity(reviewReady, "auth0|other-user"), false);
+  assert.equal(subjectIsAllowedIdentity(reviewReady, "github|123456789"), false);
+});
+
+test("self-hosted relays retain the legacy single-prefix setting", () => {
   const selfHosted = config({
     GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: "github|",
   });
 
-  assert.equal(subjectUsesAllowedProvider(selfHosted, "github|123456789"), true);
+  assert.deepEqual(selfHosted.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES, ["github|"]);
+  assert.equal(subjectIsAllowedIdentity(selfHosted, "github|123456789"), true);
   assert.equal(
-    subjectUsesAllowedProvider(selfHosted, "google-oauth2|123456789"),
+    subjectIsAllowedIdentity(selfHosted, "google-oauth2|123456789"),
     false,
   );
 });
 
-test("provider prefixes must include the Auth0 separator", () => {
+test("provider prefix configuration rejects ambiguous or unsafe values", () => {
   assert.throws(
-    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: "google-oauth2" }),
+    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "google-oauth2" }),
     /Auth0 subject prefix must end with \|/,
+  );
+  assert.throws(
+    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "google-oauth2|," }),
+  );
+  assert.throws(
+    () =>
+      config({
+        GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "google-oauth2|,google-oauth2|",
+      }),
+    /Auth0 subject prefixes must be unique/,
+  );
+  assert.throws(
+    () =>
+      config({
+        GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "google-oauth2|,auth0|",
+        GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: "google-oauth2|",
+      }),
+    /either plural or legacy singular Auth0 subject prefixes/,
+  );
+});
+
+test("exact identity configuration rejects malformed and duplicate subjects", () => {
+  assert.throws(
+    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECTS: "auth0|" }),
+    /provider prefix and user identifier/,
+  );
+  assert.throws(
+    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECTS: "auth0|reviewer," }),
+  );
+  assert.throws(
+    () =>
+      config({
+        GLOSSA_AUTH0_ALLOWED_SUBJECTS: "auth0|reviewer,auth0|reviewer",
+      }),
+    /Exact Auth0 subjects must be unique/,
+  );
+  assert.throws(
+    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECTS: "auth0|reviewer name" }),
+    /provider prefix and user identifier/,
   );
 });

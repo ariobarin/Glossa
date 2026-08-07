@@ -1,4 +1,9 @@
-import type { WorkerJob, WorkerResult } from "@glossa/protocol";
+import {
+  DEFAULT_WORKER_ACCESS_PROFILE,
+  type WorkerAccessProfile,
+  type WorkerJob,
+  type WorkerResult,
+} from "@glossa/protocol";
 import {
   accessTokenSubject,
   type FetchLike,
@@ -27,7 +32,12 @@ import {
 } from "./remote-worker.js";
 
 export type ManagedSessionEvent =
-  | { type: "session"; root: string; deviceName: string }
+  | {
+      type: "session";
+      root: string;
+      deviceName: string;
+      accessProfile: WorkerAccessProfile;
+    }
   | { type: "status"; status: RemoteWorkerStatus }
   | { type: "activity"; phase: "started"; job: WorkerJob }
   | { type: "activity"; phase: "returned"; job: WorkerJob; ok: boolean }
@@ -39,6 +49,7 @@ export interface ManagedSessionOptions {
   quiet?: boolean;
   handleProcessSignals?: boolean;
   credentials?: StoredCredentials;
+  accessProfile?: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
 }
@@ -186,6 +197,33 @@ function retryMessage(retryInMs: number): string {
   return `Retrying in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
 }
 
+export function accessProfileSummary(
+  accessProfile: WorkerAccessProfile,
+): string {
+  switch (accessProfile) {
+    case "read-only":
+      return "Read-only access: clients can inspect files but cannot modify them or run commands.";
+    case "workspace":
+      return "Workspace access: clients can inspect and modify files inside this root; commands are disabled.";
+    case "system":
+      return "System access: clients can modify files and run commands with this account's full environment, permissions, credentials, and network access.";
+  }
+}
+
+export function accessProfileNotice(
+  status: RemoteWorkerStatus,
+  requestedProfile: WorkerAccessProfile | undefined,
+): string | undefined {
+  if (
+    status.state !== "connected" ||
+    !requestedProfile ||
+    status.accessProfileAccepted !== false
+  ) {
+    return undefined;
+  }
+  return "The relay needs an update before this access profile can be shown to connected clients. Local profile enforcement remains active.";
+}
+
 export function workspaceLabelNotice(
   status: RemoteWorkerStatus,
   requestedLabel: string | undefined,
@@ -204,10 +242,12 @@ const legacyRelayNotice = "The relay needs an update before this computer can ex
 
 export function combinedCompatibilityNotice(
   labelNotice: string | undefined,
+  profileNotice: string | undefined,
   includeLegacyRelayNotice: boolean,
 ): string | undefined {
   const messages = [
     labelNotice,
+    profileNotice,
     includeLegacyRelayNotice ? legacyRelayNotice : undefined,
   ].filter((message): message is string => Boolean(message));
   return messages.length > 0 ? messages.join(" ") : undefined;
@@ -236,12 +276,14 @@ async function connectRemoteWorker(
   let connectionState: RemoteWorkerStatus["state"] | undefined;
   let connectedBefore = false;
   let labelNoticeShown = false;
+  let profileNoticeShown = false;
   let legacyNoticeShown = false;
   let connectHintTask: Promise<void> | undefined;
   const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
     ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
+    ...(options.accessProfile ? { accessProfile: options.accessProfile } : {}),
     ...(options.workspaceLabel
       ? { workspaceLabel: options.workspaceLabel }
       : {}),
@@ -260,13 +302,18 @@ async function connectRemoteWorker(
       const labelNotice = labelNoticeShown
         ? undefined
         : workspaceLabelNotice(status, options.workspaceLabel);
+      const profileNotice = profileNoticeShown
+        ? undefined
+        : accessProfileNotice(status, options.accessProfile);
       const includeLegacyNotice =
         status.state === "connected" && status.legacyRelay && !legacyNoticeShown;
       const compatibilityNotice = combinedCompatibilityNotice(
         labelNotice,
+        profileNotice,
         includeLegacyNotice,
       );
       if (labelNotice) labelNoticeShown = true;
+      if (profileNotice) profileNoticeShown = true;
       if (includeLegacyNotice) legacyNoticeShown = true;
       if (compatibilityNotice) {
         report(
@@ -333,25 +380,32 @@ export async function runManagedSession(
   }
 
   try {
+    const accessProfile =
+      options.accessProfile ?? DEFAULT_WORKER_ACCESS_PROFILE;
+    const sessionOptions: ManagedSessionOptions = { ...options, accessProfile };
     let device = await deviceForSession(
       endpoints,
       options.credentials ? { credentials: options.credentials } : {},
       controller.signal,
     );
     controller.signal.throwIfAborted();
-    worker = await LocalWorker.create(root);
+    worker = await LocalWorker.create(root, accessProfile);
     controller.signal.throwIfAborted();
 
     report(
       options,
-      { type: "session", root: worker.policy.root, deviceName: device.deviceName },
+      {
+        type: "session",
+        root: worker.policy.root,
+        deviceName: device.deviceName,
+        accessProfile,
+      },
       `Glossa worker root: ${worker.policy.root}`,
     );
     if (!options.quiet) {
       console.error(`Glossa device: ${device.deviceName}`);
-      console.error(
-        "Files may be modified and commands have the full environment and permissions of this account. Press Ctrl+C to disconnect.",
-      );
+      console.error(accessProfileSummary(accessProfile));
+      console.error("Press Ctrl+C to disconnect.");
     }
 
     let recoveredRejectedDevice = false;
@@ -362,7 +416,7 @@ export async function runManagedSession(
           endpoints,
           device,
           worker,
-          options,
+          sessionOptions,
           controller.signal,
           () => {
             connected = true;

@@ -1,14 +1,16 @@
 # Terms of use
 
-These terms govern use of the managed Glossa relay, website, plugin, and published command-line client.
+These terms govern use of the managed Glossa relay, website, app, and published command-line client.
 
-*Last updated July 15, 2026*
+*Last updated August 7, 2026*
 
 ## Service
 
-Glossa connects an authenticated MCP client to one local coding workspace that the user explicitly exposes. Glossa is an execution bridge. It does not provide a model, agent loop, planner, conversation store, or command sandbox.
+Glossa connects an authenticated MCP client to a local development workspace that the user explicitly exposes. Glossa is an execution bridge. It does not provide a model, agent loop, planner, conversation store, or command sandbox.
 
-> **Command authority:** Starting the Glossa worker authorizes connected clients to modify files within the exposed root and run commands with the full permissions and environment of the operating-system account that launched it. Commands can access networks, developer credentials, and files outside the exposed file root.
+The user selects an access profile for each worker session. `read-only` permits structured file inspection, `workspace` permits structured reads and writes inside the exposed root, and `system` additionally permits local commands.
+
+> **System-command authority:** `glossa --access system` authorizes connected clients to run commands with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands can reach files outside the exposed file root and may affect local or external systems.
 
 ## Eligibility and authority
 
@@ -20,8 +22,9 @@ You may use Glossa only for lawful activity on systems and data you are authoriz
 
 ## Your responsibilities
 
-- Expose only a narrow workspace that is appropriate for the requested task.
-- Review the exposed root and understand the documented command authority before leaving a worker connected.
+- Expose only a narrow workspace appropriate for the requested task.
+- Select the least-privileged access profile that can complete the task.
+- Understand system-command authority before enabling it.
 - Protect your computer, Glossa credentials, OAuth account, and connected MCP clients.
 - Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
 - Stop the worker immediately if activity is unexpected.
@@ -37,7 +40,7 @@ Glossa depends on third-party services including ChatGPT or another MCP client, 
 
 ## Availability and changes
 
-Glossa is currently provided as an open beta. Features may change, fail, or be withdrawn. The relay uses process-local routing, so active jobs may be lost during a restart. Glossa may limit or disable access to protect users, the service, or third parties.
+The relay uses process-local routing, so in-flight jobs may be interrupted by a service restart and are not a durable job queue. Glossa may change, limit, suspend, or discontinue service to protect users, the service, or third parties, comply with law, or maintain operations.
 
 ## No warranties
 
@@ -53,4 +56,4 @@ You may stop using Glossa at any time. Glossa may suspend or terminate access fo
 
 ## Changes and contact
 
-These terms may change as the service develops. Updated terms will be posted here with a new revision date. Questions can be submitted through the [support page](/support).
+Updated terms will be posted here with a new revision date. Questions can be submitted through the [support page](/support).

@@ -4,9 +4,11 @@ import {
   DEFAULT_COMMAND_FAST_WAIT_MS,
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_STRUCTURED_READ_TIMEOUT_MS,
+  type WorkerAccessProfile,
   type WorkerJob,
 } from "@glossa/protocol";
 import {
+  accessProfileSummary,
   statusMessage,
   type ManagedSessionEvent,
 } from "./worker/managed-session.js";
@@ -50,6 +52,7 @@ export type HudExitAction = "quit" | "logout";
 
 export interface HudState {
   workspace: string;
+  accessProfile?: WorkerAccessProfile;
   deviceName?: string;
   connection:
     | "starting"
@@ -348,7 +351,12 @@ export function applyHudEvent(
   event: ManagedSessionEvent,
 ): HudState {
   if (event.type === "session") {
-    return { ...state, workspace: event.root, deviceName: event.deviceName };
+    return {
+      ...state,
+      workspace: event.root,
+      deviceName: event.deviceName,
+      accessProfile: event.accessProfile,
+    };
   }
   if (event.type === "status") {
     if (event.status.state === "retrying") {
@@ -458,6 +466,17 @@ function renderSession(
     sectionTitle("Workspace", color),
     style(color, PALETTE.ink, truncate(state.workspace, usable)),
   ];
+  if (state.accessProfile) {
+    lines.push(
+      "",
+      sectionTitle("Access", color),
+      style(
+        color,
+        PALETTE.ink,
+        truncate(accessProfileSummary(state.accessProfile), usable),
+      ),
+    );
+  }
   if (state.deviceName) {
     lines.push(
       "",

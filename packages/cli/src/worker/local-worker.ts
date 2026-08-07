@@ -1,4 +1,10 @@
-import type { WorkerJob, WorkerResult } from "@glossa/protocol";
+import {
+  DEFAULT_WORKER_ACCESS_PROFILE,
+  workerPermissions,
+  type WorkerAccessProfile,
+  type WorkerJob,
+  type WorkerResult,
+} from "@glossa/protocol";
 import { CommandService } from "./command-service.js";
 import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
@@ -6,14 +12,19 @@ import { PathPolicy } from "./path-policy.js";
 
 export class LocalWorker {
   private constructor(
+    readonly accessProfile: WorkerAccessProfile,
     readonly policy: PathPolicy,
     readonly files: FileService,
     readonly commands: CommandService,
   ) {}
 
-  static async create(root: string): Promise<LocalWorker> {
+  static async create(
+    root: string,
+    accessProfile: WorkerAccessProfile = DEFAULT_WORKER_ACCESS_PROFILE,
+  ): Promise<LocalWorker> {
     const policy = await PathPolicy.create(root);
     return new LocalWorker(
+      accessProfile,
       policy,
       new FileService(policy),
       new CommandService(policy),
@@ -22,6 +33,28 @@ export class LocalWorker {
 
   async handle(job: WorkerJob): Promise<WorkerResult> {
     try {
+      const permissions = workerPermissions(this.accessProfile);
+      if (
+        (job.type === "write_file" || job.type === "edit_file") &&
+        !permissions.writeFiles
+      ) {
+        throw new WorkerError(
+          "write_access_disabled",
+          "This worker was started without file-write access.",
+        );
+      }
+      if (
+        (job.type === "run_command" ||
+          job.type === "get_command" ||
+          job.type === "cancel_command") &&
+        !permissions.runCommands
+      ) {
+        throw new WorkerError(
+          "command_access_disabled",
+          "This worker was started without system-command access.",
+        );
+      }
+
       let value: unknown;
       switch (job.type) {
         case "read_file":

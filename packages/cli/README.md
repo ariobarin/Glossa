@@ -1,16 +1,12 @@
 # @ariobarin/glossa
 
-This package contains the npm distribution of the `glossa` executable. Node.js
-22.9 or newer is required for this installation method.
-
-The recommended open-beta install on Windows, macOS, and Linux uses npm:
+The `glossa` CLI connects one explicitly exposed local development workspace to the Glossa MCP relay through an outbound authenticated worker. Node.js 22.9 or newer is required for the npm installation.
 
 ```shell
-npm install --global @ariobarin/glossa@beta
+npm install --global @ariobarin/glossa
 ```
 
-Glossa also provides a self-contained direct installer that does not require
-Node.js or npm.
+A self-contained installer is also available.
 
 Windows:
 
@@ -24,43 +20,36 @@ macOS or Linux:
 curl -fsSL https://glossa.sh/install.sh | sh
 ```
 
-Open a terminal in the directory you want to expose, then run:
+The direct installers verify the native release checksum before installing it.
+
+## Start a worker
+
+The default `workspace` profile permits guarded reads and writes inside the selected root and disables commands:
 
 ```shell
 glossa
 ```
 
-The hosted commands run the tracked scripts in `site`. They verify native
-release checksums before installing. Glossa checks for updates at most once per
-day before connecting a workspace and prints a notice by default.
+Use the least authority required by the task:
 
-After disconnecting every running Glossa workspace, run `glossa update --check`
-to check or `glossa update` to install. Use `glossa update --policy auto` to
-install an available update before the next workspace connects, or
-`glossa update --policy off` to disable automatic checks. Open-beta installs use
-the `beta` channel; `glossa update --channel stable` selects stable releases once
-one is published.
+```shell
+glossa --access read-only
+glossa --access workspace
+glossa --access system
+```
 
-Glossa opens Google sign-in automatically when needed using OAuth Device Authorization Flow. Public client and resource identifiers are built in, so testers do not configure OAuth values. Use the same Google account when authorizing Glossa in ChatGPT.
+- `read-only` permits structured file inspection only.
+- `workspace` permits structured file inspection and guarded edits inside the root.
+- `system` additionally permits commands with the complete environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands are not confined to the root.
 
-OAuth and device credentials use the operating-system credential store. If it is unavailable, Glossa warns before using a restricted credential file.
+Pass a directory to expose another project and use `--label <name>` when several online workspaces need a non-sensitive identifier. The terminal interface displays the selected access profile, workspace, device, connection state, and compact tool activity. Press `q` or Ctrl+C to disconnect.
 
-Glossa signs in automatically and exposes the current directory. Pass a directory
-to expose a different workspace. The responsive terminal interface shows the
-workspace, device, and current connection or tool status.
+Glossa signs in automatically when needed using OAuth Device Authorization Flow. Public client and resource identifiers are built in. Use the same Glossa account when authorizing the app in ChatGPT. OAuth and device credentials use the operating-system credential store; Glossa warns before using a restricted credential file fallback.
 
-Press `d` for compact tool history, `s` for account and device status, or `?`
-for help. The activity view shows each local tool name and a compact form of its
-input. Press `q` or Ctrl+C to disconnect.
+Glossa checks the stable release channel at most once per day before connecting. After disconnecting running workspaces, use `glossa update --check`, `glossa update`, `glossa update --policy auto`, or `glossa update --policy off` as needed.
 
-Connected clients can modify files inside the exposed workspace and run commands
-with the full environment and permissions of the operating-system account that
-launched Glossa.
-
-Use `glossa status` to show the signed-in account, relay, devices, and active
-workspaces. Use `glossa devices revoke <id>` to revoke a device. Use
-`glossa logout` to remove local OAuth credentials and open browser sign-out.
+Use `glossa status` to show the account, relay, enrolled devices, and active workspaces. Use `glossa devices revoke <id>` to revoke a device and `glossa logout` to remove local OAuth credentials and open browser sign-out.
 
 The managed endpoint defaults to `https://mcp.glossa.sh`. Development deployments may override `GLOSSA_RELAY_ORIGIN` and `GLOSSA_WORKER_ORIGIN`. Plain HTTP is accepted only for loopback relay origins and loopback or private IPv4 worker origins.
 
-Other running Glossa sessions remain connected until stopped or revoked.
+See the [quickstart](https://glossa.sh/docs/quickstart) and [security model](https://glossa.sh/docs/security).

@@ -35,6 +35,35 @@ export const workspaceLabelSchema = z
     "Workspace label contains control characters",
   );
 
+export const workerAccessProfileSchema = z.enum([
+  "read-only",
+  "workspace",
+  "system",
+]);
+
+export type WorkerAccessProfile = z.infer<typeof workerAccessProfileSchema>;
+
+export const DEFAULT_WORKER_ACCESS_PROFILE: WorkerAccessProfile = "workspace";
+
+export interface WorkerPermissions {
+  readFiles: true;
+  writeFiles: boolean;
+  runCommands: boolean;
+}
+
+export function workerPermissions(
+  accessProfile: WorkerAccessProfile,
+): WorkerPermissions {
+  switch (accessProfile) {
+    case "read-only":
+      return { readFiles: true, writeFiles: false, runCommands: false };
+    case "workspace":
+      return { readFiles: true, writeFiles: true, runCommands: false };
+    case "system":
+      return { readFiles: true, writeFiles: true, runCommands: true };
+  }
+}
+
 export const relativePathSchema = z
   .string()
   .max(4096)

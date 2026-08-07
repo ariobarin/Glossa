@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible Glossa setup or product defect without sensitive data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, tokens, private source code, personal data, local absolute paths, or vulnerability details. Use the private security-reporting link for security issues.
+  - type: input
+    id: version
+    attributes:
+      label: Glossa version
+      description: Run `glossa --version` and provide only the version number.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Managed relay or website
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Worker access profile
+      description: Select the profile shown in the local Glossa terminal, when applicable.
+      options:
+        - read-only
+        - workspace
+        - system
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use a disposable project or synthetic fixture and redact identifiers and paths.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include only sanitized messages. Do not paste command output unless it is demonstrably non-sensitive.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed credentials, tokens, private code, personal data, local absolute paths, and other sensitive information.
+          required: true
+        - label: This is not a security vulnerability; I will use private vulnerability reporting for security issues.
+          required: true
