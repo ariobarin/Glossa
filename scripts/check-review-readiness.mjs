@@ -189,7 +189,7 @@ await requiredText("site/docs/quickstart.md", [
   "Review requested writes and commands carefully",
 ]);
 await requiredText("site/docs/why.md", [
-  "one project folder on your computer",
+  "a folder on your computer",
   "General questions, writing, and web research stay in ChatGPT",
 ]);
 await requiredText("site/pages/security.md", [
