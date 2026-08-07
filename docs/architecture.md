@@ -114,7 +114,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
 - current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
-- `get_command` may wait up to 15 seconds and can wake as soon as command output or status changes;
+- `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;
 - `cancel_command` uses a separate bounded request;
 - structured repository reads use a worker-local deadline of at most half the relay request window and 8 seconds; after expiry, the read lane stays occupied until the active filesystem operation settles and any late directory handle is closed;
 - a result arriving after caller timeout receives a successful `accepted: false` acknowledgement and is discarded without forcing old or current workers to reconnect;

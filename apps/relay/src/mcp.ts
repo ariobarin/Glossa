@@ -643,6 +643,20 @@ function structuredReadTimeoutMs(config: RelayConfig): number {
   );
 }
 
+const COMMAND_STATUS_RELAY_HEADROOM_MS = 5_000;
+
+function commandStatusWaitMs(
+  config: RelayConfig,
+  requestedWaitMs: number | undefined,
+): number | undefined {
+  if (requestedWaitMs === undefined) return undefined;
+  const workerWaitBudget = Math.max(
+    0,
+    config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS - COMMAND_STATUS_RELAY_HEADROOM_MS,
+  );
+  return Math.min(requestedWaitMs, workerWaitBudget);
+}
+
 async function executeJob(
   state: RouterState,
   config: RelayConfig,
@@ -1033,6 +1047,7 @@ function registerTools(
         );
       }
       try {
+        const effectiveWaitMs = commandStatusWaitMs(config, waitMs);
         const result = await executeJob(
           state,
           config,
@@ -1042,7 +1057,7 @@ function registerTools(
             type: "get_command",
             requestId: randomUUID(),
             commandId,
-            ...(waitMs === undefined ? {} : { waitMs }),
+            ...(effectiveWaitMs === undefined ? {} : { waitMs: effectiveWaitMs }),
             ...(afterSequence === undefined ? {} : { afterSequence }),
           },
         );

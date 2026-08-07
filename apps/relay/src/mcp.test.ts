@@ -685,6 +685,66 @@ test("does not mirror large structured results into text content", async (contex
   assert.ok(Buffer.byteLength(text, "utf8") < 256);
 });
 
+test("reserves relay headroom for maximum command status waits", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000060";
+  const workerId = "00000000-0000-4000-8000-000000000061";
+  const commandId = "00000000-0000-4000-8000-000000000062";
+  const session = state.register(accountId, deviceId, "Test PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+    accessProfile: "system",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-command-wait-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  for (const [requestedWaitMs, expectedWaitMs] of [
+    [15_000, 13_000],
+    [12_000, 12_000],
+  ] as const) {
+    const call = client.callTool({
+      name: "get_command",
+      arguments: {
+        deviceId: workerId,
+        commandId,
+        waitMs: requestedWaitMs,
+        afterSequence: 0,
+      },
+    });
+    const job = await state.poll(
+      accountId,
+      deviceId,
+      workerId,
+      session.generation,
+      100,
+    );
+    assert.equal(job?.type, "get_command");
+    assert.ok(job);
+    assert.equal(job.waitMs, expectedWaitMs);
+    assert.equal(
+      state.complete(accountId, workerId, {
+        requestId: job.requestId,
+        ok: true,
+        value: { commandId, status: "running", sequence: 0 },
+      }),
+      true,
+    );
+    const result = await call;
+    assert.equal(result.isError, undefined);
+    assert.equal(
+      (result.structuredContent as { status?: unknown } | undefined)?.status,
+      "running",
+    );
+  }
+});
+
 test("routes cached command schemas without deviceId", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000010";
