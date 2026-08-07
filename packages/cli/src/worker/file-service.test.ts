@@ -46,6 +46,75 @@ test("blocks linked directory traversal", async (context) => {
   });
 });
 
+test("creates, moves, and deletes workspace paths without commands", async (context) => {
+  const root = await temporaryDirectory(context);
+  const files = new FileService(await PathPolicy.create(root));
+
+  assert.deepEqual(await files.makeDirectory("nested/deep", true), {
+    created: true,
+  });
+  assert.deepEqual(await files.makeDirectory("nested/deep", true), {
+    created: false,
+  });
+  await files.writeText("nested/deep/note.txt", "hello");
+  assert.deepEqual(
+    await files.movePath("nested/deep/note.txt", "nested/note.txt"),
+    { movedType: "file" },
+  );
+  await assert.rejects(files.readText("nested/deep/note.txt"), {
+    code: "path_not_found",
+  });
+  assert.equal((await files.readText("nested/note.txt")).content, "hello");
+
+  assert.deepEqual(await files.deletePath("nested/deep"), {
+    deletedType: "directory",
+  });
+  await files.makeDirectory("tree/child", true);
+  await files.writeText("tree/child/file.txt", "content");
+  await assert.rejects(files.deletePath("tree"), {
+    code: "directory_not_empty",
+  });
+  assert.deepEqual(await files.deletePath("tree", true), {
+    deletedType: "directory",
+  });
+  await assert.rejects(files.readText("tree/child/file.txt"), {
+    code: "path_not_found",
+  });
+});
+
+test("guards structured path lifecycle boundaries", async (context) => {
+  const root = await temporaryDirectory(context);
+  const files = new FileService(await PathPolicy.create(root));
+
+  await files.makeDirectory("source/child", true);
+  await files.writeText("source/child/file.txt", "content");
+  await assert.rejects(files.movePath("source", "source/child/moved"), {
+    code: "invalid_destination",
+  });
+  assert.deepEqual(await files.movePath("source", "renamed"), {
+    movedType: "directory",
+  });
+  assert.equal(
+    (await files.readText("renamed/child/file.txt")).content,
+    "content",
+  );
+
+  await files.writeText("occupied.txt", "occupied");
+  await files.writeText("source.txt", "source");
+  await assert.rejects(files.movePath("source.txt", "occupied.txt"), {
+    code: "destination_exists",
+  });
+  await assert.rejects(files.deletePath("."), {
+    code: "root_operation_refused",
+  });
+  await assert.rejects(files.movePath(".", "moved-root"), {
+    code: "root_operation_refused",
+  });
+  await assert.rejects(files.makeDirectory("missing/child"), {
+    code: "parent_not_found",
+  });
+});
+
 test("applies exact guarded edits and returns a unified diff", async (context) => {
   const root = await temporaryDirectory(context);
   const files = new FileService(await PathPolicy.create(root));

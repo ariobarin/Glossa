@@ -117,6 +117,15 @@ function activitySafeJob(job: WorkerJob): WorkerJob {
           newText: "",
         }],
       };
+    case "make_directory":
+    case "delete_path":
+      return { ...job, path: "[restricted input blocked]" };
+    case "move_path":
+      return {
+        ...job,
+        source: "[restricted input blocked]",
+        destination: "[restricted input blocked]",
+      };
     case "run_command":
       return {
         type: "run_command",

@@ -88,7 +88,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - exposed canonical root
 - selected `read-only`, `workspace`, or `system` profile
 - local permission enforcement independent of the relay
-- path enforcement and atomic structured file operations
+- path enforcement and atomic structured file operations, including guarded directory creation, deletion, and moves without command authority
 - local process execution only under `system`
 - complete inherited local environment, credentials, operating-system permissions, and network access only when a system command is started
 - high-confidence authentication-secret input and result checks, including bounded per-stream command scan tails
@@ -98,7 +98,7 @@ One enrolled device may run concurrent workers for different roots. Before login
 
 Current workers report their CLI package version, selected access profile, and bounded capability flags. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false, command lifecycle operations when `runCommands` is false, and recognizable authentication-secret material in mutation or command inputs. The worker repeats the permission and restricted-input checks locally and suppresses recognizable credential material in content-bearing results. A profile-less legacy worker is conservatively classified as `system`, matching its historical command authority rather than presenting it as safer than it is.
 
-Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
+Current workers also negotiate bounded concurrent job delivery, structured repository reads, and structured path mutations. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane, while file writes, edits, directory creation, deletion, moves, and command starts share the serialized mutation lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read or structured-mutation jobs they did not advertise.
 
 ## Request profiling
 

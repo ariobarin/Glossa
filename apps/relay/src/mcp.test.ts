@@ -12,11 +12,14 @@ import { RouterState } from "./router-state.js";
 
 const expectedTools = [
   "cancel_command",
+  "delete_path",
   "edit_file",
   "get_command",
   "list_devices",
   "list_files",
   "logout",
+  "make_directory",
+  "move_path",
   "read_file",
   "read_file_range",
   "run_command",
@@ -25,11 +28,14 @@ const expectedTools = [
 ];
 const expectedToolTitles: Record<string, string> = {
   cancel_command: "Stop Workspace Command",
+  delete_path: "Delete Workspace Path",
   edit_file: "Edit Workspace File",
   get_command: "Check Workspace Command",
   list_devices: "Find Glossa Workspaces",
   list_files: "List Workspace Files",
   logout: "Get Glossa Sign-Out Steps",
+  make_directory: "Create Workspace Directory",
+  move_path: "Move Workspace Path",
   read_file: "Read Workspace File",
   read_file_range: "Read Workspace File Range",
   run_command: "Run Workspace Command",
@@ -92,7 +98,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "1.0.0");
+  assert.equal(MCP_SERVER_VERSION, "1.1.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
@@ -317,6 +323,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         commandProgress: false,
         concurrentJobs: false,
         structuredReads: false,
+        structuredMutations: false,
       },
     }],
     availability: "online",
@@ -376,6 +383,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
       accessProfile: "workspace",
       workerVersion: "1.0.0",
     },
@@ -418,6 +426,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         commandProgress: true,
         concurrentJobs: true,
         structuredReads: true,
+        structuredMutations: true,
       },
     }],
   );
@@ -459,6 +468,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
       accessProfile: "read-only",
     },
   );
@@ -471,6 +481,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
       accessProfile: "workspace",
     },
   );
@@ -495,6 +506,16 @@ test("returns actionable permission errors without dispatching forbidden work", 
   assert.match(JSON.stringify(writeResult.content), /write_access_disabled/);
   assert.match(JSON.stringify(writeResult.content), /Do not retry/);
   assert.match(JSON.stringify(writeResult.content), /workspace access/);
+
+  const deleteResult = await client.callTool({
+    name: "delete_path",
+    arguments: {
+      deviceId: readOnlyWorkerId,
+      path: "README.md",
+    },
+  });
+  assert.equal(deleteResult.isError, true);
+  assert.match(JSON.stringify(deleteResult.content), /write_access_disabled/);
 
   const commandResult = await client.callTool({
     name: "run_command",
@@ -562,6 +583,131 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   assert.match(serialized, /windows_command_shim/);
   assert.match(serialized, /\.cmd and \.bat.*shellCommand.*explicit shim filename/);
   assert.doesNotMatch(serialized, /private/);
+});
+
+test("routes structured path lifecycle jobs and gates legacy workers", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000070";
+  const workerId = "00000000-0000-4000-8000-000000000071";
+  const legacyDeviceId = "00000000-0000-4000-8000-000000000072";
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000073";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+    structuredMutations: true,
+    accessProfile: "workspace",
+  });
+  const legacySession = state.register(
+    accountId,
+    legacyDeviceId,
+    "Legacy PC",
+    legacyWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      accessProfile: "workspace",
+    },
+  );
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-lifecycle-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const makeCall = client.callTool({
+    name: "make_directory",
+    arguments: { deviceId: workerId, path: "build/cache", recursive: true },
+  });
+  const makeJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(makeJob?.type, "make_directory");
+  assert.ok(makeJob && makeJob.type === "make_directory");
+  assert.equal(makeJob.path, "build/cache");
+  assert.equal(makeJob.recursive, true);
+  state.complete(accountId, workerId, {
+    requestId: makeJob.requestId,
+    ok: true,
+    value: { created: true },
+  });
+  assert.deepEqual((await makeCall).structuredContent, { created: true });
+
+  const moveCall = client.callTool({
+    name: "move_path",
+    arguments: {
+      deviceId: workerId,
+      source: "build/cache",
+      destination: "build/archive",
+    },
+  });
+  const moveJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(moveJob?.type, "move_path");
+  assert.ok(moveJob && moveJob.type === "move_path");
+  assert.equal(moveJob.source, "build/cache");
+  assert.equal(moveJob.destination, "build/archive");
+  state.complete(accountId, workerId, {
+    requestId: moveJob.requestId,
+    ok: true,
+    value: { movedType: "directory" },
+  });
+  assert.deepEqual((await moveCall).structuredContent, {
+    movedType: "directory",
+  });
+
+  const deleteCall = client.callTool({
+    name: "delete_path",
+    arguments: { deviceId: workerId, path: "build/archive", recursive: true },
+  });
+  const deleteJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(deleteJob?.type, "delete_path");
+  assert.ok(deleteJob && deleteJob.type === "delete_path");
+  assert.equal(deleteJob.recursive, true);
+  state.complete(accountId, workerId, {
+    requestId: deleteJob.requestId,
+    ok: true,
+    value: { deletedType: "directory" },
+  });
+  assert.deepEqual((await deleteCall).structuredContent, {
+    deletedType: "directory",
+  });
+
+  const unavailable = await client.callTool({
+    name: "make_directory",
+    arguments: { deviceId: legacyWorkerId, path: "unsupported" },
+  });
+  assert.equal(unavailable.isError, true);
+  assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
+  assert.equal(
+    await state.poll(
+      accountId,
+      legacyDeviceId,
+      legacyWorkerId,
+      legacySession.generation,
+      1,
+    ),
+    null,
+  );
 });
 
 test("blocks recognizable authentication data without dispatch or disclosure", async (context) => {

@@ -270,6 +270,44 @@ export const editFileJobSchema = editFileRequestSchema.safeExtend({
   requestId: z.string().uuid(),
 });
 
+export const makeDirectoryRequestSchema = z.object({
+  path: relativePathSchema,
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to create missing parent directories. Defaults to false."),
+}).strict();
+
+export const makeDirectoryJobSchema = makeDirectoryRequestSchema.extend({
+  type: z.literal("make_directory"),
+  requestId: z.string().uuid(),
+});
+
+export const deletePathRequestSchema = z.object({
+  path: relativePathSchema,
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to delete a non-empty directory tree. Defaults to false."),
+}).strict();
+
+export const deletePathJobSchema = deletePathRequestSchema.extend({
+  type: z.literal("delete_path"),
+  requestId: z.string().uuid(),
+});
+
+export const movePathRequestSchema = z.object({
+  source: relativePathSchema.describe("Existing file or directory to move."),
+  destination: relativePathSchema.describe(
+    "New path inside the exposed root. The destination must not already exist.",
+  ),
+}).strict();
+
+export const movePathJobSchema = movePathRequestSchema.extend({
+  type: z.literal("move_path"),
+  requestId: z.string().uuid(),
+});
+
 function requireOneCommand(
   value: {
     argv?: string[] | undefined;
@@ -379,6 +417,9 @@ export const workerJobSchema = z.discriminatedUnion("type", [
   readFileRangeJobSchema,
   writeFileJobSchema,
   editFileJobSchema,
+  makeDirectoryJobSchema,
+  deletePathJobSchema,
+  movePathJobSchema,
   runCommandJobSchema,
   getCommandJobSchema,
   cancelCommandJobSchema,
