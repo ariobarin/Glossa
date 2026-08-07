@@ -1,8 +1,8 @@
 # Connect ChatGPT to a local workspace
 
-Install Glossa, expose one folder with an explicit permission boundary, and confirm the connection.
+Install Glossa, start it in a project folder, and add the MCP app to ChatGPT.
 
-> The default profile can edit files inside the selected root but cannot run commands. `system` access is a separate elevation that inherits the worker account's environment, credentials, filesystem permissions, and network access. Review the [security model](/docs/security) before enabling it.
+> **Glossa starts in `workspace` mode.** ChatGPT can read and edit files in the selected folder, but it cannot run commands. `system` mode is explicit, is not sandboxed, and gives commands the full authority of the account running Glossa. [Review the security boundary](/security) before enabling it.
 
 ## 1. Install Glossa
 
@@ -14,27 +14,20 @@ npm install --global @ariobarin/glossa
 
 ## 2. Start a workspace
 
-Open a terminal in the folder ChatGPT should use, then choose the least authority the task needs.
-
-Guarded file reads and writes, with commands disabled:
+Open a terminal in the project folder and run:
 
 ```shell
 glossa
 ```
 
-Inspection only:
+Other access levels:
 
-```shell
-glossa --access read-only
-```
+- Inspection only: `glossa --access read-only`
+- Local tests, builds, Git, or other project commands: `glossa --access system`
 
-Local builds, tests, Git, or other project commands:
+Sign in if prompted and keep the terminal open. The Glossa screen shows the selected project and access profile. Press Ctrl+C or `q` to disconnect.
 
-```shell
-glossa --access system
-```
-
-Sign in if prompted and keep the terminal open. The Glossa screen shows the selected profile and workspace. Press Ctrl+C or `q` to disconnect.
+Expose only a project you trust. Keep credentials and regulated or sensitive data out of the selected folder.
 
 ## 3. Add Glossa to ChatGPT
 
@@ -48,7 +41,7 @@ https://mcp.glossa.sh/mcp
 3. Choose **OAuth**, then **Scan Tools**.
 4. Complete authorization, wait for the tool scan, and choose **Create**. Use the same Glossa account in ChatGPT and the CLI.
 
-Your ChatGPT workspace controls whether custom apps and write actions are available and which actions are enabled.
+Your ChatGPT workspace controls which app actions are available. Review requested writes and commands carefully.
 
 ## 4. Test the connection
 
@@ -58,8 +51,8 @@ Select Glossa in a new chat and send:
 Use Glossa to list my connected workspaces and report each access profile.
 ```
 
-Confirm the returned workspace reports the profile shown in the local terminal. For a default session, `writeFiles` is `true` and `runCommands` is `false`.
+A default session should report `workspace` access: file edits enabled and commands disabled, matching the local terminal.
 
-A request that only inspects the project should work with `read-only`. A request that edits files needs `workspace` or `system`. A request that runs a local command needs `system`; restart the worker with broader access only when the task genuinely requires it.
+Need a different access level? Stop the worker and restart it with `--access read-only` or `--access system` only when the task requires it.
 
 Having trouble? Visit [support](/support).

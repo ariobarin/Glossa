@@ -146,6 +146,9 @@ requireAll(quickstart, [
   'https://mcp.glossa.sh/mcp',
   '<strong>Scan Tools</strong>',
   'Use Glossa to list my connected workspaces and report each access profile.',
+  'is not sandboxed',
+  'href="/security"',
+  'Review requested writes and commands carefully.',
   "data-copy-target=",
 ], "site/docs/quickstart.html");
 for (const unnecessary of [

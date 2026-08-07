@@ -1,120 +1,76 @@
 # Glossa
 
-Glossa is a user-controlled bridge that lets ChatGPT work in a local development workspace with the tools already installed on that computer.
+Glossa lets ChatGPT work with one project on your computer, using the files and development tools already there.
 
-```text
-ChatGPT
-  -> OAuth-protected public MCP relay
-  -> authenticated outbound worker connection
-  -> one explicitly exposed local directory
-```
+Use it when a task depends on local state such as an existing checkout, uncommitted changes, build tools, test databases, emulators, or generated files. Glossa is not another model or coding agent. ChatGPT handles the conversation and reasoning; Glossa provides controlled access to the local project.
 
-Glossa is not another model, coding agent, planner, conversation store, or command sandbox. ChatGPT owns the conversation and reasoning. The local Glossa worker enforces the selected workspace root and access profile, performs file operations, and—only when explicitly enabled—runs commands with the worker account's operating-system authority.
+## Quick start
 
-## Why Glossa exists
-
-A remote ChatGPT app cannot directly see a project on a user's computer or use that computer's existing checkout, uncommitted changes, build tools, test databases, emulators, and development environment. Glossa supplies that missing boundary through an outbound worker; it does not attempt to replace ChatGPT's built-in writing, research, browsing, or coding features.
-
-Use Glossa when a task genuinely depends on the local workspace or local toolchain. Do not use it for general questions, web research, or work that does not require the exposed project.
-
-## Access profiles
-
-Every worker starts with one visible, locally enforced profile. The relay enforces the same permissions before it queues work.
-
-| Profile | File reads | File writes inside the root | Local commands |
-| --- | --- | --- | --- |
-| `read-only` | Yes | No | No |
-| `workspace` (default) | Yes | Yes | No |
-| `system` | Yes | Yes | Yes |
-
-`system` is an explicit elevation. Commands inherit the complete environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands are not confined to the exposed file root. Use a dedicated account, container, or virtual machine when stronger isolation is required.
-
-## Install
-
-The stable npm package supports Windows, macOS, and Linux and requires Node.js 22.9 or newer:
+Install the CLI with Node.js 22.9 or newer:
 
 ```shell
 npm install --global @ariobarin/glossa
 ```
 
-A self-contained installer is also available.
-
-Windows:
-
-```powershell
-irm https://glossa.sh/install | iex
-```
-
-macOS or Linux:
-
-```shell
-curl -fsSL https://glossa.sh/install.sh | sh
-```
-
-The direct installers select the native release for the computer and verify its SHA-256 checksum before installing it.
-
-## Start a workspace
-
-Open a terminal in the directory to expose. The default permits guarded file edits but no commands:
+Open a terminal in the project and start Glossa:
 
 ```shell
 glossa
 ```
 
-For inspection only:
-
-```shell
-glossa --access read-only
-```
-
-Enable commands only for a task that requires the local toolchain:
-
-```shell
-glossa --access system
-```
-
-Pass a directory to expose a different workspace. When several workspaces are online, add a non-sensitive label so clients can distinguish them:
-
-```shell
-glossa --label frontend C:\path\to\project
-```
-
-Glossa never derives that label from the local path. One process may expose a canonical directory at a time for the same local account. The terminal interface displays the selected profile, workspace, device, connection state, and compact activity history. Press `q` or Ctrl+C to disconnect.
-
-## Connect ChatGPT
-
-The managed MCP endpoint is:
+Then add this MCP server to ChatGPT using OAuth:
 
 ```text
 https://mcp.glossa.sh/mcp
 ```
 
-Until directory publication is complete, an authorized ChatGPT workspace administrator or developer can connect it as a custom MCP app in Developer Mode. Follow the [quickstart](https://glossa.sh/docs/quickstart) for the current flow and use the same Glossa account in ChatGPT and the CLI.
+Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete connection flow. Self-contained installers are covered in the [operations guide](docs/operations.md).
 
-## Updates and account controls
+## Choose access
 
-Glossa checks for stable updates at most once per day before connecting and prints a notice by default. After disconnecting running workspaces:
+| Profile | Read files | Edit files inside the project | Run local commands |
+| --- | --- | --- | --- |
+| `read-only` | Yes | No | No |
+| `workspace` (default) | Yes | Yes | No |
+| `system` | Yes | Yes | Yes |
 
-```shell
-glossa update --check
-glossa update
+The default is useful for most code changes because it permits guarded file edits without command execution.
+
+> **`system` is not sandboxed.** Commands have the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. They are not confined to the selected project.
+
+Expose only a narrow project you trust. Keep credentials and regulated or otherwise sensitive data out of the workspace. See [Security and permissions](https://glossa.sh/security) before enabling `system`.
+
+## How it works
+
+```text
+ChatGPT
+  -> OAuth-protected Glossa relay
+  -> outbound worker running on your computer
+  -> one folder you selected
 ```
 
-Use `glossa update --policy auto` to install an available update before the next connection, or `glossa update --policy off` to disable automatic checks.
+The worker initiates the connection, so Glossa does not require an inbound port. The relay routes authenticated requests to the active worker and does not store a repository copy.
 
-Use `glossa status` to inspect the signed-in account, relay, enrolled computers, and active workspaces. Use `glossa devices revoke <id>` to revoke a computer and `glossa logout` to remove local OAuth credentials and open browser sign-out.
+## Common controls
 
-OAuth and device credentials use the operating-system credential store. If it is unavailable, Glossa warns before using a restricted local file fallback.
+```shell
+glossa status
+glossa devices revoke <id>
+glossa logout
+glossa update --check
+```
+
+Press `q` or Ctrl+C in the worker terminal to disconnect the workspace immediately.
 
 ## Security boundary
 
-Structured file tools reject absolute paths, parent traversal, symlinks, junctions, and other escapes from the selected root. File writes are atomic and can be guarded by SHA-256 revision checks. The hosted relay routes encrypted requests but does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
+Structured file tools stay inside the selected root and reject absolute paths, parent traversal, and linked-path escapes. The relay and local worker both enforce the selected access profile. The `system` warning above describes the separate command boundary.
 
-The file boundary is not a command sandbox. `system` access should be treated as remote command authority for the worker account. Review the [security model](docs/security.md) before enabling it and use the [private security reporting process](SECURITY.md) for vulnerabilities.
+Read the [public security overview](https://glossa.sh/security), [technical threat model](docs/security.md), and [private reporting policy](SECURITY.md) for details.
 
 ## Local development
 
-Node.js 22.9 or newer and Docker are required. Start local Postgres, create `.env` when missing, build, and migrate with:
+Node.js 22.9 or newer and Docker are required:
 
 ```powershell
 npm run dev:setup
@@ -123,17 +79,27 @@ npm run dev
 
 Stop local Postgres with `npm run dev:down`.
 
-Glossa uses the managed relay by default. See [self-hosting](docs/self-hosting.md) to operate a separate relay, database, identity configuration, and CLI build.
+## User documentation
 
-## Documentation
+- [Quickstart](https://glossa.sh/docs/quickstart)
+- [Why Glossa](https://glossa.sh/docs/why)
+- [Security and permissions](https://glossa.sh/security)
+- [Support](https://glossa.sh/support)
+- [Privacy](https://glossa.sh/privacy)
+- [Terms](https://glossa.sh/terms)
+
+## Technical documentation
 
 - [Operations guide](docs/operations.md)
 - [Architecture](docs/architecture.md)
-- [Security and threat model](docs/security.md)
 - [Protocol](docs/protocol.md)
-- [Managed identity and reviewer access](docs/managed-identity.md)
+- [Security and threat model](docs/security.md)
 - [Self-hosting](docs/self-hosting.md)
+
+## Maintainer and review documentation
+
+These documents are not needed for normal use:
+
+- [Managed identity and reviewer access](docs/managed-identity.md)
+- [Restricted Data review](docs/restricted-data.md)
 - [App submission packet](docs/app-submission-packet.md)
-- [Privacy](https://glossa.sh/privacy)
-- [Terms](https://glossa.sh/terms)
-- [Support](https://glossa.sh/support)

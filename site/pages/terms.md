@@ -6,23 +6,25 @@ These terms govern use of the managed Glossa relay, website, app, and published 
 
 ## Service
 
-Glossa connects an authenticated MCP client to a local development workspace that the user explicitly exposes. Glossa is an execution bridge. It does not provide a model, agent loop, planner, conversation store, or command sandbox.
+Glossa connects an authenticated MCP client to a local development project that the user explicitly exposes. Glossa is an execution bridge. It does not provide a model, agent loop, planner, conversation store, or command sandbox.
 
 The user selects an access profile for each worker session. `read-only` permits structured file inspection, `workspace` permits structured reads and writes inside the exposed root, and `system` additionally permits local commands.
 
-> **System-command authority:** `glossa --access system` authorizes connected clients to run commands with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands can reach files outside the exposed file root and may affect local or external systems.
+> **System-command authority:** `glossa --access system` authorizes connected clients to run commands with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands can reach files outside the exposed root and may affect local or external systems.
 
 ## Eligibility and authority
 
-You must be at least 13, legally able to accept these terms, and authorized to use every computer, account, workspace, credential, and service you expose through Glossa. If you use Glossa for an organization, you represent that you have authority to accept these terms for that organization.
+You must be at least 13, legally able to accept these terms, and authorized to use every computer, account, project, credential, and service you expose through Glossa. If you use Glossa for an organization, you represent that you have authority to accept these terms for that organization.
 
 ## Acceptable use
 
-You may use Glossa only for lawful activity on systems and data you are authorized to access. You must not use it to compromise accounts or systems, distribute malware, evade access controls, expose another person's private data, violate third-party terms, or facilitate activity prohibited by applicable law or OpenAI's usage policies.
+You may use Glossa only for lawful activity on systems and data you are authorized to access. You must not use it to compromise accounts or systems, distribute malware, evade access controls, expose another person's private data, violate third-party terms, or facilitate activity prohibited by applicable law or applicable usage policies.
+
+Do not use the public Glossa app to request, transmit, discover, or return payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets, including API keys, passwords, MFA or OTP codes, access tokens, or private keys.
 
 ## Your responsibilities
 
-- Expose only a narrow workspace appropriate for the requested task.
+- Expose only a narrow project appropriate for the requested task.
 - Select the least-privileged access profile that can complete the task.
 - Understand system-command authority before enabling it.
 - Protect your computer, Glossa credentials, OAuth account, and connected MCP clients.
@@ -56,4 +58,4 @@ You may stop using Glossa at any time. Glossa may suspend or terminate access fo
 
 ## Changes and contact
 
-Updated terms will be posted here with a new revision date. Questions can be submitted through the [support page](/support).
+Updated terms will be posted here with a new revision date. Questions can be submitted through [support](/support).

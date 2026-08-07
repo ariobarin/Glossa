@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Glossa does not upload or synchronize the selected folder as a stored repository. The local worker performs requested file operations and, only under the system profile, local commands. File contents, command details, and results are transmitted through the encrypted relay to the authenticated client while a request is active." />
+    <meta name="description" content="Glossa connects one project folder to an authenticated client through a local worker. The worker performs file operations and, only in system mode, local commands. The relay routes requests while the worker is online; it does not store a repository copy." />
     <meta name="theme-color" content="#111016" />
     <title>Security | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
@@ -65,24 +65,24 @@
       <header class="docs-intro">
         <div class="docs-kicker">Safety</div>
         <div class="docs-title-row">
-          <h1>Your worker controls workspace access.</h1>
+          <h1>Security and permissions</h1>
           <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
-        <script type="application/json" data-page-markdown>"# Your worker controls workspace access.\n\nGlossa does not upload or synchronize the selected folder as a stored repository. The local worker performs requested file operations and, only under the `system` profile, local commands. File contents, command details, and results are transmitted through the encrypted relay to the authenticated client while a request is active.\n\n## Choose the least authority\n\n| Profile | Reads | Writes inside the root | Commands |\n| --- | --- | --- | --- |\n| `read-only` | Yes | No | No |\n| `workspace` (default) | Yes | Yes | No |\n| `system` | Yes | Yes | Yes |\n\nThe selected profile is shown in the local terminal and returned by `list_devices`. Both the relay and local worker reject operations outside that profile.\n\n> **System access is powerful.** Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. File boundaries do not turn commands into a sandbox, and commands can reach files outside the exposed root.\n\n## What you authorize\n\n- You choose one local directory and one access profile when starting Glossa.\n- Structured file tools remain inside the selected root and reject links and traversal.\n- File changes require `workspace` or `system` access.\n- Commands require an explicit `glossa --access system` session.\n- Press Ctrl+C or `q` in the worker terminal to disconnect.\n\n## What the relay stores\n\nThe hosted relay keeps account, device, routing, and metadata-only audit records needed to operate and secure the service. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.\n\n## How boundaries are enforced\n\n- The relay checks the worker's declared permissions before queueing each operation.\n- The local worker independently enforces the same profile before touching files or starting a process.\n- Path containment, canonicalization, and link checks are enforced locally for every structured file operation.\n- Every relay resource is scoped to the authenticated account.\n- The relay stores only salted hashes of random device secrets.\n- Recoverable local credentials use the operating-system credential store, with an explicit warning before a restricted file fallback.\n- Hosted logs contain operational metadata rather than request or response content.\n\n## Use Glossa safely\n\n- Start with `read-only` for review and diagnosis.\n- Use the default `workspace` profile for scoped file changes that do not require commands.\n- Enable `system` only for tasks that need the local toolchain.\n- Never expose a home directory, filesystem root, credential store, or secrets directory.\n- Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.\n- Stop the worker immediately if activity is unexpected.\n\n## Report a security issue\n\nDo not publish credentials, private source code, exploit details, or personal data. Follow the [private security reporting process](https://github.com/ariobarin/glossa/security/advisories/new). See the [support page](/support) if private reporting is unavailable.\n\nMaintainers and reviewers can read the complete [threat model and controls](/docs/security).\n"</script>
-        <p class="docs-summary">Glossa does not upload or synchronize the selected folder as a stored repository. The local worker performs requested file operations and, only under the <code>system</code> profile, local commands. File contents, command details, and results are transmitted through the encrypted relay to the authenticated client while a request is active.</p>
+        <script type="application/json" data-page-markdown>"# Security and permissions\n\nGlossa connects one project folder to an authenticated client through a local worker. The worker performs file operations and, only in `system` mode, local commands. The relay routes requests while the worker is online; it does not store a repository copy.\n\n## Access profiles\n\n| Profile | Read files | Edit files inside the project | Run commands |\n| --- | --- | --- | --- |\n| `read-only` | Yes | No | No |\n| `workspace` (default) | Yes | Yes | No |\n| `system` | Yes | Yes | Yes |\n\nThe selected profile appears in the local terminal and in `list_devices`. Both the relay and the local worker enforce it.\n\n> **`system` is powerful and is not sandboxed.** Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. Commands are not confined to the selected project and can affect local or external systems.\n\n## What Glossa enforces\n\n- Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes.\n- File changes require `workspace` or `system`; commands require an explicit `system` session.\n- OAuth, account scoping, device credentials, and HTTPS protect the relay connection.\n- The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.\n- Press Ctrl+C or `q` in the worker terminal to disconnect immediately.\n\n## Sensitive data\n\nThe public Glossa app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Keep these categories out of the exposed project.\n\nGlossa blocks recognizable authentication-secret patterns in text inputs and results. This can prevent common accidental disclosures, but it is not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, or transformed values may not be recognized, and a command can send data over the network without printing it.\n\nWhen credentials must be unreachable, run `system` in a credential-free dedicated operating-system account, container, or virtual machine with only the project and tools it needs.\n\n## Safer use\n\n- Start with the default `workspace` mode for ordinary code changes.\n- Use `read-only` for inspection when no edits are needed.\n- Enable `system` only for a task that needs the local toolchain.\n- Expose a narrow project, never a home directory, filesystem root, credential store, or secrets directory.\n- Stop the worker if the activity shown in the terminal is unexpected.\n\nFor implementation details and residual risks, read the [technical threat model](/docs/security). Data handling is described in the [privacy policy](/privacy).\n\n## Report a security issue\n\nDo not publish credentials, private source code, exploit details, or personal data. Use the [private security reporting process](https://github.com/ariobarin/glossa/security/advisories/new). See [support](/support) if private reporting is unavailable.\n"</script>
+        <p class="docs-summary">Glossa connects one project folder to an authenticated client through a local worker. The worker performs file operations and, only in <code>system</code> mode, local commands. The relay routes requests while the worker is online; it does not store a repository copy.</p>
       </header>
 
       <article class="docs-content">
 
 <section class="doc-section">
-<h2 id="choose-the-least-authority"><a class="heading-anchor" href="#choose-the-least-authority" aria-label="Link to Choose the least authority"></a>Choose the least authority</h2>
+<h2 id="access-profiles"><a class="heading-anchor" href="#access-profiles" aria-label="Link to Access profiles"></a>Access profiles</h2>
 <table>
 <thead>
 <tr>
 <th>Profile</th>
-<th>Reads</th>
-<th>Writes inside the root</th>
-<th>Commands</th>
+<th>Read files</th>
+<th>Edit files inside the project</th>
+<th>Run commands</th>
 </tr>
 </thead>
 <tbody><tr>
@@ -104,52 +104,41 @@
 <td>Yes</td>
 </tr>
 </tbody></table>
-<p>The selected profile is shown in the local terminal and returned by <code>list_devices</code>. Both the relay and local worker reject operations outside that profile.</p>
+<p>The selected profile appears in the local terminal and in <code>list_devices</code>. Both the relay and the local worker enforce it.</p>
 <blockquote>
-<p><strong>System access is powerful.</strong> Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. File boundaries do not turn commands into a sandbox, and commands can reach files outside the exposed root.</p>
+<p><strong><code>system</code> is powerful and is not sandboxed.</strong> Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. Commands are not confined to the selected project and can affect local or external systems.</p>
 </blockquote>
 </section>
 <section class="doc-section">
-<h2 id="what-you-authorize"><a class="heading-anchor" href="#what-you-authorize" aria-label="Link to What you authorize"></a>What you authorize</h2>
+<h2 id="what-glossa-enforces"><a class="heading-anchor" href="#what-glossa-enforces" aria-label="Link to What Glossa enforces"></a>What Glossa enforces</h2>
 <ul>
-<li>You choose one local directory and one access profile when starting Glossa.</li>
-<li>Structured file tools remain inside the selected root and reject links and traversal.</li>
-<li>File changes require <code>workspace</code> or <code>system</code> access.</li>
-<li>Commands require an explicit <code>glossa --access system</code> session.</li>
-<li>Press Ctrl+C or <code>q</code> in the worker terminal to disconnect.</li>
+<li>Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes.</li>
+<li>File changes require <code>workspace</code> or <code>system</code>; commands require an explicit <code>system</code> session.</li>
+<li>OAuth, account scoping, device credentials, and HTTPS protect the relay connection.</li>
+<li>The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.</li>
+<li>Press Ctrl+C or <code>q</code> in the worker terminal to disconnect immediately.</li>
 </ul>
 </section>
 <section class="doc-section">
-<h2 id="what-the-relay-stores"><a class="heading-anchor" href="#what-the-relay-stores" aria-label="Link to What the relay stores"></a>What the relay stores</h2>
-<p>The hosted relay keeps account, device, routing, and metadata-only audit records needed to operate and secure the service. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.</p>
+<h2 id="sensitive-data"><a class="heading-anchor" href="#sensitive-data" aria-label="Link to Sensitive data"></a>Sensitive data</h2>
+<p>The public Glossa app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Keep these categories out of the exposed project.</p>
+<p>Glossa blocks recognizable authentication-secret patterns in text inputs and results. This can prevent common accidental disclosures, but it is not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, or transformed values may not be recognized, and a command can send data over the network without printing it.</p>
+<p>When credentials must be unreachable, run <code>system</code> in a credential-free dedicated operating-system account, container, or virtual machine with only the project and tools it needs.</p>
 </section>
 <section class="doc-section">
-<h2 id="how-boundaries-are-enforced"><a class="heading-anchor" href="#how-boundaries-are-enforced" aria-label="Link to How boundaries are enforced"></a>How boundaries are enforced</h2>
+<h2 id="safer-use"><a class="heading-anchor" href="#safer-use" aria-label="Link to Safer use"></a>Safer use</h2>
 <ul>
-<li>The relay checks the worker&#39;s declared permissions before queueing each operation.</li>
-<li>The local worker independently enforces the same profile before touching files or starting a process.</li>
-<li>Path containment, canonicalization, and link checks are enforced locally for every structured file operation.</li>
-<li>Every relay resource is scoped to the authenticated account.</li>
-<li>The relay stores only salted hashes of random device secrets.</li>
-<li>Recoverable local credentials use the operating-system credential store, with an explicit warning before a restricted file fallback.</li>
-<li>Hosted logs contain operational metadata rather than request or response content.</li>
+<li>Start with the default <code>workspace</code> mode for ordinary code changes.</li>
+<li>Use <code>read-only</code> for inspection when no edits are needed.</li>
+<li>Enable <code>system</code> only for a task that needs the local toolchain.</li>
+<li>Expose a narrow project, never a home directory, filesystem root, credential store, or secrets directory.</li>
+<li>Stop the worker if the activity shown in the terminal is unexpected.</li>
 </ul>
-</section>
-<section class="doc-section">
-<h2 id="use-glossa-safely"><a class="heading-anchor" href="#use-glossa-safely" aria-label="Link to Use Glossa safely"></a>Use Glossa safely</h2>
-<ul>
-<li>Start with <code>read-only</code> for review and diagnosis.</li>
-<li>Use the default <code>workspace</code> profile for scoped file changes that do not require commands.</li>
-<li>Enable <code>system</code> only for tasks that need the local toolchain.</li>
-<li>Never expose a home directory, filesystem root, credential store, or secrets directory.</li>
-<li>Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.</li>
-<li>Stop the worker immediately if activity is unexpected.</li>
-</ul>
+<p>For implementation details and residual risks, read the <a href="/docs/security">technical threat model</a>. Data handling is described in the <a href="/privacy">privacy policy</a>.</p>
 </section>
 <section class="doc-section">
 <h2 id="report-a-security-issue"><a class="heading-anchor" href="#report-a-security-issue" aria-label="Link to Report a security issue"></a>Report a security issue</h2>
-<p>Do not publish credentials, private source code, exploit details, or personal data. Follow the <a href="https://github.com/ariobarin/glossa/security/advisories/new">private security reporting process</a>. See the <a href="/support">support page</a> if private reporting is unavailable.</p>
-<p>Maintainers and reviewers can read the complete <a href="/docs/security">threat model and controls</a>.</p>
+<p>Do not publish credentials, private source code, exploit details, or personal data. Use the <a href="https://github.com/ariobarin/glossa/security/advisories/new">private security reporting process</a>. See <a href="/support">support</a> if private reporting is unavailable.</p>
 </section>
       </article>
       </div>
@@ -157,11 +146,10 @@
       <nav class="docs-toc" aria-label="On this page">
         <strong>On this page</strong>
         <ol>
-          <li><a href="#choose-the-least-authority">Choose the least authority</a></li>
-          <li><a href="#what-you-authorize">What you authorize</a></li>
-          <li><a href="#what-the-relay-stores">What the relay stores</a></li>
-          <li><a href="#how-boundaries-are-enforced">How boundaries are enforced</a></li>
-          <li><a href="#use-glossa-safely">Use Glossa safely</a></li>
+          <li><a href="#access-profiles">Access profiles</a></li>
+          <li><a href="#what-glossa-enforces">What Glossa enforces</a></li>
+          <li><a href="#sensitive-data">Sensitive data</a></li>
+          <li><a href="#safer-use">Safer use</a></li>
           <li><a href="#report-a-security-issue">Report a security issue</a></li>
         </ol>
       </nav>

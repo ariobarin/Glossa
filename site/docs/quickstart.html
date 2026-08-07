@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Install Glossa, expose one folder with an explicit permission boundary, and confirm the connection." />
+    <meta name="description" content="Install Glossa, start it in a project folder, and add the MCP app to ChatGPT." />
     <meta name="theme-color" content="#111016" />
     <title>Quickstart | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
@@ -68,13 +68,13 @@
           <h1>Connect ChatGPT to a local workspace</h1>
           <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
-        <script type="application/json" data-page-markdown>"# Connect ChatGPT to a local workspace\n\nInstall Glossa, expose one folder with an explicit permission boundary, and confirm the connection.\n\n> The default profile can edit files inside the selected root but cannot run commands. `system` access is a separate elevation that inherits the worker account's environment, credentials, filesystem permissions, and network access. Review the [security model](/docs/security) before enabling it.\n\n## 1. Install Glossa\n\nThe npm installation requires Node.js 22.9 or newer.\n\n```shell\nnpm install --global @ariobarin/glossa\n```\n\n## 2. Start a workspace\n\nOpen a terminal in the folder ChatGPT should use, then choose the least authority the task needs.\n\nGuarded file reads and writes, with commands disabled:\n\n```shell\nglossa\n```\n\nInspection only:\n\n```shell\nglossa --access read-only\n```\n\nLocal builds, tests, Git, or other project commands:\n\n```shell\nglossa --access system\n```\n\nSign in if prompted and keep the terminal open. The Glossa screen shows the selected profile and workspace. Press Ctrl+C or `q` to disconnect.\n\n## 3. Add Glossa to ChatGPT\n\n1. In ChatGPT web, follow [OpenAI's Developer Mode guide](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.\n2. Name it **Glossa** and enter this MCP server URL:\n\n```text\nhttps://mcp.glossa.sh/mcp\n```\n\n3. Choose **OAuth**, then **Scan Tools**.\n4. Complete authorization, wait for the tool scan, and choose **Create**. Use the same Glossa account in ChatGPT and the CLI.\n\nYour ChatGPT workspace controls whether custom apps and write actions are available and which actions are enabled.\n\n## 4. Test the connection\n\nSelect Glossa in a new chat and send:\n\n```text\nUse Glossa to list my connected workspaces and report each access profile.\n```\n\nConfirm the returned workspace reports the profile shown in the local terminal. For a default session, `writeFiles` is `true` and `runCommands` is `false`.\n\nA request that only inspects the project should work with `read-only`. A request that edits files needs `workspace` or `system`. A request that runs a local command needs `system`; restart the worker with broader access only when the task genuinely requires it.\n\nHaving trouble? Visit [support](/support).\n"</script>
-        <p class="docs-summary">Install Glossa, expose one folder with an explicit permission boundary, and confirm the connection.</p>
+        <script type="application/json" data-page-markdown>"# Connect ChatGPT to a local workspace\n\nInstall Glossa, start it in a project folder, and add the MCP app to ChatGPT.\n\n> **Glossa starts in `workspace` mode.** ChatGPT can read and edit files in the selected folder, but it cannot run commands. `system` mode is explicit, is not sandboxed, and gives commands the full authority of the account running Glossa. [Review the security boundary](/security) before enabling it.\n\n## 1. Install Glossa\n\nThe npm installation requires Node.js 22.9 or newer.\n\n```shell\nnpm install --global @ariobarin/glossa\n```\n\n## 2. Start a workspace\n\nOpen a terminal in the project folder and run:\n\n```shell\nglossa\n```\n\nOther access levels:\n\n- Inspection only: `glossa --access read-only`\n- Local tests, builds, Git, or other project commands: `glossa --access system`\n\nSign in if prompted and keep the terminal open. The Glossa screen shows the selected project and access profile. Press Ctrl+C or `q` to disconnect.\n\nExpose only a project you trust. Keep credentials and regulated or sensitive data out of the selected folder.\n\n## 3. Add Glossa to ChatGPT\n\n1. In ChatGPT web, follow [OpenAI's Developer Mode guide](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.\n2. Name it **Glossa** and enter this MCP server URL:\n\n```text\nhttps://mcp.glossa.sh/mcp\n```\n\n3. Choose **OAuth**, then **Scan Tools**.\n4. Complete authorization, wait for the tool scan, and choose **Create**. Use the same Glossa account in ChatGPT and the CLI.\n\nYour ChatGPT workspace controls which app actions are available. Review requested writes and commands carefully.\n\n## 4. Test the connection\n\nSelect Glossa in a new chat and send:\n\n```text\nUse Glossa to list my connected workspaces and report each access profile.\n```\n\nA default session should report `workspace` access: file edits enabled and commands disabled, matching the local terminal.\n\nNeed a different access level? Stop the worker and restart it with `--access read-only` or `--access system` only when the task requires it.\n\nHaving trouble? Visit [support](/support).\n"</script>
+        <p class="docs-summary">Install Glossa, start it in a project folder, and add the MCP app to ChatGPT.</p>
       </header>
 
       <article class="docs-content">
 <blockquote>
-<p>The default profile can edit files inside the selected root but cannot run commands. <code>system</code> access is a separate elevation that inherits the worker account&#39;s environment, credentials, filesystem permissions, and network access. Review the <a href="/docs/security">security model</a> before enabling it.</p>
+<p><strong>Glossa starts in <code>workspace</code> mode.</strong> ChatGPT can read and edit files in the selected folder, but it cannot run commands. <code>system</code> mode is explicit, is not sandboxed, and gives commands the full authority of the account running Glossa. <a href="/security">Review the security boundary</a> before enabling it.</p>
 </blockquote>
 <section class="doc-section">
 <h2 id="1-install-glossa"><a class="heading-anchor" href="#1-install-glossa" aria-label="Link to 1. Install Glossa"></a>1. Install Glossa</h2>
@@ -88,29 +88,20 @@
 </section>
 <section class="doc-section">
 <h2 id="2-start-a-workspace"><a class="heading-anchor" href="#2-start-a-workspace" aria-label="Link to 2. Start a workspace"></a>2. Start a workspace</h2>
-<p>Open a terminal in the folder ChatGPT should use, then choose the least authority the task needs.</p>
-<p>Guarded file reads and writes, with commands disabled:</p>
+<p>Open a terminal in the project folder and run:</p>
 <div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-2" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
   <pre><code class="language-shell" id="docs-quickstart-code-2">glossa</code></pre>
 </div>
-<p>Inspection only:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-3" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-3">glossa --access read-only</code></pre>
-</div>
-<p>Local builds, tests, Git, or other project commands:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-4" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-4">glossa --access system</code></pre>
-</div>
-<p>Sign in if prompted and keep the terminal open. The Glossa screen shows the selected profile and workspace. Press Ctrl+C or <code>q</code> to disconnect.</p>
+<p>Other access levels:</p>
+<ul>
+<li>Inspection only: <code>glossa --access read-only</code></li>
+<li>Local tests, builds, Git, or other project commands: <code>glossa --access system</code></li>
+</ul>
+<p>Sign in if prompted and keep the terminal open. The Glossa screen shows the selected project and access profile. Press Ctrl+C or <code>q</code> to disconnect.</p>
+<p>Expose only a project you trust. Keep credentials and regulated or sensitive data out of the selected folder.</p>
 </section>
 <section class="doc-section">
 <h2 id="3-add-glossa-to-chatgpt"><a class="heading-anchor" href="#3-add-glossa-to-chatgpt" aria-label="Link to 3. Add Glossa to ChatGPT"></a>3. Add Glossa to ChatGPT</h2>
@@ -119,28 +110,28 @@
 <li>Name it <strong>Glossa</strong> and enter this MCP server URL:</li>
 </ol>
 <div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-5" aria-label="Copy code">
+  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-3" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-text" id="docs-quickstart-code-5">https://mcp.glossa.sh/mcp</code></pre>
+  <pre><code class="language-text" id="docs-quickstart-code-3">https://mcp.glossa.sh/mcp</code></pre>
 </div>
 <ol start="3">
 <li>Choose <strong>OAuth</strong>, then <strong>Scan Tools</strong>.</li>
 <li>Complete authorization, wait for the tool scan, and choose <strong>Create</strong>. Use the same Glossa account in ChatGPT and the CLI.</li>
 </ol>
-<p>Your ChatGPT workspace controls whether custom apps and write actions are available and which actions are enabled.</p>
+<p>Your ChatGPT workspace controls which app actions are available. Review requested writes and commands carefully.</p>
 </section>
 <section class="doc-section">
 <h2 id="4-test-the-connection"><a class="heading-anchor" href="#4-test-the-connection" aria-label="Link to 4. Test the connection"></a>4. Test the connection</h2>
 <p>Select Glossa in a new chat and send:</p>
 <div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-6" aria-label="Copy code">
+  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-4" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-text" id="docs-quickstart-code-6">Use Glossa to list my connected workspaces and report each access profile.</code></pre>
+  <pre><code class="language-text" id="docs-quickstart-code-4">Use Glossa to list my connected workspaces and report each access profile.</code></pre>
 </div>
-<p>Confirm the returned workspace reports the profile shown in the local terminal. For a default session, <code>writeFiles</code> is <code>true</code> and <code>runCommands</code> is <code>false</code>.</p>
-<p>A request that only inspects the project should work with <code>read-only</code>. A request that edits files needs <code>workspace</code> or <code>system</code>. A request that runs a local command needs <code>system</code>; restart the worker with broader access only when the task genuinely requires it.</p>
+<p>A default session should report <code>workspace</code> access: file edits enabled and commands disabled, matching the local terminal.</p>
+<p>Need a different access level? Stop the worker and restart it with <code>--access read-only</code> or <code>--access system</code> only when the task requires it.</p>
 <p>Having trouble? Visit <a href="/support">support</a>.</p>
 </section>
       </article>

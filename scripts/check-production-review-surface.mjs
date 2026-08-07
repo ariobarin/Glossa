@@ -54,6 +54,16 @@ await check("homepage production positioning", async () => {
     /npm install -g @ariobarin\/glossa<\/code>/,
     "homepage does not contain the stable npm install command",
   );
+  requireMatch(
+    source,
+    /One folder\. You choose the access\. Use the tools already there\./,
+    "homepage does not contain the concise access summary",
+  );
+  forbidMatch(
+    source,
+    /reviewer|submission|Restricted Data|MCP contract/i,
+    "homepage contains internal review or policy language",
+  );
   forbidMatch(
     source,
     /other 50% of your plan/i,
@@ -66,7 +76,7 @@ await check("homepage production positioning", async () => {
   );
 });
 
-await check("quickstart access profiles and current setup guidance", async () => {
+await check("quickstart is concise and accurate", async () => {
   const source = await publicText("https://glossa.sh/docs/quickstart");
   requireMatch(
     source,
@@ -83,6 +93,26 @@ await check("quickstart access profiles and current setup guidance", async () =>
     /developer-mode-and-mcp-apps-in-chatgpt/,
     "quickstart does not use the current Developer Mode guide",
   );
+  requireMatch(
+    source,
+    /href="\/security"/,
+    "quickstart does not link to the canonical security overview",
+  );
+  requireMatch(
+    source,
+    /is not sandboxed/i,
+    "quickstart does not disclose the system command boundary",
+  );
+  requireMatch(
+    source,
+    /Review requested writes and commands carefully/i,
+    "quickstart does not tell users to review high-impact actions",
+  );
+  forbidMatch(
+    source,
+    /restricted_data_blocked|authentication-secret egress guard|actual ChatGPT confirmation|reviewer account|submission packet/i,
+    "quickstart contains internal review or detector details",
+  );
   forbidMatch(
     source,
     /@ariobarin\/glossa@beta/i,
@@ -91,24 +121,58 @@ await check("quickstart access profiles and current setup guidance", async () =>
   forbidMatch(source, /open beta/i, "quickstart still labels Glossa as open beta");
 });
 
-await check("security page matches enforced access boundaries", async () => {
+await check("rationale keeps the product boundary simple", async () => {
+  const source = await publicText("https://glossa.sh/docs/why");
+  requireMatch(
+    source,
+    /one project folder on your computer/i,
+    "rationale does not state the product in user language",
+  );
+  requireMatch(
+    source,
+    /General questions, writing, and web research stay in ChatGPT/i,
+    "rationale does not distinguish Glossa from general ChatGPT tasks",
+  );
+  forbidMatch(
+    source,
+    /reviewer|submission|restricted_data_blocked|data-loss-prevention/i,
+    "rationale contains internal review or security implementation language",
+  );
+});
+
+await check("security page is the canonical authority overview", async () => {
   const source = await publicText("https://glossa.sh/security");
   for (const profile of ["read-only", "workspace", "system"]) {
     requireMatch(
       source,
-      new RegExp(`\b${profile}\b`, "i"),
+      new RegExp(`\\b${profile}\\b`, "i"),
       `security page does not document the ${profile} profile`,
     );
   }
   requireMatch(
     source,
-    /Both the relay and local worker reject operations outside that profile/i,
-    "security page does not disclose relay and local enforcement",
+    /Both the relay and the local worker enforce it/i,
+    "security page does not disclose dual profile enforcement",
   );
   requireMatch(
     source,
     /full environment, credentials, filesystem permissions, and network access/i,
     "security page does not disclose system-command authority",
+  );
+  requireMatch(
+    source,
+    /payment-card data subject to PCI DSS.*protected health information.*government identifiers/is,
+    "security page does not centralize the public sensitive-data boundary",
+  );
+  requireMatch(
+    source,
+    /not a complete data-loss-prevention system or sandbox/i,
+    "security page overstates the recognizable-secret safeguard",
+  );
+  requireMatch(
+    source,
+    /credential-free dedicated operating-system account, container, or virtual machine/i,
+    "security page does not describe the enforceable isolation option",
   );
 });
 
@@ -126,8 +190,18 @@ await check("privacy page matches transient routing behavior", async () => {
   );
   requireMatch(
     source,
-    /reviewer passwords/i,
-    "privacy page does not exclude reviewer credentials from durable storage",
+    /may check text for recognizable authentication-secret patterns/i,
+    "privacy page does not disclose recognizable-secret inspection",
+  );
+  requireMatch(
+    source,
+    /matched content is not returned to the client/i,
+    "privacy page does not disclose blocked-value handling",
+  );
+  forbidMatch(
+    source,
+    /reviewer passwords|reviewer account|submission packet/i,
+    "privacy page contains reviewer-only language",
   );
 });
 
@@ -148,6 +222,11 @@ await check("terms page matches system-command authority", async () => {
     /may affect local or external systems/i,
     "terms do not disclose local and external side effects",
   );
+  requireMatch(
+    source,
+    /Do not use the public Glossa app to request, transmit, discover, or return payment-card data/i,
+    "terms do not state the public sensitive-data restriction",
+  );
 });
 
 await check("support page routes vulnerabilities privately", async () => {
@@ -166,6 +245,11 @@ await check("support page routes vulnerabilities privately", async () => {
     source,
     /Ctrl\+C or <code>q<\/code>/i,
     "support page does not document immediate local disconnect",
+  );
+  requireMatch(
+    source,
+    /restricted_data_blocked/i,
+    "support page does not explain restricted-data blocks",
   );
 });
 
