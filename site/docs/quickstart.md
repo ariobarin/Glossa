@@ -1,6 +1,6 @@
 # Connect ChatGPT to a local workspace
 
-Install Glossa, start it in a project folder, and add the MCP app to ChatGPT.
+Install Glossa, start it in a folder, and add the plugin to ChatGPT.
 
 > **Glossa starts in `workspace` mode.** ChatGPT can read and edit files in the selected folder, but it cannot run commands. `system` mode is explicit, is not sandboxed, and gives commands the full authority of the account running Glossa. [Review the security boundary](/security) before enabling it.
 
