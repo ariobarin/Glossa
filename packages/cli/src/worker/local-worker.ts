@@ -62,6 +62,7 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
         stdin: job.stdin,
       });
     case "get_command":
+    case "read_command_output":
     case "cancel_command":
       return false;
   }
@@ -76,6 +77,7 @@ function resultMayContainRestrictedData(job: WorkerJob): boolean {
     job.type === "edit_file" ||
     job.type === "run_command" ||
     job.type === "get_command" ||
+    job.type === "read_command_output" ||
     job.type === "cancel_command"
   );
 }
@@ -120,6 +122,7 @@ export class LocalWorker {
       if (
         (job.type === "run_command" ||
           job.type === "get_command" ||
+          job.type === "read_command_output" ||
           job.type === "cancel_command") &&
         !permissions.runCommands
       ) {
@@ -207,6 +210,14 @@ export class LocalWorker {
             job.commandId,
             job.waitMs,
             job.afterSequence,
+          );
+          break;
+        case "read_command_output":
+          value = await this.commands.readOutput(
+            job.commandId,
+            job.stream,
+            job.offset,
+            job.maxBytes,
           );
           break;
         case "cancel_command":

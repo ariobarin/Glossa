@@ -217,6 +217,7 @@ test("reports its package version and falls back for older relays", async () => 
     concurrentJobs: true,
     structuredReads: true,
     structuredMutations: true,
+    commandOutputRanges: true,
   });
 });
 
@@ -272,6 +273,7 @@ test("falls back without a label when the relay does not accept labels", async (
     concurrentJobs: true,
     structuredReads: true,
     structuredMutations: true,
+    commandOutputRanges: true,
   });
   const connected = statuses.find((status) => status.state === "connected");
   assert.equal(connected?.state, "connected");
@@ -291,7 +293,7 @@ test("falls back when structured and concurrent capabilities are unsupported", a
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
       registerBodies.push(body);
-      if (registerBodies.length <= 2) {
+      if (registerBodies.length <= 3) {
         return Response.json({ error: "invalid_request" }, { status: 400 });
       }
       return Response.json({ workerId: body.workerId, generation });
@@ -315,19 +317,26 @@ test("falls back when structured and concurrent capabilities are unsupported", a
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 3);
+  assert.equal(registerBodies.length, 4);
   assert.deepEqual(registerBodies[0]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
     structuredMutations: true,
+    commandOutputRanges: true,
   });
   assert.deepEqual(registerBodies[1]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   assert.deepEqual(registerBodies[2]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+  });
+  assert.deepEqual(registerBodies[3]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
   });
@@ -377,7 +386,7 @@ test("keeps structured job types out of concurrency-only relay polls", async () 
     fetcher,
   }).run();
 
-  assert.equal(registerBodies.length, 3);
+  assert.equal(registerBodies.length, 4);
   const accepted = pollBody?.acceptedTypes as string[];
   assert.equal(accepted.includes("read_file"), true);
   assert.equal(accepted.includes("list_files"), false);
@@ -386,6 +395,7 @@ test("keeps structured job types out of concurrency-only relay polls", async () 
   assert.equal(accepted.includes("make_directory"), false);
   assert.equal(accepted.includes("delete_path"), false);
   assert.equal(accepted.includes("move_path"), false);
+  assert.equal(accepted.includes("read_command_output"), false);
 });
 
 test("falls back to the legacy single-worker protocol", async () => {
@@ -424,25 +434,32 @@ test("falls back to the legacy single-worker protocol", async () => {
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 6);
+  assert.equal(registerBodies.length, 7);
   assert.deepEqual(registerBodies[0]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
     structuredMutations: true,
+    commandOutputRanges: true,
   });
   assert.deepEqual(registerBodies[1]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   assert.deepEqual(registerBodies[2]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
-  assert.deepEqual(registerBodies[3]?.capabilities, { commandProgress: true });
-  assert.equal("capabilities" in registerBodies[4]!, false);
-  assert.deepEqual(registerBodies[5], {});
+  assert.deepEqual(registerBodies[3]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
+  assert.deepEqual(registerBodies[4]?.capabilities, { commandProgress: true });
+  assert.equal("capabilities" in registerBodies[5]!, false);
+  assert.deepEqual(registerBodies[6], {});
   assert.equal(
     statuses.find((status) => status.state === "connected")?.legacyRelay,
     true,
