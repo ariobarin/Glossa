@@ -78,7 +78,12 @@ await runSessionHud({
         if (!await sleep(job.type === "run_command" ? 2_400 : 1_500, signal)) {
           return;
         }
-        onEvent({ type: "activity", phase: "returned", job, ok: true });
+        onEvent({
+          type: "activity",
+          phase: "returned",
+          job,
+          ok: job.type !== "search_text",
+        });
         if (!await sleep(1_500, signal)) return;
       }
       if (!await sleep(3_000, signal)) return;

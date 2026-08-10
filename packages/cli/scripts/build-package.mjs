@@ -24,7 +24,7 @@ await build({
   platform: "node",
   target: "node22.9",
   format: "esm",
-  external: ["@napi-rs/keyring"],
+  external: ["@napi-rs/keyring", "react-devtools-core"],
   define: applicationDefine,
 });
 

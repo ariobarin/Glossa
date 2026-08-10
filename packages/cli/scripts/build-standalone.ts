@@ -19,6 +19,16 @@ const output = resolve(
 );
 await mkdir(dirname(output), { recursive: true });
 
+const omitInkDevtools = {
+  name: "omit-ink-react-devtools",
+  setup(build: Parameters<Bun.BunPlugin["setup"]>[0]) {
+    build.onLoad(
+      { filter: /[\\/]ink[\\/]build[\\/]devtools\.js$/ },
+      () => ({ contents: "export {};", loader: "js" }),
+    );
+  },
+};
+
 const result = await Bun.build({
   entrypoints: [resolve("packages/cli/src/main.ts")],
   compile: {
@@ -29,6 +39,7 @@ const result = await Bun.build({
     __GLOSSA_VERSION__: JSON.stringify(version),
     __GLOSSA_DISTRIBUTION__: JSON.stringify("standalone"),
   },
+  plugins: [omitInkDevtools],
 });
 
 if (!result.success) {

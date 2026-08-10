@@ -23,12 +23,12 @@ import {
   WorkspaceStatusService,
   type StatusDetails,
 } from "./status-service.js";
+import { runSessionHud } from "./ui-hud.js";
 import {
   retainPostExitNotice,
-  runSessionHud,
   type HudExitAction,
   type HudStatus,
-} from "./ui-hud.js";
+} from "./ui-hud-model.js";
 import {
   checkForUpdate,
   cleanupUpdateBackups,
