@@ -30,6 +30,16 @@ test("HUD keeps the connection header stable", () => {
   assert.doesNotMatch(output.split("\n")[0] ?? "", /run_command/);
 });
 
+test("HUD breadcrumbs identify secondary views", () => {
+  const activity = renderHud({ ...connectedState(), view: "activity" }, 80, false, 20);
+  const status = renderHud({ ...connectedState(), view: "status" }, 80, false, 20);
+  const help = renderHud({ ...connectedState(), view: "help" }, 80, false, 20);
+
+  assert.match(activity.split("\n")[0] ?? "", /Glossa \/ Recent Activity\s+Connected/);
+  assert.match(status.split("\n")[0] ?? "", /Glossa \/ Status\s+Connected/);
+  assert.match(help.split("\n")[0] ?? "", /Glossa \/ Help\s+Connected/);
+});
+
 test("activity layout aligns tool arguments and timestamps", () => {
   const now = Date.now();
   const state: HudState = {
@@ -90,7 +100,7 @@ test("activity view paginates newest-first without an agent block", () => {
     false,
     20,
   );
-  assert.match(output, /RECENT ACTIVITY \(1-13\/30\)/);
+  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Recent Activity \(1-15\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
   assert.match(output, /file-30\.txt/);
   assert.doesNotMatch(output, /file-1\.txt/);

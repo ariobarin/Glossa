@@ -47,7 +47,7 @@ function Text({ color, ...props }: HudTextProps): React.ReactNode {
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
 const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
-const ACTIVITY_PREAMBLE_LINES = 3;
+const ACTIVITY_PREAMBLE_LINES = 1;
 
 interface HudHint {
   key: string;
@@ -155,7 +155,7 @@ function footerHints(state: HudState): HudHint[] {
     ];
   }
   return [
-    { key: "D", label: "Activity" },
+    { key: "D", label: "Recent activity" },
     { key: "S", label: "Status" },
     { key: "?", label: "Help" },
     { key: "L", label: "Sign out", tone: COLORS.coral },
@@ -221,6 +221,25 @@ function activityMaxPage(activityCount: number, pageCapacity: number): number {
   return Math.floor((activityCount - 1) / pageCapacity);
 }
 
+function activityPageInfo(state: HudState, bodyBudget: number): {
+  capacity: number;
+  maxPage: number;
+  page: number;
+  rangeStart: number;
+  rangeEnd: number;
+} {
+  const capacity = activityPageCapacity(bodyBudget);
+  const maxPage = activityMaxPage(state.activities.length, capacity);
+  const page = Math.min(state.activityPage, maxPage);
+  return {
+    capacity,
+    maxPage,
+    page,
+    rangeStart: page * capacity + 1,
+    rangeEnd: Math.min((page + 1) * capacity, state.activities.length),
+  };
+}
+
 function statusDeviceCapacity(state: HudState, bodyBudget: number, usable: number): number {
   if (!state.status || state.statusLoading || state.status.devices.length === 0) return 0;
   const preamble = usable >= 64 ? 11 : 10;
@@ -235,17 +254,46 @@ function Line({ usable, color }: { usable: number; color: boolean }): React.Reac
   );
 }
 
-function Header({ state, usable, color }: {
+function Header({ state, usable, bodyBudget, color }: {
   state: HudState;
   usable: number;
+  bodyBudget: number;
   color: boolean;
 }): React.ReactNode {
   const statusColor = state.connection === "error" ? COLORS.coral : COLORS.purpleReadable;
+  const pageTitle = state.view === "activity"
+    ? "Recent Activity"
+    : state.view === "status"
+      ? "Status"
+      : state.view === "help"
+        ? "Help"
+        : undefined;
+  const activityPage = state.view === "activity"
+    ? activityPageInfo(state, bodyBudget)
+    : undefined;
+  const activityRange = activityPage && activityPage.maxPage > 0
+    ? ` (${activityPage.rangeStart}-${activityPage.rangeEnd}/${state.activities.length})`
+    : "";
   return (
     <Box flexDirection="column" height={2} flexShrink={0}>
-      <Box width={usable} justifyContent="space-between">
-        <Text bold color={color ? COLORS.purple : undefined}>Glossa</Text>
-        <Text bold color={color ? statusColor : undefined}>{connectionLabel(state)}</Text>
+      <Box width={usable}>
+        <Box flexGrow={1} flexShrink={1}>
+          <Text wrap="truncate">
+            <Text bold color={color ? COLORS.purple : undefined}>Glossa</Text>
+            {pageTitle ? (
+              <>
+                <Text color={color ? COLORS.muted : undefined}> / </Text>
+                <Text bold color={color ? COLORS.purpleReadable : undefined}>{pageTitle}</Text>
+                {activityRange ? (
+                  <Text color={color ? COLORS.muted : undefined}>{activityRange}</Text>
+                ) : null}
+              </>
+            ) : null}
+          </Text>
+        </Box>
+        <Box marginLeft={1} flexShrink={0}>
+          <Text bold color={color ? statusColor : undefined}>{connectionLabel(state)}</Text>
+        </Box>
       </Box>
       <Line usable={usable} color={color} />
     </Box>
@@ -344,14 +392,7 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
   color: boolean;
   now: number;
 }): React.ReactNode {
-  const capacity = activityPageCapacity(bodyBudget);
-  const maxPage = activityMaxPage(state.activities.length, capacity);
-  const page = Math.min(state.activityPage, maxPage);
-  const rangeStart = page * capacity + 1;
-  const rangeEnd = Math.min(rangeStart + capacity - 1, state.activities.length);
-  const heading = maxPage > 0
-    ? `Recent activity (${rangeStart}-${rangeEnd}/${state.activities.length})`
-    : "Recent activity";
+  const { capacity, page } = activityPageInfo(state, bodyBudget);
   const pageEnd = state.activities.length - page * capacity;
   const pageStart = Math.max(0, pageEnd - capacity);
   const visible = capacity > 0 ? state.activities.slice(pageStart, pageEnd) : [];
@@ -359,26 +400,17 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
-      <SectionTitle color={color}>{heading}</SectionTitle>
       {state.activities.length === 0 ? (
-        <>
-          <Blank />
-          <Text color={color ? COLORS.muted : undefined}>No activity yet.</Text>
-        </>
-      ) : (
-        <>
-          <Blank />
-          {visible.map((activity) => (
-            <ActivityRow
-              key={activity.requestId}
-              activity={activity}
-              usable={usable}
-              color={color}
-              now={now}
-            />
-          ))}
-        </>
-      )}
+        <Text color={color ? COLORS.muted : undefined}>No activity yet.</Text>
+      ) : visible.map((activity) => (
+        <ActivityRow
+          key={activity.requestId}
+          activity={activity}
+          usable={usable}
+          color={color}
+          now={now}
+        />
+      ))}
     </Box>
   );
 }
@@ -539,7 +571,7 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
       <Blank />
       <SectionTitle color={color}>Navigate</SectionTitle>
       <HelpRow keyLabel="D" label="Recent activity" color={color} />
-      <HelpRow keyLabel="S" label="Account and devices" color={color} />
+      <HelpRow keyLabel="S" label="Status" color={color} />
       <HelpRow keyLabel="?" label="Close help" color={color} />
       <Blank />
       <SectionTitle color={color} tone={COLORS.coral}>Manage</SectionTitle>
@@ -614,7 +646,12 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
   const metrics = screenMetrics(state, columns, rows);
   const inner = (
     <Box width={metrics.usable} height={Math.max(6, rows)} flexDirection="column">
-      <Header state={state} usable={metrics.usable} color={color} />
+      <Header
+        state={state}
+        usable={metrics.usable}
+        bodyBudget={metrics.bodyBudget}
+        color={color}
+      />
       {state.view === "activity" ? (
         <ActivityView
           state={state}

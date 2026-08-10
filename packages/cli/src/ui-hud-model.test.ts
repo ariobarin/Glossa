@@ -42,7 +42,7 @@ test("activity view keeps state and age on the activity row", () => {
     22,
   );
   assert.doesNotMatch(empty, /AGENT/);
-  assert.match(empty, /RECENT ACTIVITY/);
+  assert.match(empty.split("\n")[0]!, /Glossa \/ Recent Activity\s+Connected/);
   assert.match(empty, /No activity yet/);
 
   const job = {
@@ -669,7 +669,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
 });
 
 test("activity pagination shows newest entries and range only when needed", () => {
-  const activities = Array.from({ length: 18 }, (_, index) => ({
+  const activities = Array.from({ length: 22 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
       target: `file-${index + 1}.txt`,
@@ -686,9 +686,9 @@ test("activity pagination shows newest entries and range only when needed", () =
     24,
   );
 
-  assert.match(newest, /RECENT ACTIVITY \(1-17\/18\)/);
-  assert.doesNotMatch(newest, /file-1\.txt/);
-  for (let index = 2; index <= 18; index += 1) {
+  assert.match(newest.split("\n")[0]!, /Glossa \/ Recent Activity \(1-19\/22\)/);
+  assert.doesNotMatch(newest, /file-[123]\.txt/);
+  for (let index = 4; index <= 22; index += 1) {
     assert.match(newest, new RegExp(`file-${index}\\.txt`));
   }
 
@@ -698,9 +698,10 @@ test("activity pagination shows newest entries and range only when needed", () =
     false,
     24,
   );
-  assert.match(older, /RECENT ACTIVITY \(18-18\/18\)/);
+  assert.match(older.split("\n")[0]!, /Glossa \/ Recent Activity \(20-22\/22\)/);
   assert.match(older, /file-1\.txt/);
-  assert.doesNotMatch(older, /file-(?:2|18)\.txt/);
+  assert.match(older, /file-3\.txt/);
+  assert.doesNotMatch(older, /file-(?:4|22)\.txt/);
 
   const unpaged = renderHud(
     { ...connectedState(), view: "activity", activities: activities.slice(-4) },
@@ -708,8 +709,8 @@ test("activity pagination shows newest entries and range only when needed", () =
     false,
     24,
   );
-  assert.match(unpaged, /RECENT ACTIVITY/);
-  assert.doesNotMatch(unpaged, /RECENT ACTIVITY \(/);
+  assert.match(unpaged.split("\n")[0]!, /Glossa \/ Recent Activity\s+Connected/);
+  assert.doesNotMatch(unpaged.split("\n")[0]!, /Recent Activity \(/);
 });
 
 test("status metrics share one-line formatting and contain active devices only", () => {
@@ -735,7 +736,7 @@ test("status metrics share one-line formatting and contain active devices only",
     22,
   );
 
-  assert.match(output.split("\n")[0]!, /Glossa\s+Connected/);
+  assert.match(output.split("\n")[0]!, /Glossa \/ Status\s+Connected/);
   assert.match(output, /3 Active workspaces/);
   assert.match(output, /1 Devices/);
   assert.match(output, /Device\s+Workers\s+Platform\s+Last seen/);
@@ -852,7 +853,7 @@ test("help keeps the useful navigation without removed commands", () => {
   );
 
   assert.match(output, /D\s+Recent activity/);
-  assert.match(output, /S\s+Account and devices/);
+  assert.match(output, /S\s+Status/);
   assert.match(output, /R\s+Revoke a device/);
   assert.match(output, /L\s+Sign out/);
   assert.match(output, /Q\s+Disconnect and quit/);
