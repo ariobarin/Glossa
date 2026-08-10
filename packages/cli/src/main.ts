@@ -23,12 +23,12 @@ import {
   WorkspaceStatusService,
   type StatusDetails,
 } from "./status-service.js";
+import { runSessionHud } from "./ui-hud.js";
 import {
   retainPostExitNotice,
-  runSessionHud,
   type HudExitAction,
   type HudStatus,
-} from "./ui-hud.js";
+} from "./ui-hud-model.js";
 import {
   checkForUpdate,
   cleanupUpdateBackups,
@@ -43,6 +43,7 @@ import {
   recordUpdateCheck,
 } from "./update-state.js";
 import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
+import { recordSessionUsage, recordToolUsage } from "./usage-store.js";
 import { runManagedSession } from "./worker/managed-session.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
 import { acquireWorkspaceLease } from "./worker/workspace-lease.js";
@@ -73,9 +74,13 @@ those commands inherit this account's permissions, environment, credentials, and
 Update checks run at most once per day before a workspace connects.
 
 Keys:
-  d  recent activity
-  s  account and devices
-  r  revoke a device from status
+  a  activity
+  w  workspace
+  d  devices
+  ↑↓ select or browse
+  ←→ change workspace access
+  Enter/r  revoke selected device
+  Esc  activity
   l  sign out
   ?  help
   q  disconnect and quit`;
@@ -143,27 +148,63 @@ async function runWorkspaceSession(
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const lease = await acquireWorkspaceLease(root);
+  let usageWrites = Promise.resolve();
+  const queueUsage = (write: () => Promise<void>): void => {
+    usageWrites = usageWrites.then(write).catch(() => undefined);
+  };
   try {
     const endpoints = loadRelayEndpoints();
     let credentials = (await authenticatedSession()).credentials;
     const statusService = new WorkspaceStatusService(credentials, endpoints);
     let postExitNotice: string | undefined;
+    let requestedAccessProfile = accessProfile;
+    let activeSessionController: AbortController | undefined;
+    queueUsage(async () => await recordSessionUsage());
     const exitAction: HudExitAction = await runSessionHud({
       workspace: root,
+      ...(label ? { workspaceLabel: label } : {}),
       run: async (signal, onEvent) => {
-        await runManagedSession(root, endpoints, {
-          credentials,
-          workerVersion: VERSION,
-          accessProfile,
-          ...(label ? { workspaceLabel: label } : {}),
-          signal,
-          onEvent: (event) => {
-            postExitNotice = retainPostExitNotice(postExitNotice, event);
-            onEvent(event);
-          },
-          quiet: true,
-          handleProcessSignals: false,
-        });
+        while (!signal.aborted) {
+          const sessionAccessProfile = requestedAccessProfile;
+          const sessionController = new AbortController();
+          activeSessionController = sessionController;
+          const stopSession = (): void => sessionController.abort(signal.reason);
+          if (signal.aborted) sessionController.abort(signal.reason);
+          else signal.addEventListener("abort", stopSession, { once: true });
+          try {
+            await runManagedSession(root, endpoints, {
+              credentials,
+              workerVersion: VERSION,
+              accessProfile: sessionAccessProfile,
+              ...(label ? { workspaceLabel: label } : {}),
+              signal: sessionController.signal,
+              onEvent: (event) => {
+                postExitNotice = retainPostExitNotice(postExitNotice, event);
+                if (event.type === "activity" && event.phase === "returned") {
+                  queueUsage(async () => await recordToolUsage(event.job.type, event.ok));
+                }
+                onEvent(event);
+              },
+              quiet: true,
+              handleProcessSignals: false,
+            });
+          } catch (error) {
+            if (signal.aborted) return;
+            if (
+              sessionController.signal.aborted &&
+              requestedAccessProfile !== sessionAccessProfile
+            ) {
+              continue;
+            }
+            throw error;
+          } finally {
+            signal.removeEventListener("abort", stopSession);
+            if (activeSessionController === sessionController) {
+              activeSessionController = undefined;
+            }
+          }
+          if (requestedAccessProfile === sessionAccessProfile) return;
+        }
       },
       loadStatus: async (signal) => {
         return hudStatus(await statusService.refresh(signal));
@@ -177,10 +218,16 @@ async function runWorkspaceSession(
           async (input, init) => await fetch(input, { ...init, signal }),
         );
       },
+      changeAccessProfile: (nextAccessProfile) => {
+        if (nextAccessProfile === requestedAccessProfile) return;
+        requestedAccessProfile = nextAccessProfile;
+        activeSessionController?.abort();
+      },
     });
     if (postExitNotice) console.error(postExitNotice);
     if (exitAction === "logout") await logoutFromGlossa();
   } finally {
+    await usageWrites;
     await lease.release();
   }
 }

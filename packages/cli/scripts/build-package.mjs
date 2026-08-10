@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
 import { readFile, rm } from "node:fs/promises";
 
@@ -16,6 +17,16 @@ const applicationDefine = {
   __GLOSSA_DISTRIBUTION__: JSON.stringify("npm"),
 };
 
+const omitInkDevtools = {
+  name: "omit-ink-react-devtools",
+  setup(build) {
+    build.onLoad(
+      { filter: /[\\/]ink[\\/]build[\\/]devtools\.js$/ },
+      () => ({ contents: "export {};", loader: "js" }),
+    );
+  },
+};
+
 // Application bundle, targeted at the supported Node.js release.
 await build({
   entryPoints: ["src/main.ts"],
@@ -26,6 +37,10 @@ await build({
   format: "esm",
   external: ["@napi-rs/keyring"],
   define: applicationDefine,
+  plugins: [omitInkDevtools],
+  banner: {
+    js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+  },
 });
 
 // Tiny bootstrap entry (the published bin). Built against a conservative target
@@ -42,3 +57,13 @@ await build({
     __GLOSSA_VERSION__: JSON.stringify(packageJson.version),
   },
 });
+
+const smoke = spawnSync(process.execPath, ["dist/main.js", "--version"], {
+  cwd: process.cwd(),
+  encoding: "utf8",
+});
+if (smoke.status !== 0) {
+  throw new Error(
+    `Built CLI failed to start:\n${smoke.stderr || smoke.stdout || "unknown error"}`,
+  );
+}
