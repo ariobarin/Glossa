@@ -465,13 +465,20 @@ function officialDocumentationUrl(publicOrigin: string): string {
 }
 
 const safeWorkerMessages: Record<string, string> = {
+  invalid_path: "The requested path is invalid.",
+  absolute_path: "Absolute paths are not allowed.",
+  path_traversal: "Parent path traversal is not allowed.",
   path_not_found: "The requested path does not exist.",
+  parent_not_found: "The destination directory does not exist.",
   path_escape: "The requested path escapes the exposed root.",
+  linked_path: "Symlink and junction paths are not allowed.",
   not_directory: "The requested path is not a directory.",
   not_file: "The requested path is not a file.",
   file_too_large: "The request exceeds the text size limit.",
+  file_changed: "The file changed while it was being read.",
   not_text: "The file is not valid UTF-8 text.",
   scan_limit: "The repository scan limit was reached. Narrow the requested path.",
+  search_byte_limit: "The repository search byte limit was reached. Narrow the requested path.",
   line_out_of_range: "The requested line is outside the file.",
   line_too_large: "The requested line exceeds the ranged-read limit.",
   scan_timeout: "The structured repository operation exceeded its local deadline.",
@@ -479,6 +486,7 @@ const safeWorkerMessages: Record<string, string> = {
   edit_not_found: "The edit target was not found.",
   edit_ambiguous: "The edit target occurs more than once.",
   edit_overlap: "The requested edits overlap.",
+  unsafe_temporary_file: "The atomic write could not be completed safely.",
   [RESTRICTED_DATA_ERROR_CODE]: RESTRICTED_DATA_ERROR_MESSAGE,
   write_access_disabled: "This workspace does not allow file writes. Do not retry; ask the user to restart with workspace access only if their request requires changes.",
   command_access_disabled: "This workspace does not allow commands. Do not retry; ask the user to restart with system access only if their request requires a local command.",

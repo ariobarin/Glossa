@@ -598,6 +598,90 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
   assert.doesNotMatch(JSON.stringify(readResult.content), new RegExp(key));
 });
 
+test("returns safe actionable messages for public file-policy errors", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000050";
+  const workerId = "00000000-0000-4000-8000-000000000051";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+    accessProfile: "workspace",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-file-error-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const cases = [
+    ["invalid_path", "The requested path is invalid."],
+    ["absolute_path", "Absolute paths are not allowed."],
+    ["path_traversal", "Parent path traversal is not allowed."],
+    ["parent_not_found", "The destination directory does not exist."],
+    ["linked_path", "Symlink and junction paths are not allowed."],
+    ["file_changed", "The file changed while it was being read."],
+    ["search_byte_limit", "The repository search byte limit was reached. Narrow the requested path."],
+    ["unsafe_temporary_file", "The atomic write could not be completed safely."],
+  ] as const;
+
+  for (const [code, expectedMessage] of cases) {
+    const call = client.callTool({
+      name: "read_file",
+      arguments: { deviceId: workerId, path: "fixture.txt" },
+    });
+    const job = await state.poll(
+      accountId,
+      deviceId,
+      workerId,
+      session.generation,
+      100,
+    );
+    assert.equal(job?.type, "read_file");
+    assert.ok(job);
+    assert.equal(
+      state.complete(accountId, workerId, {
+        requestId: job.requestId,
+        ok: false,
+        error: {
+          code,
+          message: "C:\\private\\workspace\\details must not be relayed",
+        },
+      }),
+      true,
+    );
+    const result = await call;
+    const serialized = JSON.stringify(result.content);
+    assert.equal(result.isError, true);
+    assert.ok(serialized.includes(code));
+    assert.ok(serialized.includes(expectedMessage));
+    assert.doesNotMatch(serialized, /private|workspace\\details/);
+  }
+
+  const unknownCall = client.callTool({
+    name: "read_file",
+    arguments: { deviceId: workerId, path: "fixture.txt" },
+  });
+  const unknownJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.ok(unknownJob);
+  state.complete(accountId, workerId, {
+    requestId: unknownJob.requestId,
+    ok: false,
+    error: { code: "unclassified_worker_error", message: "local details" },
+  });
+  const unknownResult = await unknownCall;
+  assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
+});
+
 test("redacts restricted legacy device metadata from list_devices", async (context) => {
   const state = new RouterState();
   const key = "sk-proj-" + "A".repeat(32);
