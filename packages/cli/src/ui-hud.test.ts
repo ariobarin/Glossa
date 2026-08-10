@@ -93,7 +93,7 @@ test("footer keeps stable navigation left and contextual controls right", () => 
     assert.equal(footer.indexOf("A Activity"), activity.indexOf("A Activity"));
   }
   assert.match(activity, /↑ Older\s+↓ Newer$/);
-  assert.match(workspace, /← Less access\s+→ More access$/);
+  assert.match(workspace, /← Read only\s+→ System$/);
   assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
 });
 
@@ -325,11 +325,11 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   await waitFor(() => changes.length === 1);
   assert.deepEqual(changes, ["system"]);
 
-  await waitFor(() => rendered.includes("System access:"));
+  await waitFor(() => rendered.includes("[ System ]"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 2);
   assert.deepEqual(changes, ["system", "workspace"]);
-  await waitFor(() => rendered.includes("Workspace access:"));
+  await waitFor(() => rendered.includes("[ Workspace ]"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 3);
   assert.deepEqual(changes, ["system", "workspace", "read-only"]);

@@ -126,8 +126,8 @@ test("shows the selected access boundary in the workspace screen", () => {
   );
 
   assert.match(output, /ACCESS/);
-  assert.match(output, /System access/);
-  assert.match(output, /full environment, permissions, credentials, and network access/);
+  assert.match(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
+  assert.match(output, /Read \+ write files \+ commands · inherits this OS account's permissions/);
 });
 
 test("retains only notices intended for terminal history", () => {

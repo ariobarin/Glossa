@@ -14,7 +14,7 @@ import {
   useInput,
   useWindowSize,
 } from "ink";
-import { accessProfileSummary } from "./worker/managed-session.js";
+
 import {
   applyHudEvent,
   initialHudState,
@@ -152,6 +152,22 @@ function adjacentAccessProfile(
   return ACCESS_PROFILES[index + direction];
 }
 
+function accessProfileLadder(
+  accessProfile: WorkerAccessProfile,
+  pendingAccessProfile: WorkerAccessProfile | undefined,
+): string {
+  return ACCESS_PROFILES.map((profile) => {
+    const label = accessProfileLabel(profile);
+    return profile === (pendingAccessProfile ?? accessProfile) ? `[ ${label} ]` : label;
+  }).join("  ─  ");
+}
+
+function accessProfileCapability(accessProfile: WorkerAccessProfile): string {
+  if (accessProfile === "read-only") return "Read files only · no changes · no commands";
+  if (accessProfile === "workspace") return "Read + write files · commands disabled";
+  return "Read + write files + commands · inherits this OS account's permissions";
+}
+
 const PRIMARY_FOOTER_HINTS: HudHint[] = [
   { key: "A", label: "Activity" },
   { key: "W", label: "Workspace" },
@@ -175,11 +191,12 @@ function contextualFooterHints(state: HudState): HudHint[] {
     ];
   }
   if (state.view === "workspace" && state.accessProfile && !state.pendingAccessProfile) {
-    const index = ACCESS_PROFILES.indexOf(state.accessProfile);
+    const lower = adjacentAccessProfile(state.accessProfile, -1);
+    const higher = adjacentAccessProfile(state.accessProfile, 1);
     return [
-      ...(index > 0 ? [{ key: "←", label: "Less access" }] : []),
-      ...(index < ACCESS_PROFILES.length - 1
-        ? [{ key: "→", label: "More access", tone: COLORS.coral }]
+      ...(lower ? [{ key: "←", label: accessProfileLabel(lower) }] : []),
+      ...(higher
+        ? [{ key: "→", label: accessProfileLabel(higher), tone: COLORS.coral }]
         : []),
     ];
   }
@@ -412,7 +429,7 @@ function WorkspaceView({ state, bodyBudget, color }: {
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
-      <SectionTitle color={color}>Directory</SectionTitle>
+      <SectionTitle color={color}>Workspace</SectionTitle>
       <Text color={color ? COLORS.ink : undefined} wrap="truncate-middle">{state.workspace}</Text>
       {state.accessProfile ? (
         <>
@@ -420,13 +437,13 @@ function WorkspaceView({ state, bodyBudget, color }: {
           <SectionTitle color={color}>Access</SectionTitle>
           <Text bold color={color ? COLORS.purpleReadable : undefined}>
             {state.pendingAccessProfile
-              ? `${accessProfileLabel(state.accessProfile)} → ${accessProfileLabel(state.pendingAccessProfile)}`
-              : accessProfileLabel(state.accessProfile)}
+              ? accessProfileLadder(state.accessProfile, state.pendingAccessProfile)
+              : accessProfileLadder(state.accessProfile, undefined)}
           </Text>
           <Text color={color ? COLORS.muted : undefined} wrap="truncate">
             {state.pendingAccessProfile
               ? `Restarting worker with ${accessProfileLabel(state.pendingAccessProfile)} access…`
-              : accessProfileSummary(state.accessProfile)}
+              : accessProfileCapability(state.accessProfile)}
           </Text>
         </>
       ) : null}
