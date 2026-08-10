@@ -133,7 +133,7 @@ test("retains only notices intended for terminal history", () => {
   );
 });
 
-test("shows the active tool in the header and updates one history entry", () => {
+test("keeps the connection status stable while activity updates history", () => {
   const job = {
     type: "run_command" as const,
     requestId: "request-1",
@@ -145,7 +145,7 @@ test("shows the active tool in the header and updates one history entry", () => 
     phase: "started",
     job,
   });
-  assert.match(renderHud(running, 70, false, 18), /Glossa\s+run_command/);
+  assert.match(renderHud(running, 70, false, 18), /Glossa\s+Connected/);
   assert.equal(running.activities.length, 1);
   assert.match(running.activities[0]!.summary.target, /npm/);
 

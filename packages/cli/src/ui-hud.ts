@@ -449,10 +449,7 @@ function connectionLabel(state: HudState): string {
 }
 
 function headerLabel(state: HudState): string {
-  const running = [...state.activities].reverse().find(
-    (activity) => activity.state === "working",
-  );
-  return running?.tool ?? connectionLabel(state);
+  return connectionLabel(state);
 }
 
 function renderHeader(
