@@ -497,6 +497,7 @@ const safeWorkerMessages: Record<string, string> = {
   invalid_sequence: "The command progress sequence is invalid.",
   command_not_found: "The command was not found.",
   command_spawn_failed: "The command could not be started.",
+  windows_command_shim: "Windows .cmd and .bat command shims must be run through shellCommand with the explicit shim filename.",
   worker_failure: "The local worker operation failed.",
   invalid_limit: "The requested result limit is invalid.",
   invalid_search: "The search text is invalid.",

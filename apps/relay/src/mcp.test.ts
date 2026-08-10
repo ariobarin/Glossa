@@ -509,6 +509,61 @@ test("returns actionable permission errors without dispatching forbidden work", 
   assert.match(JSON.stringify(commandResult.content), /system access/);
 });
 
+test("returns actionable guidance for Windows command shims", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000034";
+  const workerId = "00000000-0000-4000-8000-000000000035";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+    accessProfile: "system",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-shim-error-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const call = client.callTool({
+    name: "run_command",
+    arguments: {
+      deviceId: workerId,
+      argv: ["npm.cmd", "--version"],
+    },
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(job?.type, "run_command");
+  assert.ok(job);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: job.requestId,
+      ok: false,
+      error: {
+        code: "windows_command_shim",
+        message: "C:\\private\\npm.cmd could not be launched",
+      },
+    }),
+    true,
+  );
+
+  const result = await call;
+  const serialized = JSON.stringify(result.content);
+  assert.equal(result.isError, true);
+  assert.match(serialized, /windows_command_shim/);
+  assert.match(serialized, /\.cmd and \.bat.*shellCommand.*explicit shim filename/);
+  assert.doesNotMatch(serialized, /private/);
+});
+
 test("blocks recognizable authentication data without dispatch or disclosure", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000040";
