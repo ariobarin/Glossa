@@ -14,6 +14,14 @@ function connectedState(): HudState {
   };
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for HUD state.");
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 test("HUD keeps the connection header stable", () => {
   const running = applyHudEvent(connectedState(), {
     type: "activity",
@@ -26,31 +34,48 @@ test("HUD keeps the connection header stable", () => {
     },
   });
   const output = renderHud(running, 80, false, 20);
-  assert.match(output.split("\n")[0] ?? "", /Glossa\s+Connected/);
+  assert.match(output.split("\n")[0] ?? "", /Connected$/);
   assert.doesNotMatch(output.split("\n")[0] ?? "", /run_command/);
 });
 
-test("HUD breadcrumbs identify secondary views", () => {
+test("HUD breadcrumbs identify every top-level view", () => {
   const activity = renderHud({ ...connectedState(), view: "activity" }, 80, false, 20);
-  const status = renderHud({ ...connectedState(), view: "status" }, 80, false, 20);
+  const workspace = renderHud({ ...connectedState(), view: "workspace" }, 80, false, 20);
+  const devices = renderHud({ ...connectedState(), view: "devices" }, 80, false, 20);
   const help = renderHud({ ...connectedState(), view: "help" }, 80, false, 20);
 
   assert.match(activity.split("\n")[0] ?? "", /Glossa \/ Recent Activity\s+Connected/);
-  assert.match(status.split("\n")[0] ?? "", /Glossa \/ Status\s+Connected/);
+  assert.match(workspace.split("\n")[0] ?? "", /Glossa \/ Workspace\s+Connected/);
+  assert.match(devices.split("\n")[0] ?? "", /Glossa \/ Devices\s+Connected/);
   assert.match(help.split("\n")[0] ?? "", /Glossa \/ Help\s+Connected/);
 });
 
 test("footer keeps stable navigation left and contextual controls right", () => {
-  const width = 100;
-  const session = renderHud(connectedState(), width, false, 20).split("\n").at(-1)!;
-  const activity = renderHud(
-    { ...connectedState(), view: "activity" },
+  const width = 110;
+  const activity = renderHud(connectedState(), width, false, 20).split("\n").at(-1)!;
+  const workspace = renderHud(
+    { ...connectedState(), view: "workspace", accessProfile: "workspace" },
     width,
     false,
     20,
   ).split("\n").at(-1)!;
-  const status = renderHud(
-    { ...connectedState(), view: "status" },
+  const devices = renderHud(
+    {
+      ...connectedState(),
+      view: "devices",
+      status: {
+        account: "dev@example.com",
+        relay: "https://relay.example",
+        activeWorkers: 0,
+        devices: [{
+          id: "device-1",
+          name: "Laptop",
+          platform: "win32-x64",
+          lastSeen: "just now",
+          status: "offline",
+        }],
+      },
+    },
     width,
     false,
     20,
@@ -62,14 +87,14 @@ test("footer keeps stable navigation left and contextual controls right", () => 
     20,
   ).split("\n").at(-1)!;
 
-  const stableNav = /D Activity\s+S Status\s+\? Help\s+L Sign out\s+Q Quit/;
-  for (const footer of [session, activity, status, help]) {
+  const stableNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+L Sign out\s+Q Quit/;
+  for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, stableNav);
-    assert.equal(footer.indexOf("D Activity"), session.indexOf("D Activity"));
+    assert.equal(footer.indexOf("A Activity"), activity.indexOf("A Activity"));
   }
   assert.match(activity, /↑ Older\s+↓ Newer$/);
-  assert.match(status, /R Revoke$/);
-  assert.equal(help, session);
+  assert.match(workspace, /← Less access\s+→ More access$/);
+  assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
 });
 
 test("activity layout aligns tool arguments and timestamps", () => {
@@ -132,10 +157,185 @@ test("activity view paginates newest-first without an agent block", () => {
     false,
     20,
   );
-  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Recent Activity \(1-15\/30\)/);
+  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Recent Activity \(1-14\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
   assert.match(output, /file-30\.txt/);
   assert.doesNotMatch(output, /file-1\.txt/);
+});
+
+test("devices keyboard navigation revokes the selected device", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+    ref(): unknown;
+    unref(): unknown;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+  input.ref = () => input;
+  input.unref = () => input;
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 100;
+  output.rows = 24;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  const devices = [1, 2, 3].map((index) => ({
+    id: `device-${index}`,
+    name: `Device ${index}`,
+    platform: "win32-x64",
+    lastSeen: "just now",
+    status: "offline",
+  }));
+  const revoked: string[] = [];
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent) => {
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+            legacyRelay: false,
+          },
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => ({
+        account: "dev@example.com",
+        relay: "https://relay.example",
+        activeWorkers: 0,
+        devices,
+      }),
+      revokeDevice: async (deviceId) => {
+        revoked.push(deviceId);
+      },
+      changeAccessProfile: () => undefined,
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  await waitFor(() => rendered.includes("Recent Activity"));
+  input.write("d");
+  await waitFor(() => rendered.includes("Glossa / Devices"));
+  input.write("\u001b[B");
+  await waitFor(() => rendered.includes("› Device 2"));
+  input.write("\r");
+  await waitFor(() => rendered.includes("Revoke Device 2?"));
+  input.write("y");
+  await waitFor(() => revoked.length === 1);
+  assert.deepEqual(revoked, ["device-2"]);
+
+  input.write("q");
+  assert.equal(await run, "quit");
+});
+
+test("workspace access controls deescalate directly and confirm escalation", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+    ref(): unknown;
+    unref(): unknown;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+  input.ref = () => input;
+  input.unref = () => input;
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 110;
+  output.rows = 24;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  let reportSession: ((profile: "read-only" | "workspace" | "system") => void) | undefined;
+  const changes: string[] = [];
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent) => {
+        reportSession = (accessProfile) => onEvent({
+          type: "session",
+          root: "C:\\code\\glossa",
+          deviceName: "Desk",
+          accessProfile,
+        });
+        reportSession("workspace");
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+            legacyRelay: false,
+          },
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => {
+        throw new Error("not used");
+      },
+      revokeDevice: async () => {
+        throw new Error("not used");
+      },
+      changeAccessProfile: (accessProfile) => {
+        changes.push(accessProfile);
+        setTimeout(() => reportSession?.(accessProfile), 0);
+      },
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  await waitFor(() => rendered.includes("Recent Activity"));
+  input.write("w");
+  await waitFor(() => rendered.includes("Glossa / Workspace"));
+  input.write("\u001b[C");
+  await waitFor(() => rendered.includes("Increase access to System?"));
+  assert.match(rendered, /Increase access to System\? Commands will inherit this OS account's permissions\./);
+  input.write("y");
+  await waitFor(() => changes.length === 1);
+  assert.deepEqual(changes, ["system"]);
+
+  await waitFor(() => rendered.includes("System access:"));
+  input.write("\u001b[D");
+  await waitFor(() => changes.length === 2);
+  assert.deepEqual(changes, ["system", "workspace"]);
+  await waitFor(() => rendered.includes("Workspace access:"));
+  input.write("\u001b[D");
+  await waitFor(() => changes.length === 3);
+  assert.deepEqual(changes, ["system", "workspace", "read-only"]);
+
+  input.write("q");
+  assert.equal(await run, "quit");
 });
 
 test("runtime owns the TTY lifecycle and survives resize", async () => {
@@ -190,6 +390,7 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
       revokeDevice: async () => {
         throw new Error("not used");
       },
+      changeAccessProfile: () => undefined,
     },
     input as unknown as ReadStream,
     output as unknown as WriteStream,

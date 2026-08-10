@@ -40,11 +40,11 @@ export interface HudStatus {
   devices: HudDevice[];
 }
 
-type HudView = "session" | "activity" | "status" | "help";
+type HudView = "activity" | "workspace" | "devices" | "help";
 type HudPrompt =
   | { type: "logout" }
-  | { type: "revoke-select"; deviceCount: number }
-  | { type: "revoke-confirm"; deviceIndex: number };
+  | { type: "revoke-confirm"; deviceIndex: number }
+  | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
 
 export type HudExitAction = "quit" | "logout";
 
@@ -65,6 +65,8 @@ export interface HudState {
   activityPage: number;
   view: HudView;
   status: HudStatus | undefined;
+  deviceSelection: number;
+  pendingAccessProfile: WorkerAccessProfile | undefined;
   statusLoading: boolean;
   prompt: HudPrompt | undefined;
   busy: boolean;
@@ -80,6 +82,7 @@ export interface HudUiActions {
   ): Promise<void>;
   loadStatus(signal: AbortSignal): Promise<HudStatus>;
   revokeDevice(deviceId: string, signal: AbortSignal): Promise<void>;
+  changeAccessProfile(accessProfile: WorkerAccessProfile): void;
 }
 
 export function retainPostExitNotice(
@@ -99,8 +102,10 @@ export function initialHudState(workspace: string): HudState {
     message: undefined,
     activities: [],
     activityPage: 0,
-    view: "session",
+    view: "activity",
     status: undefined,
+    deviceSelection: 0,
+    pendingAccessProfile: undefined,
     statusLoading: false,
     prompt: undefined,
     busy: false,
@@ -358,6 +363,7 @@ export function applyHudEvent(
       workspace: event.root,
       deviceName: event.deviceName,
       accessProfile: event.accessProfile,
+      pendingAccessProfile: undefined,
     };
   }
   if (event.type === "status") {

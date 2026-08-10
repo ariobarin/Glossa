@@ -1,6 +1,6 @@
 import { hostname } from "node:os";
 import { fileURLToPath } from "node:url";
-import type { WorkerJob } from "@glossa/protocol";
+import type { WorkerAccessProfile, WorkerJob } from "@glossa/protocol";
 import { runSessionHud } from "../src/ui-hud.js";
 
 const workspace = fileURLToPath(new URL("../../..", import.meta.url));
@@ -44,17 +44,20 @@ const demoJobs: WorkerJob[] = [
 
 let cycle = 0;
 let revoked = false;
+let accessProfile: WorkerAccessProfile = "system";
+let reportAccessProfile: ((profile: WorkerAccessProfile) => void) | undefined;
 
 await runSessionHud({
   workspace,
   workspaceLabel: "hud-demo",
   async run(signal, onEvent) {
-    onEvent({
+    reportAccessProfile = (profile) => onEvent({
       type: "session",
       root: workspace,
       deviceName,
-      accessProfile: "system",
+      accessProfile: profile,
     });
+    reportAccessProfile(accessProfile);
     if (!await sleep(450, signal)) return;
     onEvent({
       type: "status",
@@ -107,5 +110,9 @@ await runSessionHud({
   },
   async revokeDevice() {
     revoked = true;
+  },
+  changeAccessProfile(nextAccessProfile) {
+    accessProfile = nextAccessProfile;
+    setTimeout(() => reportAccessProfile?.(accessProfile), 250);
   },
 });

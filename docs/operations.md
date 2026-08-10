@@ -68,6 +68,14 @@ glossa --label api C:\work\api
 
 Glossa does not derive labels from local paths. A duplicate process for the same canonical root exits before login or relay connection.
 
+## Interactive HUD
+
+The HUD opens on **Activity**, the primary view of what connected clients are doing. `A` returns there from anywhere. `W` opens **Workspace**, which shows the exposed directory, device identity, and current access boundary. On Workspace, left arrow lowers access immediately and right arrow proposes a higher access level; increasing access requires confirmation, and Glossa restarts only the worker connection in place. `D` opens **Devices**; use up/down to select a device and Enter or `R` to revoke the selected device. `?` opens Help and Escape returns to Activity.
+
+## Local usage history
+
+The CLI keeps an append-only usage history in the local Glossa config directory so future versions can show lifetime usefulness and hourly/daily trends. Each record contains only a timestamp plus either a session start or a tool type and success/failure outcome. It does not store tool arguments, paths, command text, file contents, or credentials, and the usage history is not sent to the relay.
+
 ## Updates
 
 Glossa checks the stable release channel at most once per day before connecting and prints a notice by default.

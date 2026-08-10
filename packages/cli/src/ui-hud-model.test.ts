@@ -17,21 +17,21 @@ function connectedState(): HudState {
   };
 }
 
-test("keeps the default screen sparse and anchors controls at the bottom", () => {
+test("activity is the default view and anchors controls at the bottom", () => {
   const output = renderHud(connectedState(), 60, false, 16);
   const lines = output.split("\n");
 
   assert.equal(lines.length, 16);
-  assert.match(lines[0]!, /Glossa\s+Connected/);
-  assert.match(output, /WORKSPACE/);
-  assert.match(output, /C:\\code\\glossa/);
-  assert.match(output, /DEVICE/);
-  assert.doesNotMatch(output, /SESSION/);
-  assert.doesNotMatch(output, /ChatGPT can use/i);
-  assert.doesNotMatch(output, /account permissions/i);
-  assert.doesNotMatch(output, /latest activity/i);
+  assert.match(lines[0]!, /Glossa \/ Recent Activity\s+Connected/);
+  assert.match(output, /No activity yet/);
+  assert.doesNotMatch(output, /DIRECTORY|ACCESS|DEVICE/);
+  assert.match(lines.slice(-3).join("\n"), /A Activity/);
+  assert.match(lines.slice(-3).join("\n"), /W Workspace/);
+  assert.match(lines.slice(-3).join("\n"), /D Devices/);
   assert.doesNotMatch(output, /AGENT/);
-  assert.match(lines.at(-1)!, /Q Quit/);
+
+
+  assert.match(lines.slice(-3).join("\n"), /Q Quit/);
 });
 
 test("activity view keeps state and age on the activity row", () => {
@@ -116,6 +116,7 @@ test("shows the selected access boundary in the workspace screen", () => {
   const output = renderHud(
     {
       ...session,
+      view: "workspace",
       connection: "connected",
       connectedBefore: true,
     },
@@ -160,7 +161,7 @@ test("keeps the connection status stable while activity updates history", () => 
     phase: "started",
     job,
   });
-  assert.match(renderHud(running, 70, false, 18), /Glossa\s+Connected/);
+  assert.match(renderHud(running, 70, false, 18).split("\n")[0]!, /Connected$/);
   assert.equal(running.activities.length, 1);
   assert.match(running.activities[0]!.summary.target, /npm/);
 
@@ -713,11 +714,11 @@ test("activity pagination shows newest entries and range only when needed", () =
   assert.doesNotMatch(unpaged.split("\n")[0]!, /Recent Activity \(/);
 });
 
-test("status metrics share one-line formatting and contain active devices only", () => {
+test("devices page shows account overview and active devices", () => {
   const output = renderHud(
     {
       ...connectedState(),
-      view: "status",
+      view: "devices",
       status: {
         account: "dev@example.com",
         relay: "https://relay.example",
@@ -736,7 +737,7 @@ test("status metrics share one-line formatting and contain active devices only",
     22,
   );
 
-  assert.match(output.split("\n")[0]!, /Glossa \/ Status\s+Connected/);
+  assert.match(output.split("\n")[0]!, /Glossa \/ Devices\s+Connected/);
   assert.match(output, /3 Active workspaces/);
   assert.match(output, /1 Devices/);
   assert.match(output, /Device\s+Workers\s+Platform\s+Last seen/);
@@ -747,11 +748,11 @@ test("status metrics share one-line formatting and contain active devices only",
   assert.doesNotMatch(output, /revoked/i);
 });
 
-test("status devices use a compact readable row in narrow terminals", () => {
+test("devices use a compact readable row in narrow terminals", () => {
   const output = renderHud(
     {
       ...connectedState(),
-      view: "status",
+      view: "devices",
       status: {
         account: "dev@example.com",
         relay: "https://relay.example",
@@ -772,12 +773,12 @@ test("status devices use a compact readable row in narrow terminals", () => {
 
   assert.match(
     output,
-    /1\s+Laptop · 1 active worker · win32-x64 · just now/,
+    /›\s+Laptop · 1 active worker · win32-x64 · just now/,
   );
   assert.doesNotMatch(output, /Device\s+Workers\s+Platform\s+Last seen/);
 });
 
-test("status shows every selectable device or an explicit overflow", () => {
+test("devices view scrolls to keep the selected device visible", () => {
   const devices = Array.from({ length: 12 }, (_, index) => ({
     id: `device-${index + 1}`,
     name: `Device ${index + 1}`,
@@ -788,7 +789,8 @@ test("status shows every selectable device or an explicit overflow", () => {
   const output = renderHud(
     {
       ...connectedState(),
-      view: "status",
+      view: "devices",
+      deviceSelection: 10,
       status: {
         account: "dev@example.com",
         relay: "https://relay.example",
@@ -801,10 +803,10 @@ test("status shows every selectable device or an explicit overflow", () => {
     24,
   );
 
-  assert.match(output, /12 Devices/);
-  assert.match(output, /Device 9/);
-  assert.doesNotMatch(output, /Device 10/);
-  assert.match(output, /3 more\. Use glossa devices revoke <id>\./);
+  assert.match(output.split("\n")[0]!, /Glossa \/ Devices \(3-11\/12\)/);
+  assert.match(output, /›\s+Device 11/);
+  assert.doesNotMatch(output, /Device 1\s/);
+  assert.doesNotMatch(output, /Device 12/);
 });
 
 test("every view stays within a narrow terminal and retains its footer", () => {
@@ -825,7 +827,7 @@ test("every view stays within a narrow terminal and retains its footer", () => {
     },
     {
       ...state,
-      view: "status",
+      view: "devices",
       status: {
         account: "dev@example.com",
         relay: "https://relay.example",
@@ -852,11 +854,11 @@ test("help keeps the useful navigation without removed commands", () => {
     20,
   );
 
-  assert.match(output, /D\s+Activity/);
-  assert.match(output, /S\s+Status/);
+  assert.match(output, /A\s+Activity/);
+  assert.match(output, /D\s+Devices/);
   assert.match(output, /\?\s+Help/);
-  assert.match(output, /Esc\s+Session/);
-  assert.match(output, /R\s+Revoke a device/);
+  assert.match(output, /Esc\s+Activity/);
+  assert.match(output, /Enter\/R\s+Revoke selected device/);
   assert.match(output, /L\s+Sign out/);
   assert.match(output, /Q\s+Disconnect and quit/);
   assert.doesNotMatch(output, /update/i);
