@@ -25,6 +25,7 @@ export interface HudActivity {
   summary: HudActivitySummary;
   requestId: string;
   state: "working" | "returned" | "failed";
+  updatedAt?: number;
 }
 
 export interface HudDevice {
@@ -391,6 +392,7 @@ export function applyHudEvent(
   const existingIndex = state.activities.findIndex(
     (activity) => activity.requestId === requestId,
   );
+  const activityTimestamp = Date.now();
   const activity: HudActivity = {
     tool: event.job.type,
     summary: boundActivitySummary(summarizeJob(event.job)),
@@ -400,6 +402,7 @@ export function applyHudEvent(
       : event.ok
         ? "returned"
         : "failed",
+    updatedAt: activityTimestamp,
   };
   const activities = [...state.activities];
   if (existingIndex >= 0) activities[existingIndex] = activity;
@@ -407,7 +410,7 @@ export function applyHudEvent(
   return {
     ...state,
     activities: activities.slice(-20),
-    lastActivityAt: Date.now(),
+    lastActivityAt: activityTimestamp,
   };
 }
 
@@ -550,6 +553,39 @@ function relativeAgentActivity(lastActivityAt: number, now = Date.now()): string
   return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
 }
 
+function renderActivityRow(
+  activity: HudActivity,
+  usable: number,
+  color: boolean,
+  now = Date.now(),
+): string {
+  const age = activity.state === "working"
+    ? "now"
+    : activity.updatedAt === undefined
+      ? ""
+      : relativeAgentActivity(activity.updatedAt, now);
+  const visibleAge = age && usable >= age.length + 7 ? age : "";
+  const ageSpace = visibleAge ? visibleAge.length + 2 : 0;
+  const leftBudget = Math.max(3, usable - ageSpace);
+  const visibleTool = truncate(
+    activity.tool,
+    Math.max(1, leftBudget - 2),
+  );
+  const summaryBudget = Math.max(0, leftBudget - visibleTool.length - 4);
+  const summary = summaryBudget > 0
+    ? renderActivitySummary(activity.summary, summaryBudget)
+    : "";
+  const leftLength = 2 + visibleTool.length + (summary ? 2 + summary.length : 0);
+  const gap = visibleAge
+    ? " ".repeat(Math.max(2, usable - leftLength - visibleAge.length))
+    : "";
+  return `${activityGlyph(activity, color)} ${
+    style(color, `${PALETTE.ink};1`, visibleTool)
+  }${summary ? `  ${style(color, PALETTE.muted, summary)}` : ""}${gap}${
+    visibleAge ? style(color, PALETTE.muted, visibleAge) : ""
+  }`;
+}
+
 function renderActivity(
   state: HudState,
   usable: number,
@@ -577,16 +613,14 @@ function renderActivity(
     return lines;
   }
   const visibleEntryCount = Math.min(
-    8,
-    Math.max(0, Math.floor((bodyBudget - lines.length) / 3)),
+    12,
+    Math.max(0, bodyBudget - lines.length - 1),
   );
   if (visibleEntryCount === 0) return lines;
+  lines.push("");
+  const now = Date.now();
   for (const activity of state.activities.slice(-visibleEntryCount)) {
-    lines.push(
-      "",
-      `${activityGlyph(activity, color)} ${style(color, `${PALETTE.ink};1`, truncate(activity.tool, Math.max(1, usable - 2)))}`,
-      style(color, PALETTE.muted, renderActivitySummary(activity.summary, usable)),
-    );
+    lines.push(renderActivityRow(activity, usable, color, now));
   }
   return lines;
 }

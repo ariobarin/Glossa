@@ -64,6 +64,11 @@ test("activity view shows truthful agent presence", () => {
     22,
   );
   assert.match(active, /Active · read_file/);
+  const activeRow = active.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
+  assert.match(
+    activeRow ?? "",
+    /read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+now$/,
+  );
 
   const idleState = applyHudEvent(activeState, {
     type: "activity",
@@ -79,6 +84,11 @@ test("activity view shows truthful agent presence", () => {
   );
   assert.match(idle, /Idle · last activity just now/);
   assert.match(idle, /RECENT ACTIVITY/);
+  const idleRow = idle.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
+  assert.match(
+    idleRow ?? "",
+    /read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+just now$/,
+  );
 });
 
 test("shows the selected access boundary in the workspace screen", () => {
@@ -163,7 +173,7 @@ test("activity view summarizes file writes without exposing content", () => {
   });
   const output = renderHud(
     { ...withActivity, view: "activity" },
-    70,
+    90,
     false,
     18,
   );
@@ -188,8 +198,8 @@ test("activity summaries preserve command endpoints as width changes", () => {
     },
   });
   const state = { ...withActivity, view: "activity" as const };
-  const narrow = renderHud(state, 40, false, 18);
-  const wide = renderHud(state, 100, false, 18);
+  const narrow = renderHud(state, 70, false, 18);
+  const wide = renderHud(state, 110, false, 18);
 
   assert.match(narrow, /argv \["npm".*"@ariobarin\/glossa"\]/);
   assert.doesNotMatch(narrow, /stdin|do not show this/);
@@ -618,7 +628,7 @@ test("activity summaries skip oversized details and keep later metadata", () => 
   });
   const output = renderHud(
     { ...withActivity, view: "activity" },
-    70,
+    90,
     false,
     18,
   );
@@ -651,7 +661,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
   });
   const output = renderHud(
     { ...commanded, view: "activity" },
-    90,
+    120,
     false,
     22,
   );
@@ -664,7 +674,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
 });
 
 test("activity clipping keeps the newest complete entries", () => {
-  const activities = Array.from({ length: 8 }, (_, index) => ({
+  const activities = Array.from({ length: 16 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
       target: `file-${index + 1}.txt`,
@@ -681,8 +691,8 @@ test("activity clipping keeps the newest complete entries", () => {
     24,
   );
 
-  assert.doesNotMatch(output, /file-[123]\.txt/);
-  for (let index = 4; index <= 8; index += 1) {
+  assert.doesNotMatch(output, /file-[1-4]\.txt/);
+  for (let index = 5; index <= 16; index += 1) {
     assert.match(output, new RegExp(`file-${index}\\.txt`));
   }
 });
