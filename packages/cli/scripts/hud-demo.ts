@@ -46,6 +46,7 @@ let cycle = 0;
 let revoked = false;
 let accessProfile: WorkerAccessProfile = "system";
 let reportAccessProfile: ((profile: WorkerAccessProfile) => void) | undefined;
+let reportConnected: (() => void) | undefined;
 
 await runSessionHud({
   workspace,
@@ -56,6 +57,16 @@ await runSessionHud({
       root: workspace,
       deviceName,
       accessProfile: profile,
+    });
+    reportConnected = () => onEvent({
+      type: "status",
+      status: {
+        state: "connected",
+        reconnected: true,
+        legacyRelay: false,
+        accessProfileAccepted: true,
+        workspaceLabelAccepted: true,
+      },
     });
     reportAccessProfile(accessProfile);
     if (!await sleep(450, signal)) return;
@@ -113,6 +124,9 @@ await runSessionHud({
   },
   changeAccessProfile(nextAccessProfile) {
     accessProfile = nextAccessProfile;
-    setTimeout(() => reportAccessProfile?.(accessProfile), 250);
+    setTimeout(() => {
+      reportAccessProfile?.(accessProfile);
+      reportConnected?.();
+    }, 250);
   },
 });

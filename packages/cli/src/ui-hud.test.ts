@@ -97,6 +97,35 @@ test("footer keeps stable navigation left and contextual controls right", () => 
   assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
 });
 
+test("workspace access handoff has no visible intermediate frame", () => {
+  const pending = renderHud(
+    {
+      ...connectedState(),
+      view: "workspace",
+      accessProfile: "workspace",
+      pendingAccessProfile: "system",
+    },
+    110,
+    false,
+    20,
+  );
+  const confirmed = renderHud(
+    {
+      ...connectedState(),
+      view: "workspace",
+      accessProfile: "system",
+      pendingAccessProfile: undefined,
+    },
+    110,
+    false,
+    20,
+  );
+
+  assert.equal(pending, confirmed);
+  assert.match(pending, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
+  assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
+});
+
 test("activity layout aligns tool arguments and timestamps", () => {
   const now = Date.now();
   const state: HudState = {
@@ -281,21 +310,23 @@ test("workspace access controls deescalate directly and confirm escalation", asy
     {
       workspace: "C:\\code\\glossa",
       run: async (signal, onEvent) => {
-        reportSession = (accessProfile) => onEvent({
-          type: "session",
-          root: "C:\\code\\glossa",
-          deviceName: "Desk",
-          accessProfile,
-        });
+        reportSession = (accessProfile) => {
+          onEvent({
+            type: "session",
+            root: "C:\\code\\glossa",
+            deviceName: "Desk",
+            accessProfile,
+          });
+          onEvent({
+            type: "status",
+            status: {
+              state: "connected",
+              reconnected: accessProfile !== "workspace",
+              legacyRelay: false,
+            },
+          });
+        };
         reportSession("workspace");
-        onEvent({
-          type: "status",
-          status: {
-            state: "connected",
-            reconnected: false,
-            legacyRelay: false,
-          },
-        });
         await new Promise<void>((resolve) => {
           signal.addEventListener("abort", () => resolve(), { once: true });
         });

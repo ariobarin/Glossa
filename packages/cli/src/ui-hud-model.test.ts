@@ -130,6 +130,50 @@ test("shows the selected access boundary in the workspace screen", () => {
   assert.match(output, /Read \+ write files \+ commands · inherits this OS account's permissions/);
 });
 
+test("access handoff keeps connection health stable until replacement connects", () => {
+  let state: HudState = {
+    ...connectedState(),
+    view: "workspace",
+    accessProfile: "workspace",
+    pendingAccessProfile: "system",
+  };
+
+  state = applyHudEvent(state, {
+    type: "session",
+    root: "C:\\code\\glossa",
+    deviceName: "Desk",
+    accessProfile: "system",
+  });
+  assert.equal(state.connection, "connected");
+  assert.equal(state.accessProfile, "system");
+  assert.equal(state.pendingAccessProfile, "system");
+
+  const connecting = applyHudEvent(state, {
+    type: "status",
+    status: { state: "connecting" },
+  });
+  assert.equal(connecting.connection, "connected");
+  assert.equal(connecting.pendingAccessProfile, "system");
+
+  const retrying = applyHudEvent(connecting, {
+    type: "status",
+    status: { state: "retrying", error: new Error("handoff"), retryInMs: 500 },
+  });
+  assert.equal(retrying.connection, "connected");
+  assert.equal(retrying.message, undefined);
+
+  const connected = applyHudEvent(retrying, {
+    type: "status",
+    status: {
+      state: "connected",
+      reconnected: true,
+      legacyRelay: false,
+    },
+  });
+  assert.equal(connected.connection, "connected");
+  assert.equal(connected.pendingAccessProfile, undefined);
+});
+
 test("retains only notices intended for terminal history", () => {
   const hint = "Follow the quickstart.";
   assert.equal(

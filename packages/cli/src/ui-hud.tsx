@@ -152,14 +152,30 @@ function adjacentAccessProfile(
   return ACCESS_PROFILES[index + direction];
 }
 
-function accessProfileLadder(
-  accessProfile: WorkerAccessProfile,
-  pendingAccessProfile: WorkerAccessProfile | undefined,
-): string {
-  return ACCESS_PROFILES.map((profile) => {
-    const label = accessProfileLabel(profile);
-    return profile === (pendingAccessProfile ?? accessProfile) ? `[ ${label} ]` : label;
-  }).join("  ─  ");
+function AccessProfileLadder({ accessProfile, color }: {
+  accessProfile: WorkerAccessProfile;
+  color: boolean;
+}): React.ReactNode {
+  return (
+    <Text bold>
+      {ACCESS_PROFILES.map((profile, index) => (
+        <React.Fragment key={profile}>
+          {index > 0 ? <Text color={color ? COLORS.line : undefined}>  ─  </Text> : null}
+          <Text
+            color={color
+              ? profile === accessProfile
+                ? COLORS.coral
+                : COLORS.muted
+              : undefined}
+          >
+            {profile === accessProfile
+              ? `[ ${accessProfileLabel(profile)} ]`
+              : accessProfileLabel(profile)}
+          </Text>
+        </React.Fragment>
+      ))}
+    </Text>
+  );
 }
 
 function accessProfileCapability(accessProfile: WorkerAccessProfile): string {
@@ -190,9 +206,10 @@ function contextualFooterHints(state: HudState): HudHint[] {
       { key: "Enter/R", label: "Revoke", tone: COLORS.coral },
     ];
   }
-  if (state.view === "workspace" && state.accessProfile && !state.pendingAccessProfile) {
-    const lower = adjacentAccessProfile(state.accessProfile, -1);
-    const higher = adjacentAccessProfile(state.accessProfile, 1);
+  if (state.view === "workspace" && state.accessProfile) {
+    const displayedAccessProfile = state.pendingAccessProfile ?? state.accessProfile;
+    const lower = adjacentAccessProfile(displayedAccessProfile, -1);
+    const higher = adjacentAccessProfile(displayedAccessProfile, 1);
     return [
       ...(lower ? [{ key: "←", label: accessProfileLabel(lower) }] : []),
       ...(higher
@@ -426,24 +443,19 @@ function WorkspaceView({ state, bodyBudget, color }: {
   bodyBudget: number;
   color: boolean;
 }): React.ReactNode {
+  const displayedAccessProfile = state.pendingAccessProfile ?? state.accessProfile;
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
       <SectionTitle color={color}>Workspace</SectionTitle>
       <Text color={color ? COLORS.ink : undefined} wrap="truncate-middle">{state.workspace}</Text>
-      {state.accessProfile ? (
+      {displayedAccessProfile ? (
         <>
           <Blank />
           <SectionTitle color={color}>Access</SectionTitle>
-          <Text bold color={color ? COLORS.purpleReadable : undefined}>
-            {state.pendingAccessProfile
-              ? accessProfileLadder(state.accessProfile, state.pendingAccessProfile)
-              : accessProfileLadder(state.accessProfile, undefined)}
-          </Text>
+          <AccessProfileLadder accessProfile={displayedAccessProfile} color={color} />
           <Text color={color ? COLORS.muted : undefined} wrap="truncate">
-            {state.pendingAccessProfile
-              ? `Restarting worker with ${accessProfileLabel(state.pendingAccessProfile)} access…`
-              : accessProfileCapability(state.accessProfile)}
+            {accessProfileCapability(displayedAccessProfile)}
           </Text>
         </>
       ) : null}
@@ -889,7 +901,6 @@ function beginAccessChange(
   store.update((state) => ({
     ...state,
     pendingAccessProfile: accessProfile,
-    connection: "connecting",
     prompt: undefined,
     notice: undefined,
   }));

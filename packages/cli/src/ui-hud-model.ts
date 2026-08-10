@@ -358,15 +358,26 @@ export function applyHudEvent(
   event: ManagedSessionEvent,
 ): HudState {
   if (event.type === "session") {
+    const accessHandoff = state.pendingAccessProfile === event.accessProfile;
     return {
       ...state,
       workspace: event.root,
       deviceName: event.deviceName,
       accessProfile: event.accessProfile,
-      pendingAccessProfile: undefined,
+      pendingAccessProfile: accessHandoff ? state.pendingAccessProfile : undefined,
     };
   }
   if (event.type === "status") {
+    if (state.pendingAccessProfile && state.connectedBefore) {
+      if (event.status.state !== "connected") return state;
+      return {
+        ...state,
+        connection: "connected",
+        connectedBefore: true,
+        message: undefined,
+        pendingAccessProfile: undefined,
+      };
+    }
     if (event.status.state === "retrying") {
       return {
         ...state,
