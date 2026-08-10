@@ -392,7 +392,7 @@ export class CommandService {
     ) {
       throw new WorkerError(
         "windows_command_shim",
-        "Windows .cmd and .bat command shims must be run through shellCommand.",
+        "Windows .cmd and .bat command shims must be run through shellCommand with the explicit shim filename.",
       );
     }
     const timeoutMs = options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;

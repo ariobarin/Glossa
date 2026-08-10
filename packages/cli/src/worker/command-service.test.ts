@@ -63,6 +63,41 @@ test(
   },
 );
 
+test(
+  "covers Windows shim variants and the documented recovery path",
+  { skip: process.platform !== "win32" },
+  async (context) => {
+    const { commands } = await commandFixture(context);
+    for (const shim of [
+      "NPM.CMD",
+      "tool.bat",
+      "C:\\Program Files\\Tool\\tool.BAT",
+    ]) {
+      await assert.rejects(
+        commands.start({
+          argv: [shim, "--version"],
+          timeoutMs: 10_000,
+          waitMs: 0,
+        }),
+        (error: unknown) =>
+          error instanceof WorkerError &&
+          error.code === "windows_command_shim" &&
+          /shellCommand.*explicit shim filename/.test(error.message) &&
+          !error.message.includes(shim),
+      );
+    }
+
+    const shimmed = await commands.start({
+      shellCommand: "npm.cmd --version",
+      timeoutMs: 10_000,
+      waitMs: 5_000,
+    });
+    assert.equal(shimmed.status, "succeeded");
+    assert.equal(shimmed.exitCode, 0);
+    assert.match(shimmed.stdout ?? "", /^\d+\.\d+\.\d+/);
+  },
+);
+
 test("returns completed output for fast commands without a second lookup", async (context) => {
   const { commands } = await commandFixture(context);
   const completed = await commands.start({
