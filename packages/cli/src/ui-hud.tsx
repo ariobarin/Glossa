@@ -30,7 +30,6 @@ const COLORS = {
   purple: "#8054ff",
   purpleReadable: "#ad98ff",
   coral: "#ff665f",
-  orange: "#ffa657",
   line: "#5c556e",
 } as const;
 
@@ -117,7 +116,7 @@ function activityAge(updatedAt: number | undefined, working: boolean, now: numbe
 
 function activityColor(activity: HudActivity): string {
   if (activity.state === "working") return COLORS.ink;
-  if (activity.state === "failed") return COLORS.orange;
+  if (activity.state === "failed") return COLORS.coral;
   return COLORS.purpleReadable;
 }
 
