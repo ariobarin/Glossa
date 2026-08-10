@@ -686,9 +686,9 @@ test("activity pagination shows newest entries and range only when needed", () =
     24,
   );
 
-  assert.match(newest.split("\n")[0]!, /Glossa \/ Recent Activity \(1-19\/22\)/);
-  assert.doesNotMatch(newest, /file-[123]\.txt/);
-  for (let index = 4; index <= 22; index += 1) {
+  assert.match(newest.split("\n")[0]!, /Glossa \/ Recent Activity \(1-18\/22\)/);
+  assert.doesNotMatch(newest, /file-[1234]\.txt/);
+  for (let index = 5; index <= 22; index += 1) {
     assert.match(newest, new RegExp(`file-${index}\\.txt`));
   }
 
@@ -698,10 +698,10 @@ test("activity pagination shows newest entries and range only when needed", () =
     false,
     24,
   );
-  assert.match(older.split("\n")[0]!, /Glossa \/ Recent Activity \(20-22\/22\)/);
+  assert.match(older.split("\n")[0]!, /Glossa \/ Recent Activity \(19-22\/22\)/);
   assert.match(older, /file-1\.txt/);
-  assert.match(older, /file-3\.txt/);
-  assert.doesNotMatch(older, /file-(?:4|22)\.txt/);
+  assert.match(older, /file-4\.txt/);
+  assert.doesNotMatch(older, /file-(?:5|22)\.txt/);
 
   const unpaged = renderHud(
     { ...connectedState(), view: "activity", activities: activities.slice(-4) },
@@ -840,7 +840,7 @@ test("every view stays within a narrow terminal and retains its footer", () => {
     const lines = renderHud(view, 28, false, 12).split("\n");
     assert.equal(lines.length, 12);
     assert.ok(lines.every((line) => line.length <= 28));
-    assert.match(lines.at(-1)!, /Q Quit/);
+    assert.match(lines.slice(-3).join("\n"), /Q Quit/);
   }
 });
 
@@ -852,8 +852,10 @@ test("help keeps the useful navigation without removed commands", () => {
     20,
   );
 
-  assert.match(output, /D\s+Recent activity/);
+  assert.match(output, /D\s+Activity/);
   assert.match(output, /S\s+Status/);
+  assert.match(output, /\?\s+Help/);
+  assert.match(output, /Esc\s+Session/);
   assert.match(output, /R\s+Revoke a device/);
   assert.match(output, /L\s+Sign out/);
   assert.match(output, /Q\s+Disconnect and quit/);

@@ -54,10 +54,15 @@ interface HudHint {
   tone?: string;
 }
 
+interface HudFooterRow {
+  left: HudHint[];
+  right: HudHint[];
+}
+
 interface HudScreenMetrics {
   usable: number;
   bodyBudget: number;
-  footerRows: HudHint[][];
+  footerRows: HudFooterRow[];
   overlayRows: number;
 }
 
@@ -128,51 +133,70 @@ function sectionLabel(value: string): string {
   return value.toUpperCase();
 }
 
-function footerHints(state: HudState): HudHint[] {
-  if (state.view === "status") {
-    return [
-      { key: "R", label: "Revoke", tone: COLORS.coral },
-      { key: "L", label: "Sign out", tone: COLORS.coral },
-      { key: "Esc", label: "Session" },
-      { key: "Q", label: "Quit", tone: COLORS.coral },
-    ];
-  }
+const PRIMARY_FOOTER_HINTS: HudHint[] = [
+  { key: "D", label: "Activity" },
+  { key: "S", label: "Status" },
+  { key: "?", label: "Help" },
+  { key: "L", label: "Sign out", tone: COLORS.coral },
+  { key: "Q", label: "Quit", tone: COLORS.coral },
+];
+
+function contextualFooterHints(state: HudState): HudHint[] {
   if (state.view === "activity") {
     return [
       { key: "↑", label: "Older" },
       { key: "↓", label: "Newer" },
-      { key: "D", label: "Session" },
-      { key: "S", label: "Status" },
-      { key: "?", label: "Help" },
-      { key: "Q", label: "Quit", tone: COLORS.coral },
     ];
   }
-  if (state.view === "help") {
-    return [
-      { key: "?", label: "Session" },
-      { key: "Q", label: "Quit", tone: COLORS.coral },
-    ];
+  if (state.view === "status") {
+    return [{ key: "R", label: "Revoke", tone: COLORS.coral }];
   }
-  return [
-    { key: "D", label: "Recent activity" },
-    { key: "S", label: "Status" },
-    { key: "?", label: "Help" },
-    { key: "L", label: "Sign out", tone: COLORS.coral },
-    { key: "Q", label: "Quit", tone: COLORS.coral },
-  ];
+  return [];
 }
 
-function splitFooterHints(state: HudState, usable: number): HudHint[][] {
+function footerHintWidth(hint: HudHint): number {
+  return hint.key.length + hint.label.length + 1;
+}
+
+function footerHintsWidth(hints: HudHint[]): number {
+  if (hints.length === 0) return 0;
+  return hints.reduce((total, hint) => total + footerHintWidth(hint), 0) +
+    (hints.length - 1) * 3;
+}
+
+function splitFooterHints(hints: HudHint[], usable: number): HudHint[][] {
+  if (hints.length === 0) return [];
   const rows: HudHint[][] = [[]];
   let rowLength = 0;
-  for (const hint of footerHints(state)) {
-    const tokenLength = hint.key.length + hint.label.length + 1;
+  for (const hint of hints) {
+    const tokenLength = footerHintWidth(hint);
     if (rows.at(-1)!.length > 0 && rowLength + 3 + tokenLength > usable) {
       rows.push([]);
       rowLength = 0;
     }
     rows.at(-1)!.push(hint);
     rowLength += (rowLength > 0 ? 3 : 0) + tokenLength;
+  }
+  return rows;
+}
+
+function buildFooterRows(state: HudState, usable: number): HudFooterRow[] {
+  const rows = splitFooterHints(PRIMARY_FOOTER_HINTS, usable).map((left) => ({
+    left,
+    right: [] as HudHint[],
+  }));
+  const contextualRows = splitFooterHints(contextualFooterHints(state), usable);
+  if (contextualRows.length === 0) return rows;
+
+  const firstContextual = contextualRows[0]!;
+  const lastPrimary = rows.at(-1)!;
+  const combinedWidth = footerHintsWidth(lastPrimary.left) + 3 +
+    footerHintsWidth(firstContextual);
+  if (combinedWidth <= usable) {
+    lastPrimary.right = firstContextual;
+    contextualRows.slice(1).forEach((right) => rows.push({ left: [], right }));
+  } else {
+    contextualRows.forEach((right) => rows.push({ left: [], right }));
   }
   return rows;
 }
@@ -199,7 +223,7 @@ function screenMetrics(state: HudState, columns: number, rows: number): HudScree
   const margin = columns >= 24 ? 2 : 0;
   const usable = Math.max(8, columns - margin * 2);
   const terminalRows = Math.max(6, rows);
-  const footerRows = splitFooterHints(state, usable);
+  const footerRows = buildFooterRows(state, usable);
   const prompt = promptText(state);
   const overlayRows = prompt || state.notice
     ? 2 + (prompt?.choices ? 1 : 0)
@@ -569,9 +593,10 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
       <SectionTitle color={color}>Navigate</SectionTitle>
-      <HelpRow keyLabel="D" label="Recent activity" color={color} />
+      <HelpRow keyLabel="D" label="Activity" color={color} />
       <HelpRow keyLabel="S" label="Status" color={color} />
-      <HelpRow keyLabel="?" label="Close help" color={color} />
+      <HelpRow keyLabel="?" label="Help" color={color} />
+      <HelpRow keyLabel="Esc" label="Session" color={color} />
       <Blank />
       <SectionTitle color={color} tone={COLORS.coral}>Manage</SectionTitle>
       <HelpRow keyLabel="R" label="Revoke a device from status" color={color} tone={COLORS.coral} />
@@ -609,8 +634,23 @@ function Overlay({ state, usable, color }: {
   );
 }
 
+function FooterHintGroup({ hints, color }: {
+  hints: HudHint[];
+  color: boolean;
+}): React.ReactNode {
+  return hints.map((hint, index) => (
+    <React.Fragment key={`${hint.key}-${hint.label}`}>
+      {index > 0 ? <Text>   </Text> : null}
+      <Text bold color={color ? (hint.tone ?? COLORS.purpleReadable) : undefined}>
+        {hint.key}
+      </Text>
+      <Text color={color ? COLORS.muted : undefined}> {hint.label}</Text>
+    </React.Fragment>
+  ));
+}
+
 function Footer({ rows, usable, color }: {
-  rows: HudHint[][];
+  rows: HudFooterRow[];
   usable: number;
   color: boolean;
 }): React.ReactNode {
@@ -619,15 +659,14 @@ function Footer({ rows, usable, color }: {
       <Line usable={usable} color={color} />
       {rows.map((row, rowIndex) => (
         <Box key={rowIndex} width={usable}>
-          {row.map((hint, index) => (
-            <React.Fragment key={`${hint.key}-${hint.label}`}>
-              {index > 0 ? <Text>   </Text> : null}
-              <Text bold color={color ? (hint.tone ?? COLORS.purpleReadable) : undefined}>
-                {hint.key}
-              </Text>
-              <Text color={color ? COLORS.muted : undefined}> {hint.label}</Text>
-            </React.Fragment>
-          ))}
+          <Box flexShrink={0}>
+            <FooterHintGroup hints={row.left} color={color} />
+          </Box>
+          {row.right.length > 0 ? (
+            <Box flexGrow={1} justifyContent="flex-end" marginLeft={row.left.length > 0 ? 1 : 0}>
+              <FooterHintGroup hints={row.right} color={color} />
+            </Box>
+          ) : null}
         </Box>
       ))}
     </Box>
@@ -858,11 +897,10 @@ function HudRuntime({ store, actions, signal, stop }: {
       return;
     }
     if (value === "d") {
-      const entering = current.view !== "activity";
       store.update((state) => ({
         ...state,
-        view: entering ? "activity" : "session",
-        activityPage: entering ? 0 : state.activityPage,
+        view: "activity",
+        activityPage: current.view === "activity" ? state.activityPage : 0,
         notice: undefined,
       }));
       return;
@@ -899,7 +937,7 @@ function HudRuntime({ store, actions, signal, stop }: {
     if (input === "?") {
       store.update((state) => ({
         ...state,
-        view: state.view === "help" ? "session" : "help",
+        view: "help",
         notice: undefined,
       }));
     }

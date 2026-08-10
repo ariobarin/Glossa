@@ -40,6 +40,38 @@ test("HUD breadcrumbs identify secondary views", () => {
   assert.match(help.split("\n")[0] ?? "", /Glossa \/ Help\s+Connected/);
 });
 
+test("footer keeps stable navigation left and contextual controls right", () => {
+  const width = 100;
+  const session = renderHud(connectedState(), width, false, 20).split("\n").at(-1)!;
+  const activity = renderHud(
+    { ...connectedState(), view: "activity" },
+    width,
+    false,
+    20,
+  ).split("\n").at(-1)!;
+  const status = renderHud(
+    { ...connectedState(), view: "status" },
+    width,
+    false,
+    20,
+  ).split("\n").at(-1)!;
+  const help = renderHud(
+    { ...connectedState(), view: "help" },
+    width,
+    false,
+    20,
+  ).split("\n").at(-1)!;
+
+  const stableNav = /D Activity\s+S Status\s+\? Help\s+L Sign out\s+Q Quit/;
+  for (const footer of [session, activity, status, help]) {
+    assert.match(footer, stableNav);
+    assert.equal(footer.indexOf("D Activity"), session.indexOf("D Activity"));
+  }
+  assert.match(activity, /↑ Older\s+↓ Newer$/);
+  assert.match(status, /R Revoke$/);
+  assert.equal(help, session);
+});
+
 test("activity layout aligns tool arguments and timestamps", () => {
   const now = Date.now();
   const state: HudState = {
