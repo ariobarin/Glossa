@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build-package.mjs",
+    "hud:demo": "node --import tsx scripts/hud-demo.ts",
     "test": "node --import tsx --test src/*.test.ts src/worker/*.test.ts",
     "prepack": "npm run build"
   },

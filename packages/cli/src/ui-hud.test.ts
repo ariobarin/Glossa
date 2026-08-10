@@ -33,9 +33,53 @@ test("keeps the default screen sparse and anchors controls at the bottom", () =>
   assert.doesNotMatch(output, /ChatGPT can use/i);
   assert.doesNotMatch(output, /account permissions/i);
   assert.doesNotMatch(output, /latest activity/i);
+  assert.doesNotMatch(output, /AGENT/);
   assert.match(lines.at(-1)!, /Q Quit/);
 });
 
+test("activity view shows truthful agent presence", () => {
+  const waiting = renderHud(
+    { ...connectedState(), view: "activity" },
+    70,
+    false,
+    22,
+  );
+  assert.match(waiting, /AGENT/);
+  assert.match(waiting, /Waiting for activity/);
+
+  const job = {
+    type: "read_file" as const,
+    requestId: "agent-request",
+    path: "packages/cli/src/ui-hud.ts",
+  };
+  const activeState = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job,
+  });
+  const active = renderHud(
+    { ...activeState, view: "activity" },
+    70,
+    false,
+    22,
+  );
+  assert.match(active, /Active · read_file/);
+
+  const idleState = applyHudEvent(activeState, {
+    type: "activity",
+    phase: "returned",
+    job,
+    ok: true,
+  });
+  const idle = renderHud(
+    { ...idleState, view: "activity" },
+    70,
+    false,
+    22,
+  );
+  assert.match(idle, /Idle · last activity just now/);
+  assert.match(idle, /RECENT ACTIVITY/);
+});
 
 test("shows the selected access boundary in the workspace screen", () => {
   const session = applyHudEvent(initialHudState("."), {
@@ -637,8 +681,8 @@ test("activity clipping keeps the newest complete entries", () => {
     24,
   );
 
-  assert.doesNotMatch(output, /file-[12]\.txt/);
-  for (let index = 3; index <= 8; index += 1) {
+  assert.doesNotMatch(output, /file-[123]\.txt/);
+  for (let index = 4; index <= 8; index += 1) {
     assert.match(output, new RegExp(`file-${index}\\.txt`));
   }
 });
@@ -854,6 +898,7 @@ test("rerenders on terminal resize and removes its listener on exit", async () =
   const run = runSessionHud(
     {
       workspace: "C:\\code\\glossa",
+      workspaceLabel: "glossa-dev",
       run: async (signal) => {
         await new Promise<void>((resolve) => {
           signal.addEventListener("abort", () => resolve(), { once: true });
@@ -888,6 +933,7 @@ test("rerenders on terminal resize and removes its listener on exit", async () =
   assert.equal(await run, "quit");
   assert.equal(output.listenerCount("resize"), 0);
   assert.equal(input.isRaw, false);
+  assert.ok(rendered.includes("\u001b]0;Glossa | glossa-dev\u0007"));
   assert.match(rendered, /\u001b\[\?1049h/);
   assert.match(rendered, /\u001b\[\?1049l/);
 });

@@ -64,6 +64,7 @@ export interface HudState {
   connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
+  lastActivityAt: number | undefined;
   view: HudView;
   status: HudStatus | undefined;
   statusLoading: boolean;
@@ -74,12 +75,19 @@ export interface HudState {
 
 export interface HudUiActions {
   workspace: string;
+  workspaceLabel?: string;
   run(
     signal: AbortSignal,
     onEvent: (event: ManagedSessionEvent) => void,
   ): Promise<void>;
   loadStatus(signal: AbortSignal): Promise<HudStatus>;
   revokeDevice(deviceId: string, signal: AbortSignal): Promise<void>;
+}
+
+function terminalTitleSequence(label: string | undefined): string {
+  const safeLabel = label?.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  const title = safeLabel ? `Glossa | ${safeLabel}` : "Glossa";
+  return `\u001b]0;${title}\u0007`;
 }
 
 export function retainPostExitNotice(
@@ -98,6 +106,7 @@ export function initialHudState(workspace: string): HudState {
     connectedBefore: false,
     message: undefined,
     activities: [],
+    lastActivityAt: undefined,
     view: "session",
     status: undefined,
     statusLoading: false,
@@ -395,11 +404,16 @@ export function applyHudEvent(
   const activities = [...state.activities];
   if (existingIndex >= 0) activities[existingIndex] = activity;
   else activities.push(activity);
-  return { ...state, activities: activities.slice(-20) };
+  return {
+    ...state,
+    activities: activities.slice(-20),
+    lastActivityAt: Date.now(),
+  };
 }
 
 const ANSI_BASE = "\u001b[22;38;2;244;241;251;48;2;17;16;22m";
 const RESIZE_RENDER_DELAY_MS = 16;
+const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
 const PALETTE = {
   ink: "38;2;244;241;251",
   muted: "38;2;170;164;181",
@@ -527,13 +541,37 @@ function renderActivitySummary(
   return [summary.target, ...visibleDetails].join(" · ");
 }
 
+function relativeAgentActivity(lastActivityAt: number, now = Date.now()): string {
+  const elapsedMs = Math.max(0, now - lastActivityAt);
+  if (elapsedMs < 10_000) return "just now";
+  if (elapsedMs < 60_000) return `${Math.floor(elapsedMs / 1_000)}s ago`;
+  if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m ago`;
+  if (elapsedMs < 86_400_000) return `${Math.floor(elapsedMs / 3_600_000)}h ago`;
+  return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
+}
+
 function renderActivity(
   state: HudState,
   usable: number,
   color: boolean,
   bodyBudget: number,
 ): string[] {
-  const lines = ["", sectionTitle("Recent activity", color)];
+  const running = [...state.activities].reverse().find(
+    (activity) => activity.state === "working",
+  );
+  const agentStatus = running
+    ? `Active · ${running.tool}`
+    : state.lastActivityAt === undefined
+      ? "Waiting for activity"
+      : `Idle · last activity ${relativeAgentActivity(state.lastActivityAt)}`;
+  const agentTone = running ? PALETTE.purpleReadable : PALETTE.muted;
+  const lines = [
+    "",
+    sectionTitle("Agent", color),
+    style(color, agentTone, truncate(agentStatus, usable)),
+    "",
+    sectionTitle("Recent activity", color),
+  ];
   if (state.activities.length === 0) {
     lines.push("", style(color, PALETTE.muted, "No activity yet."));
     return lines;
@@ -945,6 +983,7 @@ export async function runSessionHud(
   let exitAction: HudExitAction = "quit";
   let stopUi: (() => void) | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  let activityRefreshTimer: ReturnType<typeof setInterval> | undefined;
   const color = !process.env.NO_COLOR;
 
   const render = (): void => {
@@ -1045,8 +1084,18 @@ export async function runSessionHud(
 
   input.setRawMode(true);
   input.resume();
-  output.write("\u001b[?1049h\u001b[?25l");
+  output.write(`${terminalTitleSequence(actions.workspaceLabel)}\u001b[?1049h\u001b[?25l`);
   output.on("resize", resize);
+  activityRefreshTimer = setInterval(() => {
+    if (
+      !controller.signal.aborted &&
+      state.view === "activity" &&
+      state.lastActivityAt !== undefined
+    ) {
+      render();
+    }
+  }, ACTIVITY_REFRESH_INTERVAL_MS);
+  activityRefreshTimer.unref();
   render();
 
   const stop = (action: HudExitAction = "quit"): void => {
@@ -1187,6 +1236,7 @@ export async function runSessionHud(
     return exitAction;
   } finally {
     if (resizeTimer) clearTimeout(resizeTimer);
+    if (activityRefreshTimer) clearInterval(activityRefreshTimer);
     output.removeListener("resize", resize);
     process.removeListener("SIGINT", stopFromSignal);
     process.removeListener("SIGTERM", stopFromSignal);

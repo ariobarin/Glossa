@@ -22,6 +22,7 @@
     "docs:build": "node scripts/build-docs.mjs",
     "docs:check": "node scripts/build-docs.mjs --check",
     "site:check": "node scripts/check-site-chrome.mjs",
+    "cli:hud-demo": "npm run build --workspace @glossa/protocol && npm run hud:demo --workspace @ariobarin/glossa",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "test": "npm run test --workspace @glossa/relay && npm run test --workspace @ariobarin/glossa",
     "review:check": "node scripts/check-review-readiness.mjs && node --import tsx scripts/check-restricted-data-corpus.ts",

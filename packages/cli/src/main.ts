@@ -150,6 +150,7 @@ async function runWorkspaceSession(
     let postExitNotice: string | undefined;
     const exitAction: HudExitAction = await runSessionHud({
       workspace: root,
+      ...(label ? { workspaceLabel: label } : {}),
       run: async (signal, onEvent) => {
         await runManagedSession(root, endpoints, {
           credentials,
