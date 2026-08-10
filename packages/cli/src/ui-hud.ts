@@ -65,7 +65,7 @@ export interface HudState {
   connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
-  lastActivityAt: number | undefined;
+  activityPage: number;
   view: HudView;
   status: HudStatus | undefined;
   statusLoading: boolean;
@@ -107,7 +107,7 @@ export function initialHudState(workspace: string): HudState {
     connectedBefore: false,
     message: undefined,
     activities: [],
-    lastActivityAt: undefined,
+    activityPage: 0,
     view: "session",
     status: undefined,
     statusLoading: false,
@@ -117,6 +117,7 @@ export function initialHudState(workspace: string): HudState {
   };
 }
 
+const MAX_STORED_ACTIVITIES = 999;
 const MAX_STORED_ACTIVITY_TARGET_CHARS = 512;
 
 function truncate(value: string, width: number): string {
@@ -409,8 +410,7 @@ export function applyHudEvent(
   else activities.push(activity);
   return {
     ...state,
-    activities: activities.slice(-20),
-    lastActivityAt: activityTimestamp,
+    activities: activities.slice(-MAX_STORED_ACTIVITIES),
   };
 }
 
@@ -423,6 +423,7 @@ const PALETTE = {
   purple: "38;2;128;84;255",
   purpleReadable: "38;2;173;152;255",
   coral: "38;2;255;102;95",
+  orange: "38;2;255;166;87",
   line: "38;2;92;85;110",
 } as const;
 
@@ -510,15 +511,6 @@ function renderSession(
   return lines;
 }
 
-function activityGlyph(activity: HudActivity, color: boolean): string {
-  if (activity.state === "working") {
-    return style(color, PALETTE.muted, "◌");
-  }
-  return activity.state === "failed"
-    ? style(color, PALETTE.coral, "×")
-    : style(color, PALETTE.purpleReadable, "●");
-}
-
 function renderActivitySummary(
   summary: HudActivitySummary,
   usable: number,
@@ -541,13 +533,21 @@ function renderActivitySummary(
   return [summary.target, ...visibleDetails].join(" · ");
 }
 
-function relativeAgentActivity(lastActivityAt: number, now = Date.now()): string {
-  const elapsedMs = Math.max(0, now - lastActivityAt);
+function relativeActivityAge(updatedAt: number, now = Date.now()): string {
+  const elapsedMs = Math.max(0, now - updatedAt);
   if (elapsedMs < 10_000) return "just now";
   if (elapsedMs < 60_000) return `${Math.floor(elapsedMs / 1_000)}s ago`;
   if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m ago`;
   if (elapsedMs < 86_400_000) return `${Math.floor(elapsedMs / 3_600_000)}h ago`;
   return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
+}
+
+const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
+
+function activityToolTone(activity: HudActivity): string {
+  if (activity.state === "working") return PALETTE.ink;
+  if (activity.state === "failed") return PALETTE.orange;
+  return PALETTE.purpleReadable;
 }
 
 function renderActivityRow(
@@ -560,27 +560,34 @@ function renderActivityRow(
     ? "now"
     : activity.updatedAt === undefined
       ? ""
-      : relativeAgentActivity(activity.updatedAt, now);
+      : relativeActivityAge(activity.updatedAt, now);
   const visibleAge = age && usable >= age.length + 7 ? age : "";
   const ageSpace = visibleAge ? visibleAge.length + 2 : 0;
-  const leftBudget = Math.max(3, usable - ageSpace);
-  const visibleTool = truncate(
-    activity.tool,
-    Math.max(1, leftBudget - 2),
-  );
-  const summaryBudget = Math.max(0, leftBudget - visibleTool.length - 4);
+  const leftBudget = Math.max(1, usable - ageSpace);
+  const toolWidth = Math.min(ACTIVITY_TOOL_COLUMN_WIDTH, leftBudget);
+  const visibleTool = truncate(activity.tool, toolWidth).padEnd(toolWidth);
+  const summaryBudget = Math.max(0, leftBudget - toolWidth - 2);
   const summary = summaryBudget > 0
     ? renderActivitySummary(activity.summary, summaryBudget)
     : "";
-  const leftLength = 2 + visibleTool.length + (summary ? 2 + summary.length : 0);
+  const leftLength = toolWidth + (summary ? 2 + summary.length : 0);
   const gap = visibleAge
     ? " ".repeat(Math.max(2, usable - leftLength - visibleAge.length))
     : "";
-  return `${activityGlyph(activity, color)} ${
-    style(color, `${PALETTE.ink};1`, visibleTool)
-  }${summary ? `  ${style(color, PALETTE.muted, summary)}` : ""}${gap}${
-    visibleAge ? style(color, PALETTE.muted, visibleAge) : ""
-  }`;
+  return `${style(color, `${activityToolTone(activity)};1`, visibleTool)}${
+    summary ? `  ${style(color, PALETTE.muted, summary)}` : ""
+  }${gap}${visibleAge ? style(color, PALETTE.muted, visibleAge) : ""}`;
+}
+
+const ACTIVITY_PREAMBLE_LINES = 3;
+
+function activityPageCapacity(bodyBudget: number): number {
+  return Math.max(0, bodyBudget - ACTIVITY_PREAMBLE_LINES);
+}
+
+function activityMaxPage(activityCount: number, pageCapacity: number): number {
+  if (pageCapacity <= 0 || activityCount <= pageCapacity) return 0;
+  return Math.floor((activityCount - 1) / pageCapacity);
 }
 
 function renderActivity(
@@ -589,34 +596,25 @@ function renderActivity(
   color: boolean,
   bodyBudget: number,
 ): string[] {
-  const running = [...state.activities].reverse().find(
-    (activity) => activity.state === "working",
-  );
-  const agentStatus = running
-    ? `Active · ${running.tool}`
-    : state.lastActivityAt === undefined
-      ? "Waiting for activity"
-      : `Idle · last activity ${relativeAgentActivity(state.lastActivityAt)}`;
-  const agentTone = running ? PALETTE.purpleReadable : PALETTE.muted;
-  const lines = [
-    "",
-    sectionTitle("Agent", color),
-    style(color, agentTone, truncate(agentStatus, usable)),
-    "",
-    sectionTitle("Recent activity", color),
-  ];
+  const pageCapacity = activityPageCapacity(bodyBudget);
+  const maxPage = activityMaxPage(state.activities.length, pageCapacity);
+  const page = Math.min(state.activityPage, maxPage);
+  const rangeStart = page * pageCapacity + 1;
+  const rangeEnd = Math.min(rangeStart + pageCapacity - 1, state.activities.length);
+  const activityHeading = maxPage > 0
+    ? `Recent activity (${rangeStart}-${rangeEnd}/${state.activities.length})`
+    : "Recent activity";
+  const lines = ["", sectionTitle(activityHeading, color)];
   if (state.activities.length === 0) {
     lines.push("", style(color, PALETTE.muted, "No activity yet."));
     return lines;
   }
-  const visibleEntryCount = Math.min(
-    12,
-    Math.max(0, bodyBudget - lines.length - 1),
-  );
-  if (visibleEntryCount === 0) return lines;
+  if (pageCapacity === 0) return lines;
   lines.push("");
+  const pageEnd = state.activities.length - page * pageCapacity;
+  const pageStart = Math.max(0, pageEnd - pageCapacity);
   const now = Date.now();
-  for (const activity of state.activities.slice(-visibleEntryCount)) {
+  for (const activity of state.activities.slice(pageStart, pageEnd)) {
     lines.push(renderActivityRow(activity, usable, color, now));
   }
   return lines;
@@ -837,6 +835,8 @@ function footerHints(state: HudState): HudHint[] {
   }
   if (state.view === "activity") {
     return [
+      { key: "↑", label: "Older" },
+      { key: "↓", label: "Newer" },
       { key: "D", label: "Session" },
       { key: "S", label: "Status" },
       { key: "?", label: "Help" },
@@ -979,11 +979,11 @@ function statusDeviceCapacity(
   return visible;
 }
 
-function terminalStatusDeviceCapacity(
+function terminalBodyBudget(
   state: HudState,
   width: number,
   height: number,
-): number {
+): { usable: number; bodyBudget: number } {
   const marginLength = width >= 24 ? 4 : 0;
   const usable = Math.max(8, width - marginLength);
   const terminalHeight = Math.max(6, height);
@@ -995,7 +995,25 @@ function terminalStatusDeviceCapacity(
       1 -
       renderFooter(state, usable, false).length,
   );
+  return { usable, bodyBudget };
+}
+
+function terminalStatusDeviceCapacity(
+  state: HudState,
+  width: number,
+  height: number,
+): number {
+  const { usable, bodyBudget } = terminalBodyBudget(state, width, height);
   return statusDeviceCapacity(state, bodyBudget, usable);
+}
+
+function terminalActivityPageCapacity(
+  state: HudState,
+  width: number,
+  height: number,
+): number {
+  const { bodyBudget } = terminalBodyBudget(state, width, height);
+  return activityPageCapacity(bodyBudget);
 }
 
 export async function runSessionHud(
@@ -1015,6 +1033,8 @@ export async function runSessionHud(
   let stopUi: (() => void) | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   let activityRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let lastRenderedLines: string[] = [];
+  let uiReady = false;
   const color = !process.env.NO_COLOR;
 
   const render = (): void => {
@@ -1022,16 +1042,36 @@ export async function runSessionHud(
       clearTimeout(resizeTimer);
       resizeTimer = undefined;
     }
-    const view = renderHud(
+    const lines = renderHud(
       state,
       output.columns ?? 80,
       color,
       output.rows ?? 24,
-    );
-    output.write(`${color ? ANSI_BASE : ""}\u001b[H\u001b[2J${view}`);
+    ).split("\n");
+    const changed: string[] = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]!;
+      if (lastRenderedLines[index] === line) continue;
+      changed.push(`\u001b[${index + 1};1H\u001b[2K${line}`);
+    }
+    lastRenderedLines = lines;
+    if (changed.length > 0) {
+      output.write(`${color ? ANSI_BASE : ""}${changed.join("")}`);
+    }
   };
 
   const resize = (): void => {
+    if (state.view === "activity") {
+      const pageCapacity = terminalActivityPageCapacity(
+        state,
+        output.columns ?? 80,
+        output.rows ?? 24,
+      );
+      const maxPage = activityMaxPage(state.activities.length, pageCapacity);
+      if (state.activityPage > maxPage) {
+        state = { ...state, activityPage: maxPage };
+      }
+    }
     if (
       state.prompt?.type === "revoke-select" ||
       state.prompt?.type === "revoke-confirm"
@@ -1059,6 +1099,7 @@ export async function runSessionHud(
     if (!resizeTimer) {
       resizeTimer = setTimeout(() => {
         resizeTimer = undefined;
+        lastRenderedLines = [];
         if (!controller.signal.aborted) render();
       }, RESIZE_RENDER_DELAY_MS);
     }
@@ -1096,12 +1137,12 @@ export async function runSessionHud(
 
   const session = actions.run(controller.signal, (event) => {
     state = applyHudEvent(state, event);
-    render();
+    if (uiReady) render();
   }).then(() => {
     if (!controller.signal.aborted) {
       state = { ...state, connection: "disconnected" };
     }
-    render();
+    if (uiReady) render();
   }).catch((error: unknown) => {
     if (controller.signal.aborted) return;
     state = {
@@ -1109,19 +1150,21 @@ export async function runSessionHud(
       connection: "error",
       message: error instanceof Error ? error.message : String(error),
     };
-    render();
+    if (uiReady) render();
     throw error;
   });
 
   input.setRawMode(true);
   input.resume();
-  output.write(`${terminalTitleSequence(actions.workspaceLabel)}\u001b[?1049h\u001b[?25l`);
+  output.write(`${terminalTitleSequence(actions.workspaceLabel)}\u001b[?1049h\u001b[?25l\u001b[2J\u001b[H`);
+  lastRenderedLines = [];
+  uiReady = true;
   output.on("resize", resize);
   activityRefreshTimer = setInterval(() => {
     if (
       !controller.signal.aborted &&
       state.view === "activity" &&
-      state.lastActivityAt !== undefined
+      state.activities.length > 0
     ) {
       render();
     }
@@ -1203,13 +1246,35 @@ export async function runSessionHud(
           return;
         }
 
+        if (
+          state.view === "activity" &&
+          (key.name === "up" || key.name === "down")
+        ) {
+          const pageCapacity = terminalActivityPageCapacity(
+            state,
+            output.columns ?? 80,
+            output.rows ?? 24,
+          );
+          const maxPage = activityMaxPage(state.activities.length, pageCapacity);
+          const nextPage = key.name === "up"
+            ? Math.min(maxPage, state.activityPage + 1)
+            : Math.max(0, state.activityPage - 1);
+          if (nextPage !== state.activityPage) {
+            state = { ...state, activityPage: nextPage };
+            render();
+          }
+          return;
+        }
+
         if (key.name === "escape") {
           state = { ...state, view: "session", notice: undefined };
           render();
         } else if (key.name === "d") {
+          const enteringActivity = state.view !== "activity";
           state = {
             ...state,
-            view: state.view === "activity" ? "session" : "activity",
+            view: enteringActivity ? "activity" : "session",
+            activityPage: enteringActivity ? 0 : state.activityPage,
             notice: undefined,
           };
           render();

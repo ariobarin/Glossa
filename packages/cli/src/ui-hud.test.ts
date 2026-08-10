@@ -37,15 +37,16 @@ test("keeps the default screen sparse and anchors controls at the bottom", () =>
   assert.match(lines.at(-1)!, /Q Quit/);
 });
 
-test("activity view shows truthful agent presence", () => {
-  const waiting = renderHud(
+test("activity view keeps state and age on the activity row", () => {
+  const empty = renderHud(
     { ...connectedState(), view: "activity" },
     70,
     false,
     22,
   );
-  assert.match(waiting, /AGENT/);
-  assert.match(waiting, /Waiting for activity/);
+  assert.doesNotMatch(empty, /AGENT/);
+  assert.match(empty, /RECENT ACTIVITY/);
+  assert.match(empty, /No activity yet/);
 
   const job = {
     type: "read_file" as const,
@@ -63,7 +64,6 @@ test("activity view shows truthful agent presence", () => {
     false,
     22,
   );
-  assert.match(active, /Active · read_file/);
   const activeRow = active.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
   assert.match(
     activeRow ?? "",
@@ -82,13 +82,75 @@ test("activity view shows truthful agent presence", () => {
     false,
     22,
   );
-  assert.match(idle, /Idle · last activity just now/);
-  assert.match(idle, /RECENT ACTIVITY/);
+  assert.doesNotMatch(idle, /AGENT|last activity/);
   const idleRow = idle.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
   assert.match(
     idleRow ?? "",
     /read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+just now$/,
   );
+});
+
+test("activity rows align arguments and color the tool by state", () => {
+  const updatedAt = Date.now();
+  const state: HudState = {
+    ...connectedState(),
+    view: "activity",
+    activities: [
+      {
+        tool: "read_file",
+        summary: { target: 'path "one.ts"', details: [], truncation: "middle" },
+        requestId: "success",
+        state: "returned",
+        updatedAt,
+      },
+      {
+        tool: "search_text",
+        summary: { target: 'query "needle"', details: [], truncation: "middle" },
+        requestId: "failed",
+        state: "failed",
+        updatedAt,
+      },
+      {
+        tool: "run_command",
+        summary: { target: 'argv ["npm"]', details: [], truncation: "middle" },
+        requestId: "working",
+        state: "working",
+        updatedAt,
+      },
+    ],
+  };
+  const plain = renderHud(state, 90, false, 18);
+  const activityLines = plain.split("\n").filter((line) =>
+    line.includes("one.ts") || line.includes("needle") || line.includes('argv ["npm"]')
+  );
+  assert.equal(activityLines.length, 3);
+  assert.equal(activityLines[0]!.indexOf("path"), activityLines[1]!.indexOf("query"));
+  assert.equal(activityLines[1]!.indexOf("query"), activityLines[2]!.indexOf("argv"));
+  assert.doesNotMatch(plain, /[●◌×]/);
+
+  const colored = renderHud(state, 90, true, 18);
+  assert.match(colored, /\u001b\[38;2;173;152;255;1mread_file/);
+  assert.match(colored, /\u001b\[38;2;255;166;87;1msearch_text/);
+  assert.match(colored, /\u001b\[38;2;244;241;251;1mrun_command/);
+});
+
+test("activity history is bounded to 999 entries", () => {
+  let state = connectedState();
+  for (let index = 1; index <= 1_002; index += 1) {
+    state = applyHudEvent(state, {
+      type: "activity",
+      phase: "returned",
+      job: {
+        type: "read_file",
+        requestId: `request-${index}`,
+        path: `file-${index}.txt`,
+      },
+      ok: true,
+    });
+  }
+  assert.equal(state.activities.length, 999);
+  assert.equal(state.activities[0]!.requestId, "request-4");
+  assert.equal(state.activities.at(-1)!.requestId, "request-1002");
 });
 
 test("shows the selected access boundary in the workspace screen", () => {
@@ -673,8 +735,8 @@ test("activity summaries hide edit text and escape terminal controls", () => {
   assert.doesNotMatch(output, /\u001b/);
 });
 
-test("activity clipping keeps the newest complete entries", () => {
-  const activities = Array.from({ length: 16 }, (_, index) => ({
+test("activity pagination shows newest entries and range only when needed", () => {
+  const activities = Array.from({ length: 18 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
       target: `file-${index + 1}.txt`,
@@ -684,17 +746,37 @@ test("activity clipping keeps the newest complete entries", () => {
     requestId: `request-${index + 1}`,
     state: "returned" as const,
   }));
-  const output = renderHud(
+  const newest = renderHud(
     { ...connectedState(), view: "activity", activities },
     70,
     false,
     24,
   );
 
-  assert.doesNotMatch(output, /file-[1-4]\.txt/);
-  for (let index = 5; index <= 16; index += 1) {
-    assert.match(output, new RegExp(`file-${index}\\.txt`));
+  assert.match(newest, /RECENT ACTIVITY \(1-17\/18\)/);
+  assert.doesNotMatch(newest, /file-1\.txt/);
+  for (let index = 2; index <= 18; index += 1) {
+    assert.match(newest, new RegExp(`file-${index}\\.txt`));
   }
+
+  const older = renderHud(
+    { ...connectedState(), view: "activity", activityPage: 1, activities },
+    70,
+    false,
+    24,
+  );
+  assert.match(older, /RECENT ACTIVITY \(18-18\/18\)/);
+  assert.match(older, /file-1\.txt/);
+  assert.doesNotMatch(older, /file-(?:2|18)\.txt/);
+
+  const unpaged = renderHud(
+    { ...connectedState(), view: "activity", activities: activities.slice(-4) },
+    70,
+    false,
+    24,
+  );
+  assert.match(unpaged, /RECENT ACTIVITY/);
+  assert.doesNotMatch(unpaged, /RECENT ACTIVITY \(/);
 });
 
 test("status metrics share one-line formatting and contain active devices only", () => {
@@ -880,6 +962,99 @@ test("help keeps the useful navigation without removed commands", () => {
   assert.doesNotMatch(output, /update/i);
 });
 
+test("activity arrows navigate older and newer pages", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 70;
+  output.rows = 22;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent) => {
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+            legacyRelay: false,
+          },
+        });
+        for (let index = 1; index <= 18; index += 1) {
+          onEvent({
+            type: "activity",
+            phase: "returned",
+            job: {
+              type: "read_file",
+              requestId: `request-${index}`,
+              path: `file-${index}.txt`,
+            },
+            ok: true,
+          });
+        }
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => {
+        throw new Error("not used");
+      },
+      revokeDevice: async () => {
+        throw new Error("not used");
+      },
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  let offset = rendered.length;
+  input.emit("keypress", "d", { name: "d" });
+  let update = rendered.slice(offset);
+  assert.match(update, /RECENT ACTIVITY \(1-15\/18\)/);
+  assert.match(update, /↑/);
+  assert.match(update, /Older/);
+  assert.match(update, /↓/);
+  assert.match(update, /Newer/);
+  assert.doesNotMatch(update, /file-[123]\.txt/);
+
+  offset = rendered.length;
+  input.emit("keypress", "", { name: "up" });
+  update = rendered.slice(offset);
+  assert.match(update, /RECENT ACTIVITY \(16-18\/18\)/);
+  assert.match(update, /file-1\.txt/);
+  assert.doesNotMatch(update, /file-18\.txt/);
+
+  offset = rendered.length;
+  input.emit("keypress", "", { name: "down" });
+  update = rendered.slice(offset);
+  assert.match(update, /RECENT ACTIVITY \(1-15\/18\)/);
+  assert.match(update, /file-18\.txt/);
+
+  input.emit("keypress", "q", { name: "q" });
+  assert.equal(await run, "quit");
+});
+
 test("rerenders on terminal resize and removes its listener on exit", async () => {
   const input = new PassThrough() as PassThrough & {
     isTTY: boolean;
@@ -926,17 +1101,16 @@ test("rerenders on terminal resize and removes its listener on exit", async () =
   );
 
   await new Promise<void>((resolve) => setImmediate(resolve));
-  const framesBeforeResize =
-    rendered.split("\u001b[H\u001b[2J").length - 1;
+  const framesBeforeResize = rendered.match(/\u001b\[1;1H/g)?.length ?? 0;
   for (let index = 0; index < 100; index += 1) {
     output.columns = 38 + index % 2;
     output.rows = 12 + index % 2;
     output.emit("resize");
   }
   await new Promise<void>((resolve) => setTimeout(resolve, 30));
-  const framesAfterResize =
-    rendered.split("\u001b[H\u001b[2J").length - 1;
+  const framesAfterResize = rendered.match(/\u001b\[1;1H/g)?.length ?? 0;
   assert.equal(framesAfterResize, framesBeforeResize + 1);
+  assert.equal(rendered.match(/\u001b\[2J/g)?.length ?? 0, 1);
   assert.equal(output.listenerCount("resize"), 1);
 
   input.emit("keypress", "q", { name: "q" });
