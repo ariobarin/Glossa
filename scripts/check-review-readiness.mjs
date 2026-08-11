@@ -188,10 +188,10 @@ await requiredText("README.md", [
   "## Maintainer and review documentation",
 ]);
 await requiredText("site/docs/quickstart.md", [
-  "Glossa starts in `workspace` mode",
-  "is not sandboxed",
-  "[Review the security boundary](/security)",
-  "Review requested writes and commands carefully",
+  "Glossa starts with `workspace` access",
+  "`system` access is optional and unsandboxed",
+  "commands inherit the account's environment, credentials, filesystem permissions, and network access",
+  "[Review security](/security)",
 ]);
 await requiredText("site/docs/why.md", [
   "a folder on your computer",
