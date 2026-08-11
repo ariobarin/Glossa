@@ -135,7 +135,7 @@ Before submission:
 - reset the fixture and start it with the exact `system` profile and `openai-review` label above;
 - authorize the CLI and ChatGPT with the dedicated reviewer account;
 - verify from an unrelated network that OAuth, tool scanning, worker presence, and every reviewer test work without operator intervention;
-- confirm discovery reports contract `1.2.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, `get_command.deviceId` plus `afterSequence`, and `read_command_output` required device ID, stream, offset, limit, continuation, and retention fields;
+- confirm discovery reports contract `1.2.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, required `deviceId` on `get_command` and `cancel_command`, `get_command.afterSequence`, and `read_command_output` required device ID, stream, offset, limit, continuation, and retention fields;
 - reset the fixture after any test run that mutates it;
 - run `glossa --access read-only` and default `glossa` in separate release-owner checks to verify write and command denials even though the portal reviewer fixture uses `system` to exercise all tools.
 
