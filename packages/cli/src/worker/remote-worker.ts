@@ -73,6 +73,15 @@ export class DeviceRejectedError extends Error {
   }
 }
 
+export class RelayAccessProfileUnsupportedError extends Error {
+  constructor(profile: WorkerAccessProfile) {
+    super(
+      `The relay needs an update before it can represent ${profile} access. Update the relay before reconnecting this workspace.`,
+    );
+    this.name = "RelayAccessProfileUnsupportedError";
+  }
+}
+
 class RelayResponseError extends Error {
   constructor(readonly status: number) {
     super(`The relay returned HTTP ${status}.`);
@@ -237,7 +246,12 @@ export class RemoteWorker {
           await this.#pollGeneration(session);
         } catch (error) {
           if (this.#signal.aborted) return;
-          if (error instanceof DeviceRejectedError) throw error;
+          if (
+            error instanceof DeviceRejectedError ||
+            error instanceof RelayAccessProfileUnsupportedError
+          ) {
+            throw error;
+          }
           const delay = reconnectDelayMs(
             failures,
             this.#random,
@@ -296,137 +310,97 @@ export class RemoteWorker {
       workerId: this.#workerId,
       capabilities: { commandProgress: true, concurrentJobs: true },
     };
-    const versionedCurrentBody = this.#workerVersion
-      ? { ...currentBody, workerVersion: this.#workerVersion }
-      : undefined;
-    const versionedMutationBody = this.#workerVersion
-      ? { ...mutationBody, workerVersion: this.#workerVersion }
-      : undefined;
-    const versionedStructuredBody = this.#workerVersion
-      ? { ...structuredBody, workerVersion: this.#workerVersion }
-      : undefined;
-    const preferredProfileBody = this.#accessProfile
-      ? {
-          ...(versionedCurrentBody ?? currentBody),
-          accessProfile: this.#accessProfile,
-          ...(this.#workspaceLabel
-            ? { workspaceLabel: this.#workspaceLabel }
-            : {}),
-        }
-      : undefined;
-    const attempts: Array<{ body: object; legacyRelay: boolean }> = [
-      ...(preferredProfileBody
-        ? [{ body: preferredProfileBody, legacyRelay: false }]
-        : []),
-      ...(versionedCurrentBody && this.#workspaceLabel
-        ? [{
-            body: {
-              ...versionedCurrentBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(this.#workspaceLabel
-        ? [{
-            body: {
-              ...currentBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(versionedCurrentBody
-        ? [{ body: versionedCurrentBody, legacyRelay: false }]
-        : []),
+    const capabilityBodies: Array<Record<string, unknown>> = [
+      currentBody,
+      mutationBody,
+      structuredBody,
+      concurrentBody,
       {
-        body: currentBody,
-        legacyRelay: false,
+        workerId: this.#workerId,
+        capabilities: { commandProgress: true },
       },
-      ...(versionedMutationBody && this.#workspaceLabel
-        ? [{
-            body: {
-              ...versionedMutationBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(this.#workspaceLabel
-        ? [{
-            body: {
-              ...mutationBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(versionedMutationBody
-        ? [{ body: versionedMutationBody, legacyRelay: false }]
-        : []),
-      {
-        body: mutationBody,
-        legacyRelay: false,
-      },
-      ...(versionedStructuredBody && this.#workspaceLabel
-        ? [{
-            body: {
-              ...versionedStructuredBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(this.#workspaceLabel
-        ? [{
-            body: {
-              ...structuredBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(versionedStructuredBody
-        ? [{ body: versionedStructuredBody, legacyRelay: false }]
-        : []),
-      {
-        body: structuredBody,
-        legacyRelay: false,
-      },
-      ...(this.#workspaceLabel
-        ? [{
-            body: {
-              ...concurrentBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      {
-        body: concurrentBody,
-        legacyRelay: false,
-      },
-      {
-        body: {
-          workerId: this.#workerId,
-          capabilities: { commandProgress: true },
-        },
-        legacyRelay: false,
-      },
-      { body: { workerId: this.#workerId }, legacyRelay: false },
-      { body: {}, legacyRelay: true },
+      { workerId: this.#workerId },
     ];
+    const metadataPhases = [
+      {
+        includeVersion: Boolean(this.#workerVersion),
+        includeLabel: Boolean(this.#workspaceLabel),
+      },
+      ...(this.#workspaceLabel
+        ? [{
+            includeVersion: Boolean(this.#workerVersion),
+            includeLabel: false,
+          }]
+        : []),
+      ...(this.#workerVersion && this.#workspaceLabel
+        ? [{ includeVersion: false, includeLabel: true }]
+        : []),
+      { includeVersion: false, includeLabel: false },
+    ];
+    const attempts: Array<{
+      body: Record<string, unknown>;
+      legacyRelay: boolean;
+      profileIncluded: boolean;
+    }> = [];
+    const seenAttempts = new Set<string>();
+    const pushAttempt = (
+      base: Record<string, unknown>,
+      includeProfile: boolean,
+      includeVersion: boolean,
+      includeLabel: boolean,
+      legacyRelay = false,
+    ): void => {
+      const body = {
+        ...base,
+        ...(includeProfile && this.#accessProfile
+          ? { accessProfile: this.#accessProfile }
+          : {}),
+        ...(includeVersion && this.#workerVersion
+          ? { workerVersion: this.#workerVersion }
+          : {}),
+        ...(includeLabel && this.#workspaceLabel
+          ? { workspaceLabel: this.#workspaceLabel }
+          : {}),
+      };
+      const key = JSON.stringify(body);
+      if (seenAttempts.has(key)) return;
+      seenAttempts.add(key);
+      attempts.push({ body, legacyRelay, profileIncluded: includeProfile });
+    };
 
-    for (const [index, attempt] of attempts.entries()) {
+    if (this.#accessProfile) {
+      for (const metadata of metadataPhases) {
+        for (const body of capabilityBodies) {
+          pushAttempt(
+            body,
+            true,
+            metadata.includeVersion,
+            metadata.includeLabel,
+          );
+        }
+      }
+    }
+
+    if (this.#accessProfile === undefined || this.#accessProfile === "system") {
+      for (const metadata of metadataPhases) {
+        for (const body of capabilityBodies) {
+          pushAttempt(
+            body,
+            false,
+            metadata.includeVersion,
+            metadata.includeLabel,
+          );
+        }
+      }
+      attempts.push({ body: {}, legacyRelay: true, profileIncluded: false });
+    }
+
+    for (const attempt of attempts) {
       let response: Response;
       try {
         response = await this.#post("/device/register", attempt.body);
       } catch (error) {
-        if (
-          error instanceof RelayResponseError &&
-          error.status === 400 &&
-          index < attempts.length - 1
-        ) {
+        if (error instanceof RelayResponseError && error.status === 400) {
           continue;
         }
         throw error;
@@ -464,7 +438,8 @@ export class RemoteWorker {
         accessProfileAccepted:
           this.#accessProfile === undefined ||
           ("accessProfile" in value &&
-            value.accessProfile === this.#accessProfile),
+            value.accessProfile === this.#accessProfile) ||
+          (this.#accessProfile === "system" && !attempt.profileIncluded),
         workspaceLabelAccepted:
           this.#workspaceLabel === undefined ||
           ("workspaceLabel" in value &&
@@ -473,6 +448,9 @@ export class RemoteWorker {
       };
     }
 
+    if (this.#accessProfile && this.#accessProfile !== "system") {
+      throw new RelayAccessProfileUnsupportedError(this.#accessProfile);
+    }
     throw new Error("The relay rejected every supported registration shape.");
   }
 
