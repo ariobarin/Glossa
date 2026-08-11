@@ -139,8 +139,8 @@ requireAll(quickstart, [
   'class="heading-anchor"',
   '<h1>Connect ChatGPT to a local workspace</h1>',
   '<h2 id="1-install"><a class="heading-anchor"',
-  '<h2 id="2-start-a-workspace"><a class="heading-anchor"',
-  '<h2 id="3-add-glossa-to-chatgpt"><a class="heading-anchor"',
+  '<h2 id="2-add-glossa-to-chatgpt"><a class="heading-anchor"',
+  '<h2 id="3-start-a-workspace"><a class="heading-anchor"',
   '<h2 id="4-test-it"><a class="heading-anchor"',
   'npm install --global @ariobarin/glossa',
   'https://mcp.glossa.sh/mcp',
@@ -150,6 +150,7 @@ requireAll(quickstart, [
   'href="/security"',
   'Review security',
   'Review permissions and requested actions.',
+  'reuse the same Glossa browser session',
   "data-copy-target=",
 ], "site/docs/quickstart.html");
 for (const unnecessary of [

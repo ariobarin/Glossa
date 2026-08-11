@@ -10,21 +10,11 @@ Maintain these settings for every Auth0 client that can request the managed Glos
 
 - Enable the `google-oauth2` social connection for regular users.
 - Keep Device Code and refresh-token grants enabled for the Native CLI client.
-- Configure the Google connection to pass a static upstream `prompt` value of `select_account`.
+- Do not force an upstream Google account chooser for regular authorization. Let the existing Auth0 and Google browser session be reused so ChatGPT authorization can carry through to the CLI Device Authorization flow without another account selection.
 - Disable every unapproved social, enterprise, passwordless, and database connection.
 - Configure the relay's identity allowlist explicitly. A valid token is accepted only when its subject matches an approved provider prefix or exact subject.
 
-Auth0 configures static upstream parameters inside the connection's existing `options` object. Preserve the complete existing object, including secrets, when adding:
-
-```json
-{
-  "upstream_params": {
-    "prompt": {
-      "value": "select_account"
-    }
-  }
-}
-```
+For the managed deployment, remove any existing Google connection `upstream_params.prompt=select_account` override while preserving the rest of the connection options. Account switching stays explicit: disconnect the ChatGPT app and run `glossa logout` before choosing another identity. Do not try to infer or merge identities by email address.
 
 Never commit a Google client secret, Auth0 Management API token, reviewer password, reviewer Auth0 subject, exported connection object, access token, refresh token, or device secret.
 
@@ -83,7 +73,7 @@ The MCP `logout` tool returns equivalent sign-out steps and a browser logout URL
 Before treating an identity change as deployed:
 
 1. Confirm regular login offers the intended Google connection and no unapproved provider.
-2. Confirm Google displays an account chooser even when an Auth0 session existed previously.
+2. Authorize Glossa in ChatGPT, then start the CLI in the same browser profile and confirm the CLI authorization reuses that session without requiring another Google account choice or fresh credential entry.
 3. Confirm the dedicated reviewer account works in both ChatGPT OAuth and CLI Device Authorization without MFA or external account access.
 4. Start a reviewer fixture worker and confirm `list_devices` returns its profile and permissions.
 5. Attempt authentication with a different `auth0|` database subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.

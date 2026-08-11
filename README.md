@@ -12,19 +12,19 @@ Install the CLI with Node.js 22.9 or newer:
 npm install --global @ariobarin/glossa
 ```
 
-Open a terminal in the project and start Glossa:
-
-```shell
-glossa
-```
-
-Then add this MCP server to ChatGPT using OAuth:
+Add this MCP server to ChatGPT using OAuth first:
 
 ```text
 https://mcp.glossa.sh/mcp
 ```
 
-Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete connection flow. Self-contained installers are covered in the [operations guide](docs/operations.md).
+Then open a terminal in the project and start Glossa:
+
+```shell
+glossa
+```
+
+Connecting ChatGPT first lets the CLI reuse the same Glossa browser session instead of forcing another Google account choice on first run. Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete connection flow. Self-contained installers are covered in the [operations guide](docs/operations.md).
 
 ## Choose access
 
