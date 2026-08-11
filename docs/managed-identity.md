@@ -76,7 +76,7 @@ Running `glossa logout` deletes the CLI's local OAuth credentials and opens Auth
 4. Choose or enter the intended account during ChatGPT authorization.
 5. Start Glossa and authorize the same identity in the CLI.
 
-The MCP `logout` tool returns equivalent sign-out steps and a browser logout URL. It does not open the URL, revoke credentials, or sign the user out by itself.
+The MCP `get_logout_instructions` tool returns equivalent sign-out steps and a browser logout URL. It does not open the URL, revoke credentials, or sign the user out by itself.
 
 ## Release verification
 

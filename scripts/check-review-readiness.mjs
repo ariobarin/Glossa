@@ -138,7 +138,7 @@ assert.equal(contractVersion, "1.2.0", "MCP public contract must be 1.2.0");
 
 const expectedTools = [
   "list_devices",
-  "logout",
+  "get_logout_instructions",
   "read_file",
   "list_files",
   "search_text",
