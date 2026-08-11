@@ -340,7 +340,6 @@ export class RemoteWorker {
     const attempts: Array<{
       body: Record<string, unknown>;
       legacyRelay: boolean;
-      profileIncluded: boolean;
     }> = [];
     const seenAttempts = new Set<string>();
     const pushAttempt = (
@@ -365,7 +364,7 @@ export class RemoteWorker {
       const key = JSON.stringify(body);
       if (seenAttempts.has(key)) return;
       seenAttempts.add(key);
-      attempts.push({ body, legacyRelay, profileIncluded: includeProfile });
+      attempts.push({ body, legacyRelay });
     };
 
     if (this.#accessProfile) {
@@ -392,7 +391,7 @@ export class RemoteWorker {
           );
         }
       }
-      attempts.push({ body: {}, legacyRelay: true, profileIncluded: false });
+      attempts.push({ body: {}, legacyRelay: true });
     }
 
     for (const attempt of attempts) {
@@ -424,7 +423,12 @@ export class RemoteWorker {
       const workerToken = "workerToken" in value
         ? optionalWorkerToken(value.workerToken)
         : undefined;
-      return {
+      const accessProfileAccepted =
+        this.#accessProfile === undefined ||
+        this.#accessProfile === "system" ||
+        ("accessProfile" in value &&
+          value.accessProfile === this.#accessProfile);
+      const session: RegisteredSession = {
         generation: value.generation,
         legacyRelay: attempt.legacyRelay,
         concurrentJobs:
@@ -435,17 +439,17 @@ export class RemoteWorker {
           !attempt.legacyRelay && supportsCapability(value, "structuredMutations"),
         commandOutputRanges:
           !attempt.legacyRelay && supportsCapability(value, "commandOutputRanges"),
-        accessProfileAccepted:
-          this.#accessProfile === undefined ||
-          ("accessProfile" in value &&
-            value.accessProfile === this.#accessProfile) ||
-          (this.#accessProfile === "system" && !attempt.profileIncluded),
+        accessProfileAccepted,
         workspaceLabelAccepted:
           this.#workspaceLabel === undefined ||
           ("workspaceLabel" in value &&
             value.workspaceLabel === this.#workspaceLabel),
         ...(workerToken ? { workerToken } : {}),
       };
+      if (!accessProfileAccepted && this.#accessProfile) {
+        throw new RelayAccessProfileUnsupportedError(this.#accessProfile);
+      }
+      return session;
     }
 
     if (this.#accessProfile && this.#accessProfile !== "system") {
