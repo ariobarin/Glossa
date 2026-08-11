@@ -134,10 +134,10 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "1.2.0", "MCP public contract must be 1.2.0");
+assert.equal(contractVersion, "2.0.0", "MCP public contract must be 2.0.0");
 
 const expectedTools = [
-  "list_devices",
+  "list_workspaces",
   "get_logout_instructions",
   "read_file",
   "list_files",
@@ -161,7 +161,7 @@ for (const tool of expectedTools) {
 }
 assert.ok(
   mcpSource.includes("accessProfile") && mcpSource.includes("permissions"),
-  "list_devices must expose access profiles and permissions",
+  "list_workspaces must expose access profiles and permissions",
 );
 assert.ok(
   mcpSource.includes("command_access_disabled") &&
@@ -240,7 +240,7 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `1.2.0`",
+  "MCP tool contract: `2.0.0`",
   "Eleven positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",

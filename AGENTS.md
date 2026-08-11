@@ -27,6 +27,8 @@ Read `docs/architecture.md` and `docs/security.md` before changing trust boundar
 4. Verify the real CLI or HTTP flow when integration behavior changes.
 5. Open one focused pull request.
 
+For a coordinated breaking contract release, target the active `staging/contract-v*` branch instead of `main`. Individual staging commits do not need to preserve compatibility with intermediate staging states. Keep `main` production-safe, integrate and test the complete release train on staging, then open one staging-to-main release pull request when the migration is coherent. The staging branch must pass the full Linux and Windows CI checks both on each pull request and on the combined branch tip. Do not merge the release pull request until the release owner explicitly approves the cutover.
+
 ## Account safety
 
 When a service login is required, open the official page and let the user enter passwords and MFA. Never request, view, copy, or store those values.

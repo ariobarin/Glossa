@@ -102,7 +102,7 @@ glossa logout
 ## Verify a setup
 
 1. Confirm the terminal shows the intended root and profile.
-2. Confirm `list_devices` reports the same profile and permissions.
+2. Confirm `list_workspaces` reports the same profile and permissions.
 3. Read a non-sensitive file from the selected project.
 4. Under `read-only`, confirm a write is rejected.
 5. Under the default `workspace` profile, confirm a guarded edit succeeds and a command is rejected.
