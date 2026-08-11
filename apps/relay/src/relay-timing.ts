@@ -5,7 +5,7 @@ const MCP_TOOL_NAMES = new Set([
   "cancel_command",
   "edit_file",
   "get_command",
-  "list_devices",
+  "list_workspaces",
   "list_files",
   "logout",
   "read_file",

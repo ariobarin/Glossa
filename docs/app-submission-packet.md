@@ -15,7 +15,7 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Security policy: `https://github.com/ariobarin/glossa/blob/main/SECURITY.md`
 - Technical security model: `https://glossa.sh/docs/security`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
-- MCP tool contract: `1.0.0` (11 tools)
+- MCP tool contract: `1.1.0` (11 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 Proposed short description:
@@ -47,8 +47,8 @@ Run this set in a fresh ChatGPT conversation after a material routing or metadat
 
 | Class | Prompt | Expected routing |
 | --- | --- | --- |
-| Direct | `Use Glossa to read package.json from my local workspace.` | Call `list_devices` when no prior Glossa result identifies the workspace, select an online workspace with read permission, then call `read_file`. |
-| Indirect | `Find where OAuth access tokens are validated in my connected local workspace.` | Use `list_devices`, `search_text`, and a structured read tool instead of a shell search. |
+| Direct | `Use Glossa to read package.json from my local workspace.` | Call `list_workspaces` when no prior Glossa result identifies the workspace, select an online workspace with read permission, then call `read_file`. |
+| Indirect | `Find where OAuth access tokens are validated in my connected local workspace.` | Use `list_workspaces`, `search_text`, and a structured read tool instead of a shell search. |
 | Mixed intent | `Review the fixture bug, fix it, and verify the focused test.` | Inspect, make only the scoped edit when write permission is available, and run the focused test only when the selected worker reports system command permission. |
 | Negative built-in | `What does git rebase do?` | Answer without selecting or calling Glossa. |
 | Negative web | `Find the latest Node.js release.` | Use ordinary web or product capabilities, not Glossa. |
@@ -64,7 +64,7 @@ Run this set in a fresh ChatGPT conversation after a material routing or metadat
 | `workspace` (default) | Yes | Yes | No |
 | `system` | Yes | Yes | Yes |
 
-The relay rejects forbidden operations before queueing them, and the local worker independently enforces the same profile. `list_devices` exposes the profile and exact `readFiles`, `writeFiles`, and `runCommands` booleans so the model and reviewer can verify authority before acting.
+The relay rejects forbidden operations before queueing them, and the local worker independently enforces the same profile. `list_workspaces` exposes the profile and exact `readFiles`, `writeFiles`, and `runCommands` booleans so the model and reviewer can verify authority before acting.
 
 Glossa deliberately retains arbitrary local command execution under `system` because using the user's existing toolchain is a core product function. It is not presented as sandboxed. The user must explicitly start `glossa --access system`; commands inherit the worker account's environment, credentials, filesystem permissions, and network access and may affect local or external systems. The safer `workspace` profile remains the product default and supports useful code changes without command authority.
 
@@ -82,7 +82,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 
 | Tool | Read only | Destructive | Open world | Explanation |
 | --- | --- | --- | --- | --- |
-| `list_devices` | Yes | No | No | Reads online workspaces, labels, versions, access profiles, permissions, and negotiated capabilities for the signed-in account. |
+| `list_workspaces` | Yes | No | No | Reads online workspaces, labels, versions, access profiles, permissions, and negotiated capabilities for the signed-in account. |
 | `logout` | Yes | No | No | Returns sign-out steps and a browser logout URL. It does not revoke credentials, navigate, or claim logout is complete. |
 | `read_file` | Yes | No | No | Reads one bounded relative UTF-8 file inside the exposed root. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |
@@ -131,7 +131,7 @@ Before submission:
 - reset the fixture and start it with the exact `system` profile and `openai-review` label above;
 - authorize the CLI and ChatGPT with the dedicated reviewer account;
 - verify from an unrelated network that OAuth, tool scanning, worker presence, and every reviewer test work without operator intervention;
-- confirm discovery reports contract `1.0.0`, the app-wide instructions, all 11 tools, exact annotations, access-profile output, `run_command.waitMs`, and `get_command.deviceId` plus `afterSequence`;
+- confirm discovery reports contract `1.1.0`, the app-wide instructions, all 11 tools, exact annotations, access-profile output, `run_command.waitMs`, and `get_command.workspaceId` plus `afterSequence`;
 - reset the fixture after any test run that mutates it;
 - run `glossa --access read-only` and default `glossa` in separate release-owner checks to verify write and command denials even though the portal reviewer fixture uses `system` to exercise all tools.
 
@@ -172,7 +172,7 @@ These checks verify profile behavior before the reviewer worker is returned to `
 2. Start the fixture with `glossa --access workspace --label openai-review .review-workspace`. Confirm a guarded fixture edit works and `run_command` returns `command_access_disabled` without a queued worker job.
 3. Start the fixture with `glossa --access system --label openai-review .review-workspace`. Confirm the same guarded edit and `npm test` work.
 4. On that isolated `system` fixture, run `npm run restricted-output`. Expected: `restricted_data_blocked`, no synthetic token in the result or local activity history, and no `notes/restricted-output-should-not-exist.txt` after the process has stopped.
-5. Confirm the local terminal and `list_devices` report the same profile for every run.
+5. Confirm the local terminal and `list_workspaces` report the same profile for every run.
 
 ## Portal-only and operational fields
 
@@ -195,7 +195,7 @@ Suggested release note:
 Do not submit until all of the following are true:
 
 - the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
-- the production relay serves MCP contract `1.0.0` and the scan matches all 11 tools, schemas, descriptions, output contracts, and annotations in this packet;
+- the production relay serves MCP contract `1.1.0` and the scan matches all 11 tools, schemas, descriptions, output contracts, and annotations in this packet;
 - the production website, privacy, terms, security, and support URLs are public and match the implementation;
 - the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;
 - the isolated fixture worker remains online and no other workspace is exposed;

@@ -10,7 +10,7 @@ Glossa connects one project folder to an authenticated client through a local wo
 | `workspace` (default) | Yes | Yes | No |
 | `system` | Yes | Yes | Yes |
 
-The selected profile appears in the local terminal and in `list_devices`. Both the relay and the local worker enforce it.
+The selected profile appears in the local terminal and in `list_workspaces`. Both the relay and the local worker enforce it.
 
 > **`system` is powerful and is not sandboxed.** Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. Commands are not confined to the selected project and can affect local or external systems.
 
