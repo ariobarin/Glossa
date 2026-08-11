@@ -264,7 +264,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       required?: string[];
     };
     assert.ok(inputSchema.properties?.deviceId);
-    assert.equal(inputSchema.required?.includes("deviceId") ?? false, false);
+    assert.equal(inputSchema.required?.includes("deviceId") ?? false, true);
   }
   const searchTextInputSchema = byName.get("search_text")?.inputSchema as {
     properties?: Record<string, unknown>;
@@ -1243,7 +1243,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
   }
 });
 
-test("routes cached command schemas without deviceId", async (context) => {
+test("routes command follow-ups only by explicit deviceId", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000010";
   const workerId = "00000000-0000-4000-8000-000000000011";
@@ -1266,7 +1266,7 @@ test("routes cached command schemas without deviceId", async (context) => {
     },
   );
   const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-legacy-command-test", version: "1.0.0" });
+  const client = new Client({ name: "glossa-explicit-command-route-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   context.after(async () => {
     await Promise.allSettled([client.close(), server.close()]);
@@ -1338,7 +1338,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const getCall = client.callTool({
     name: "get_command",
-    arguments: { commandId },
+    arguments: { deviceId: workerId, commandId },
   });
   const getJob = await state.poll(
     accountId,
@@ -1366,12 +1366,12 @@ test("routes cached command schemas without deviceId", async (context) => {
     exitCode: 0,
   });
 
-  const expiredRoute = await client.callTool({
+  const missingRoute = await client.callTool({
     name: "get_command",
     arguments: { commandId },
   });
-  assert.equal(expiredRoute.isError, true);
-  assert.match(JSON.stringify(expiredRoute.content), /command_not_found/);
+  assert.equal(missingRoute.isError, true);
+  assert.match(JSON.stringify(missingRoute.content), /deviceId/);
 
   const secondRunCall = client.callTool({
     name: "run_command",
@@ -1398,7 +1398,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const cancelCall = client.callTool({
     name: "cancel_command",
-    arguments: { commandId: canceledCommandId },
+    arguments: { deviceId: workerId, commandId: canceledCommandId },
   });
   const cancelJob = await state.poll(
     accountId,

@@ -40,15 +40,6 @@ const deviceIdFieldSchema = z
   .uuid()
   .describe("Online Glossa workspace identifier returned by list_devices. Select a workspace whose permissions allow the requested operation.");
 const deviceIdSchema = z.object({ deviceId: deviceIdFieldSchema }).strict();
-const optionalCommandDeviceIdSchema = z
-  .object({
-    deviceId: deviceIdFieldSchema
-      .optional()
-      .describe(
-        "Online Glossa workspace identifier returned by run_command. Pass it when available; omission is supported only for compatibility with clients that cached the earlier command schema.",
-      ),
-  })
-  .strict();
 const readFileInputSchema = readFileRequestSchema.extend(deviceIdSchema.shape);
 const listFilesInputSchema = listFilesRequestSchema.extend(deviceIdSchema.shape);
 const searchTextInputSchema = searchTextRequestSchema.extend(deviceIdSchema.shape);
@@ -89,15 +80,11 @@ const runCommandInputSchema = z
     waitMs: runCommandRequestSchema.shape.waitMs,
   })
   .strict();
-const getCommandInputSchema = getCommandRequestSchema.extend(
-  optionalCommandDeviceIdSchema.shape,
-);
+const getCommandInputSchema = getCommandRequestSchema.extend(deviceIdSchema.shape);
 const readCommandOutputInputSchema = readCommandOutputRequestSchema.extend(
   deviceIdSchema.shape,
 );
-const cancelCommandInputSchema = cancelCommandRequestSchema.extend(
-  optionalCommandDeviceIdSchema.shape,
-);
+const cancelCommandInputSchema = cancelCommandRequestSchema.extend(deviceIdSchema.shape);
 const sha256Schema = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
@@ -1307,13 +1294,7 @@ function registerTools(
           deviceId,
           job,
         );
-        return commandSuccess(result, deviceId, (command) => {
-          if (command.status === "running") {
-            state.rememberCommand(accountId, deviceId, command.commandId);
-          } else {
-            state.forgetCommand(accountId, command.commandId);
-          }
-        });
+        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
@@ -1335,21 +1316,13 @@ function registerTools(
       },
     },
     async ({ deviceId, commandId, waitMs, afterSequence }) => {
-      const routedDeviceId =
-        deviceId ?? state.workerForCommand(accountId, commandId);
-      if (!routedDeviceId) {
-        return errorResult(
-          "command_not_found",
-          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
-        );
-      }
       try {
         const effectiveWaitMs = commandStatusWaitMs(config, waitMs);
         const result = await executeJob(
           state,
           config,
           accountId,
-          routedDeviceId,
+          deviceId,
           {
             type: "get_command",
             requestId: randomUUID(),
@@ -1358,18 +1331,7 @@ function registerTools(
             ...(afterSequence === undefined ? {} : { afterSequence }),
           },
         );
-        if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommandForWorker(
-            accountId,
-            routedDeviceId,
-            commandId,
-          );
-        }
-        return commandSuccess(result, routedDeviceId, (command) => {
-          if (command.status !== "running") {
-            state.forgetCommand(accountId, command.commandId);
-          }
-        });
+        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
@@ -1412,9 +1374,6 @@ function registerTools(
             ...(maxBytes === undefined ? {} : { maxBytes }),
           },
         );
-        if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommandForWorker(accountId, deviceId, commandId);
-        }
         return commandOutputRangeSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
@@ -1437,38 +1396,19 @@ function registerTools(
       },
     },
     async ({ deviceId, commandId }) => {
-      const routedDeviceId =
-        deviceId ?? state.workerForCommand(accountId, commandId);
-      if (!routedDeviceId) {
-        return errorResult(
-          "command_not_found",
-          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
-        );
-      }
       try {
         const result = await executeJob(
           state,
           config,
           accountId,
-          routedDeviceId,
+          deviceId,
           {
             type: "cancel_command",
             requestId: randomUUID(),
             commandId,
           },
         );
-        if (!result.ok && result.error?.code === "command_not_found") {
-          state.forgetCommandForWorker(
-            accountId,
-            routedDeviceId,
-            commandId,
-          );
-        }
-        return commandSuccess(result, routedDeviceId, (command) => {
-          if (command.status !== "running") {
-            state.forgetCommand(accountId, command.commandId);
-          }
-        });
+        return commandSuccess(result, deviceId);
       } catch (error) {
         return routedError(error);
       }
