@@ -60,7 +60,7 @@ Do not place the reviewer subject or credentials in this repository, test fixtur
 3. Start the fixture with `glossa --access system --label openai-review .review-workspace` using a dedicated operating-system account or isolated virtual machine.
 4. Complete CLI authorization with the reviewer username and password.
 5. In ChatGPT, connect Glossa with the same credentials and scan tools.
-6. Confirm `list_workspaces` returns exactly one labeled workspace with `accessProfile: "system"` and all three permissions set to `true`.
+6. Confirm `list_devices` returns exactly one labeled workspace with `accessProfile: "system"` and all three permissions set to `true`.
 7. Run the positive and negative prompts in the [app submission packet](app-submission-packet.md).
 8. Stop the worker after the session. Keep the reviewer account available until OpenAI closes the review.
 
@@ -85,7 +85,7 @@ Before treating an identity change as deployed:
 1. Confirm regular login offers the intended Google connection and no unapproved provider.
 2. Confirm Google displays an account chooser even when an Auth0 session existed previously.
 3. Confirm the dedicated reviewer account works in both ChatGPT OAuth and CLI Device Authorization without MFA or external account access.
-4. Start a reviewer fixture worker and confirm `list_workspaces` returns its profile and permissions.
+4. Start a reviewer fixture worker and confirm `list_devices` returns its profile and permissions.
 5. Attempt authentication with a different `auth0|` database subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.
 6. Attempt authentication with a subject from an unlisted provider and confirm the same denial.
 7. Confirm prefix configuration rejects duplicates, missing `|` separators, empty values, and simultaneous plural and legacy singular settings.
