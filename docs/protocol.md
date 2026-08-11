@@ -106,7 +106,7 @@ MCP initialization advertises public tool-contract version `1.2.0` and one compa
 Tools:
 
 - `list_devices`
-- `logout`
+- `get_logout_instructions`
 - `read_file`
 - `list_files`
 - `search_text`
@@ -127,7 +127,7 @@ The result includes stable product metadata with the same `contractVersion` adve
 
 When no workers are active, `devices` is empty and `availability` is `"offline"`. The managed-relay `message` asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, and retry only after the user confirms the workspace is running. A custom relay instead points the agent to the platform-specific worker command in the self-hosting guide and uses the same confirmation boundary. When one or more workers are active, `availability` is `"online"` and `message` tells the agent to choose a workspace whose permissions match the requested operation. The offline result is a successful, user-safe response rather than a tool error. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
 
-`logout` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
+`get_logout_instructions` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
 
 `list_files` returns at most 200 regular files or directories in deterministic global relative-path order, so cursor pagination cannot skip nested or sibling entries. On POSIX, discovered names containing literal backslashes use a `./` native-path prefix so the returned value can be passed unchanged to other path-based tools. It reads directory streams incrementally, never holds more than the 20,000-entry scan ceiling, never follows symlinks or junctions, and skips entries or child directories that become missing or inaccessible plus common dependency and version-control directories during recursive traversal. `nextCursor` is a separate native ordering key; pass it back unchanged as `cursor` so reusable path encoding cannot change pagination order. Callers should narrow `path` when the scan ceiling is reached.
 
