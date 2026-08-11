@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RemoteWorker, type RemoteWorkerStatus } from "./remote-worker.js";
+import {
+  RelayAccessProfileUnsupportedError,
+  RemoteWorker,
+  type RemoteWorkerStatus,
+} from "./remote-worker.js";
 
 test("reports retry, connection, and graceful disconnection", async () => {
   const controller = new AbortController();
@@ -112,22 +116,32 @@ test("advertises and verifies the selected worker access profile", async () => {
 });
 
 
-test("keeps local profile enforcement when an older relay cannot accept profiles", async () => {
+test("preserves access profile while falling back to production 1.0 capabilities", async () => {
   const controller = new AbortController();
   const registerBodies: Array<Record<string, unknown>> = [];
   const statuses: RemoteWorkerStatus[] = [];
+  const generation = "00000000-0000-4000-8000-000000000001";
 
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
       registerBodies.push(body);
-      if ("accessProfile" in body) {
+      const capabilities = body.capabilities as Record<string, unknown> | undefined;
+      if (
+        capabilities?.structuredMutations === true ||
+        capabilities?.commandOutputRanges === true
+      ) {
         return Response.json({ error: "invalid_request" }, { status: 400 });
       }
+      assert.equal(body.accessProfile, "read-only");
+      assert.equal(body.workerVersion, "0.2.0-beta.2");
+      assert.equal(body.workspaceLabel, "review");
       return Response.json({
         workerId: body.workerId,
-        generation: "00000000-0000-4000-8000-000000000001",
+        generation,
+        accessProfile: body.accessProfile,
+        workspaceLabel: body.workspaceLabel,
         capabilities: {
           commandProgress: true,
           concurrentJobs: true,
@@ -148,23 +162,69 @@ test("keeps local profile enforcement when an older relay cannot accept profiles
   await new RemoteWorker({
     origin: "https://relay.glossa.test",
     deviceToken: "device-token",
-    workerVersion: "1.0.0",
-    accessProfile: "workspace",
+    workerVersion: "0.2.0-beta.2",
+    workspaceLabel: "review",
+    accessProfile: "read-only",
     worker: { handle: async () => ({ requestId: "unused", ok: true }) },
     signal: controller.signal,
     fetcher,
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 2);
-  assert.equal(registerBodies[0]?.accessProfile, "workspace");
-  assert.equal("accessProfile" in registerBodies[1]!, false);
-  assert.equal(registerBodies[1]?.workerVersion, "1.0.0");
+  assert.equal(registerBodies.length, 3);
+  for (const body of registerBodies) {
+    assert.equal(body.accessProfile, "read-only");
+    assert.equal(body.workerVersion, "0.2.0-beta.2");
+    assert.equal(body.workspaceLabel, "review");
+  }
+  assert.deepEqual(registerBodies[2]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+  });
   const connected = statuses.find((status) => status.state === "connected");
   assert.equal(connected?.state, "connected");
   if (connected?.state === "connected") {
-    assert.equal(connected.accessProfileAccepted, false);
+    assert.equal(connected.accessProfileAccepted, true);
+    assert.equal(connected.workspaceLabelAccepted, true);
   }
+});
+
+test("refuses a non-system profile when the relay cannot represent profiles", async () => {
+  const controller = new AbortController();
+  const registerBodies: Array<Record<string, unknown>> = [];
+  const statuses: RemoteWorkerStatus[] = [];
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      registerBodies.push(body);
+      if ("accessProfile" in body) {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+      throw new Error("A non-system worker must never attempt profileless registration.");
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await assert.rejects(
+    new RemoteWorker({
+      origin: "https://relay.glossa.test",
+      deviceToken: "device-token",
+      workerVersion: "0.2.0-beta.2",
+      accessProfile: "workspace",
+      worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+      signal: controller.signal,
+      fetcher,
+      onStatus: (status) => statuses.push(status),
+    }).run(),
+    RelayAccessProfileUnsupportedError,
+  );
+
+  assert.ok(registerBodies.length > 0);
+  assert.ok(registerBodies.every((body) => body.accessProfile === "workspace"));
+  assert.equal(statuses.some((status) => status.state === "connected"), false);
 });
 
 test("reports its package version and falls back for older relays", async () => {
@@ -209,10 +269,15 @@ test("reports its package version and falls back for older relays", async () => 
     fetcher,
   }).run();
 
-  assert.equal(registerBodies.length, 2);
-  assert.equal(registerBodies[0]?.workerVersion, "0.1.0-beta.13");
-  assert.equal("workerVersion" in registerBodies[1]!, false);
-  assert.deepEqual(registerBodies[1]?.capabilities, {
+  assert.ok(registerBodies.length > 1);
+  assert.ok(
+    registerBodies.slice(0, -1).every((body) =>
+      body.workerVersion === "0.1.0-beta.13"
+    ),
+  );
+  const acceptedBody = registerBodies.at(-1)!;
+  assert.equal("workerVersion" in acceptedBody, false);
+  assert.deepEqual(acceptedBody.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
@@ -232,7 +297,7 @@ test("falls back without a label when the relay does not accept labels", async (
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
       registerBodies.push(body);
-      if (registerBodies.length === 1) {
+      if ("workspaceLabel" in body) {
         return Response.json({ error: "invalid_request" }, { status: 400 });
       }
       return Response.json({
@@ -265,10 +330,15 @@ test("falls back without a label when the relay does not accept labels", async (
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 2);
-  assert.equal(registerBodies[0]?.workspaceLabel, "frontend");
-  assert.equal("workspaceLabel" in registerBodies[1]!, false);
-  assert.deepEqual(registerBodies[1]?.capabilities, {
+  assert.ok(registerBodies.length > 1);
+  assert.ok(
+    registerBodies.slice(0, -1).every((body) =>
+      body.workspaceLabel === "frontend"
+    ),
+  );
+  const acceptedBody = registerBodies.at(-1)!;
+  assert.equal("workspaceLabel" in acceptedBody, false);
+  assert.deepEqual(acceptedBody.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
