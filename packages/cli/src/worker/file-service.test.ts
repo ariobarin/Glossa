@@ -363,6 +363,8 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   );
   await writeFile(path.join(root, "one.ts"), "hit", "utf8");
   await writeFile(path.join(root, "two.ts"), "hit", "utf8");
+  await writeFile(path.join(root, "src", "keep.ts"), "const alpha123 = 'hit';", "utf8");
+  await writeFile(path.join(root, "src", "skip.ts"), "hit", "utf8");
   await writeFile(path.join(root, "binary.bin"), Buffer.from([0xff, 0xfe]));
   await writeFile(path.join(root, "node_modules", "hidden.ts"), "hit", "utf8");
 
@@ -389,6 +391,22 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   assert.equal(literal.matches[0]?.path, "src/types.d.ts");
   assert.equal(literal.matches[0]?.column, 17);
 
+  const regex = await files.searchText({
+    query: "\\?xT(?:OKEN|EST)",
+    matchMode: "regex",
+    extensions: [".d.ts"],
+  });
+  assert.equal(regex.matches[0]?.path, "src/types.d.ts");
+  assert.equal(regex.matches[0]?.column, 1);
+
+  const filtered = await files.searchText({
+    query: "hit",
+    includeGlobs: ["src/**"],
+    excludeGlobs: ["src/skip.ts"],
+  });
+  assert.deepEqual(filtered.matches.map((match) => match.path), ["src/keep.ts"]);
+  assert.equal(filtered.matches.some((match) => match.path === "one.ts"), false);
+
   const bounded = await files.searchText({
     query: "needle",
     extensions: [".ts"],
@@ -411,6 +429,9 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   assert.equal(binary.skippedFiles, 1);
 
   await assert.rejects(files.searchText({ query: "bad\nquery" }), {
+    code: "invalid_search",
+  });
+  await assert.rejects(files.searchText({ query: "[", matchMode: "regex" }), {
     code: "invalid_search",
   });
   await assert.rejects(files.searchText({ query: "x", maxResults: 101 }), {

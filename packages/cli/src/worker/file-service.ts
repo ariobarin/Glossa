@@ -903,9 +903,12 @@ export class FileService {
   async searchText(options: {
     query: string;
     path?: string;
+    matchMode?: "literal" | "regex";
     caseSensitive?: boolean;
     maxResults?: number;
     extensions?: string[];
+    includeGlobs?: string[];
+    excludeGlobs?: string[];
     timeoutMs?: number;
   }): Promise<SearchTextResult> {
     const deadlineAt = this.#scanDeadline(options.timeoutMs);
@@ -928,10 +931,26 @@ export class FileService {
     const matchLimit = maxResults + 1;
     const extensions = options.extensions
       ?.map((extension) => extension.toLowerCase());
-    const matcher = new RegExp(
-      escapeRegExp(options.query),
-      options.caseSensitive === true ? "u" : "iu",
-    );
+    const includeGlobs = options.includeGlobs;
+    const excludeGlobs = options.excludeGlobs;
+    const globMatches = (relativePath: string, patterns: string[] | undefined): boolean => {
+      if (!patterns) return false;
+      const normalized = relativePath.replaceAll("\\", "/");
+      try {
+        return patterns.some((pattern) => path.posix.matchesGlob(normalized, pattern));
+      } catch {
+        throw new WorkerError("invalid_search", "Search glob pattern is invalid.");
+      }
+    };
+    let matcher: RegExp;
+    try {
+      matcher = new RegExp(
+        options.matchMode === "regex" ? options.query : escapeRegExp(options.query),
+        options.caseSensitive === true ? "u" : "iu",
+      );
+    } catch {
+      throw new WorkerError("invalid_search", "Search regular expression is invalid.");
+    }
     const start = await this.#withinDeadline(
       this.policy.resolveExisting(options.path ?? "."),
       deadlineAt,
@@ -955,6 +974,8 @@ export class FileService {
       ) {
         return false;
       }
+      if (includeGlobs && !globMatches(relative, includeGlobs)) return false;
+      if (globMatches(relative, excludeGlobs)) return false;
       if (scannedFiles >= MAX_SEARCH_FILES) {
         scanTruncated = true;
         return true;
