@@ -487,7 +487,7 @@ const MCP_TOOL_COPY = {
   },
   write_file: {
     title: "Create or Replace Workspace File",
-    description: "Use this only when the user asked to create or completely replace a file and the selected workspace reports permissions.writeFiles true. It creates or overwrites one UTF-8 file inside the exposed root, but rejects content that appears to contain access credentials or authentication secrets. Pass expectedSha256 from a prior read to reject a stale overwrite. Do not use it for review, planning, or a precise change; use edit_file for targeted edits.",
+    description: "Use this only when the user asked to create or completely replace a file and the selected workspace reports permissions.writeFiles true. Without expectedSha256 it creates a new UTF-8 file and fails if the path already exists; with expectedSha256 it replaces only that exact existing revision and fails if the file is missing or stale. It rejects content that appears to contain access credentials or authentication secrets. Do not use it for review, planning, or a precise change; use edit_file for targeted edits.",
   },
   edit_file: {
     title: "Edit Workspace File",
@@ -564,6 +564,7 @@ const safeWorkerMessages: Record<string, string> = {
   path_traversal: "Parent path traversal is not allowed.",
   path_not_found: "The requested path does not exist.",
   parent_not_found: "The destination directory does not exist.",
+  path_exists: "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
   path_escape: "The requested path escapes the exposed root.",
   linked_path: "Symlink and junction paths are not allowed.",
   not_directory: "The requested path is not a directory.",
