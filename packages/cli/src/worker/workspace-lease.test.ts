@@ -4,6 +4,7 @@ import { once } from "node:events";
 import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -42,6 +43,32 @@ test("allows different canonical workspaces concurrently", async (context) => {
   const first = await acquireWorkspaceLease(path.join(directory, "one"), { directory });
   const second = await acquireWorkspaceLease(path.join(directory, "two"), { directory });
   await Promise.all([first.release(), second.release()]);
+});
+
+test("normalizes active endpoint bind errors as an already-active workspace", async (context) => {
+  const directory = await temporaryDirectory(context);
+  const root = path.join(directory, "workspace");
+  const first = await acquireWorkspaceLease(root, { directory });
+  context.after(async () => await first.release());
+
+  const originalListen = net.Server.prototype.listen;
+  net.Server.prototype.listen = function (this: net.Server): net.Server {
+    queueMicrotask(() => {
+      this.emit(
+        "error",
+        Object.assign(new Error("simulated bind failure"), { code: "EACCES" }),
+      );
+    });
+    return this;
+  } as typeof net.Server.prototype.listen;
+  try {
+    await assert.rejects(
+      acquireWorkspaceLease(root, { directory }),
+      WorkspaceAlreadyActiveError,
+    );
+  } finally {
+    net.Server.prototype.listen = originalListen;
+  }
 });
 
 test("rejects a second operating-system process for the same workspace", async (context) => {
