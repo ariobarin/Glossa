@@ -46,6 +46,7 @@ const workerJobTypeSchema = z.enum([
   "move_path",
   "run_command",
   "get_command",
+  "read_command_output",
   "cancel_command",
 ]);
 const registerSchema = z.union([
@@ -64,6 +65,7 @@ const registerSchema = z.union([
         concurrentJobs: z.literal(true).optional(),
         structuredReads: z.literal(true).optional(),
         structuredMutations: z.literal(true).optional(),
+        commandOutputRanges: z.literal(true).optional(),
       })
       .strict()
       .optional(),
@@ -74,7 +76,7 @@ const pollSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     generation: z.string().uuid(),
-    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(12).optional(),
+    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(13).optional(),
     waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
   }).strict(),
   z.object({ generation: z.string().uuid() }).strict(),
@@ -501,6 +503,9 @@ export function buildRoutes(
         structuredMutations:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.structuredMutations === true,
+        commandOutputRanges:
+          "capabilities" in parsed.data &&
+          parsed.data.capabilities?.commandOutputRanges === true,
         ...("accessProfile" in parsed.data && parsed.data.accessProfile
           ? { accessProfile: parsed.data.accessProfile }
           : {}),
@@ -523,6 +528,10 @@ export function buildRoutes(
         concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
         structuredReads: state.supportsStructuredReads(device.accountId, workerId),
         structuredMutations: state.supportsStructuredMutations(
+          device.accountId,
+          workerId,
+        ),
+        commandOutputRanges: state.supportsCommandOutputRanges(
           device.accountId,
           workerId,
         ),

@@ -20,13 +20,14 @@ The selected profile appears in the local terminal and in `list_devices`. Both t
 - File changes require `workspace` or `system`; commands require an explicit `system` session.
 - OAuth, account scoping, device credentials, and HTTPS protect the relay connection.
 - The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
+- The local worker keeps command state only transiently. Default command responses remain bounded; when output is truncated, up to 1 MiB of stdout and 1 MiB of stderr can be read back in bounded ranges without rerunning the command. Terminal command records last no more than five minutes, at most eight recent records are kept, and retained output is deleted with its record.
 - Press Ctrl+C or `q` in the worker terminal to disconnect immediately.
 
 ## Sensitive data
 
 The public Glossa app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Keep these categories out of the exposed project.
 
-Glossa blocks recognizable authentication-secret patterns in text inputs and results. This can prevent common accidental disclosures, but it is not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, or transformed values may not be recognized, and a command can send data over the network without printing it.
+Glossa blocks recognizable authentication-secret patterns in text inputs and results, including every retained command-output range. This can prevent common accidental disclosures, but it is not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, or transformed values may not be recognized, and a command can send data over the network without printing it.
 
 When credentials must be unreachable, run `system` in a credential-free dedicated operating-system account, container, or virtual machine with only the project and tools it needs.
 

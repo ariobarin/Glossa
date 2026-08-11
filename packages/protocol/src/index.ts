@@ -12,6 +12,9 @@ export const MAX_TEXT_BYTES = 1024 * 1024;
 export const MAX_EDIT_DIFF_BYTES = 128 * 1024;
 export const MAX_EDIT_OPERATIONS = 100;
 export const MAX_COMMAND_OUTPUT_BYTES = 12 * 1024;
+export const MAX_COMMAND_RETAINED_STREAM_BYTES = 1024 * 1024;
+export const DEFAULT_COMMAND_OUTPUT_RANGE_BYTES = 32 * 1024;
+export const MAX_COMMAND_OUTPUT_RANGE_BYTES = 64 * 1024;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 export const MAX_COMMAND_TIMEOUT_MS = 60 * 60 * 1000;
 export const DEFAULT_COMMAND_FAST_WAIT_MS = 750;
@@ -398,6 +401,36 @@ export const getCommandJobSchema = getCommandRequestSchema.extend({
   requestId: z.string().uuid(),
 });
 
+export const readCommandOutputRequestSchema = z.object({
+  commandId: z
+    .string()
+    .uuid()
+    .describe("Command identifier returned by run_command."),
+  stream: z
+    .enum(["stdout", "stderr"])
+    .describe("Command output stream to read independently."),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Zero-based retained byte offset. Defaults to 0."),
+  maxBytes: z
+    .number()
+    .int()
+    .min(4)
+    .max(MAX_COMMAND_OUTPUT_RANGE_BYTES)
+    .optional()
+    .describe(
+      "Maximum retained source bytes to inspect, from 4 through 65536. Defaults to 32768.",
+    ),
+}).strict();
+
+export const readCommandOutputJobSchema = readCommandOutputRequestSchema.extend({
+  type: z.literal("read_command_output"),
+  requestId: z.string().uuid(),
+});
+
 export const cancelCommandRequestSchema = z.object({
   commandId: z
     .string()
@@ -422,6 +455,7 @@ export const workerJobSchema = z.discriminatedUnion("type", [
   movePathJobSchema,
   runCommandJobSchema,
   getCommandJobSchema,
+  readCommandOutputJobSchema,
   cancelCommandJobSchema,
 ]);
 

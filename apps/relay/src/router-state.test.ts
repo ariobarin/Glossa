@@ -21,6 +21,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
       concurrentJobs: true,
       structuredReads: true,
       structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "workspace",
       workspaceLabel: "frontend",
       workerVersion: "1.0.0",
@@ -33,6 +34,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
   assert.equal(state.supportsConcurrentJobs(accountId, firstWorkerId), true);
   assert.equal(state.supportsStructuredReads(accountId, firstWorkerId), true);
   assert.equal(state.supportsStructuredMutations(accountId, firstWorkerId), true);
+  assert.equal(state.supportsCommandOutputRanges(accountId, firstWorkerId), true);
   assert.equal(state.workerAccessProfile(accountId, firstWorkerId), "workspace");
   assert.equal(state.supportsFileWrites(accountId, firstWorkerId), true);
   assert.equal(state.supportsCommands(accountId, firstWorkerId), false);
@@ -40,6 +42,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
   assert.equal(state.supportsConcurrentJobs(accountId, secondWorkerId), false);
   assert.equal(state.supportsStructuredReads(accountId, secondWorkerId), false);
   assert.equal(state.supportsStructuredMutations(accountId, secondWorkerId), false);
+  assert.equal(state.supportsCommandOutputRanges(accountId, secondWorkerId), false);
   assert.equal(state.workerAccessProfile(accountId, secondWorkerId), "system");
   assert.equal(state.supportsFileWrites(accountId, secondWorkerId), true);
   assert.equal(state.supportsCommands(accountId, secondWorkerId), true);
@@ -61,6 +64,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
         concurrentJobs: true,
         structuredReads: true,
         structuredMutations: true,
+        commandOutputRanges: true,
       },
     },
     {
@@ -78,6 +82,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
         concurrentJobs: false,
         structuredReads: false,
         structuredMutations: false,
+        commandOutputRanges: false,
       },
     },
   ]);
@@ -123,6 +128,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
         concurrentJobs: false,
         structuredReads: false,
         structuredMutations: false,
+        commandOutputRanges: false,
       },
     },
   ]);

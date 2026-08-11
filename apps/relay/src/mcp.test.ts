@@ -20,6 +20,7 @@ const expectedTools = [
   "logout",
   "make_directory",
   "move_path",
+  "read_command_output",
   "read_file",
   "read_file_range",
   "run_command",
@@ -36,6 +37,7 @@ const expectedToolTitles: Record<string, string> = {
   logout: "Get Glossa Sign-Out Steps",
   make_directory: "Create Workspace Directory",
   move_path: "Move Workspace Path",
+  read_command_output: "Read Workspace Command Output",
   read_file: "Read Workspace File",
   read_file_range: "Read Workspace File Range",
   run_command: "Run Workspace Command",
@@ -98,7 +100,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "1.1.0");
+  assert.equal(MCP_SERVER_VERSION, "1.2.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
@@ -184,6 +186,29 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(
     String(runCommandInputSchema.properties?.waitMs?.description),
     /Use 0.*1500 to 2000.*Defaults to 750/,
+  );
+  const readCommandOutputTool = byName.get("read_command_output");
+  assert.equal(readCommandOutputTool?.annotations?.readOnlyHint, true);
+  assert.equal(readCommandOutputTool?.annotations?.destructiveHint, false);
+  assert.equal(readCommandOutputTool?.annotations?.openWorldHint, false);
+  assert.match(
+    readCommandOutputTool?.description ?? "",
+    /deviceId and commandId.*one bounded retained byte range.*without rerunning.*Follow nextOffset.*transient.*capped per stream.*deleted with the command record/,
+  );
+  const readCommandOutputInputSchema = readCommandOutputTool?.inputSchema as {
+    required?: string[];
+    properties?: Record<string, { description?: unknown }>;
+  };
+  assert.equal(readCommandOutputInputSchema.required?.includes("deviceId"), true);
+  assert.equal(readCommandOutputInputSchema.required?.includes("commandId"), true);
+  assert.equal(readCommandOutputInputSchema.required?.includes("stream"), true);
+  assert.match(
+    String(readCommandOutputInputSchema.properties?.maxBytes?.description),
+    /4 through 65536.*Defaults to 32768/,
+  );
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /output is truncated.*read_command_output.*deviceId and commandId.*rather than rerunning/,
   );
   assert.match(
     byName.get("list_devices")?.description ?? "",
@@ -324,6 +349,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         concurrentJobs: false,
         structuredReads: false,
         structuredMutations: false,
+        commandOutputRanges: false,
       },
     }],
     availability: "online",
@@ -384,6 +410,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       concurrentJobs: true,
       structuredReads: true,
       structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "workspace",
       workerVersion: "1.0.0",
     },
@@ -427,6 +454,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         concurrentJobs: true,
         structuredReads: true,
         structuredMutations: true,
+        commandOutputRanges: true,
       },
     }],
   );
@@ -469,6 +497,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
       concurrentJobs: true,
       structuredReads: true,
       structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "read-only",
     },
   );
@@ -482,6 +511,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
       concurrentJobs: true,
       structuredReads: true,
       structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "workspace",
     },
   );
@@ -528,6 +558,157 @@ test("returns actionable permission errors without dispatching forbidden work", 
   assert.match(JSON.stringify(commandResult.content), /command_access_disabled/);
   assert.match(JSON.stringify(commandResult.content), /Do not retry/);
   assert.match(JSON.stringify(commandResult.content), /system access/);
+
+  const outputResult = await client.callTool({
+    name: "read_command_output",
+    arguments: {
+      deviceId: workspaceWorkerId,
+      commandId: "00000000-0000-4000-8000-000000000039",
+      stream: "stdout",
+    },
+  });
+  assert.equal(outputResult.isError, true);
+  assert.match(JSON.stringify(outputResult.content), /command_access_disabled/);
+});
+
+test("routes retained command output ranges and gates legacy workers", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000080";
+  const workerId = "00000000-0000-4000-8000-000000000081";
+  const legacyDeviceId = "00000000-0000-4000-8000-000000000082";
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000083";
+  const commandId = "00000000-0000-4000-8000-000000000084";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    commandOutputRanges: true,
+    accessProfile: "system",
+  });
+  const legacySession = state.register(
+    accountId,
+    legacyDeviceId,
+    "Legacy PC",
+    legacyWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      accessProfile: "system",
+    },
+  );
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-output-range-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const call = client.callTool({
+    name: "read_command_output",
+    arguments: {
+      deviceId: workerId,
+      commandId,
+      stream: "stderr",
+      offset: 4096,
+      maxBytes: 8192,
+    },
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(job?.type, "read_command_output");
+  assert.ok(job && job.type === "read_command_output");
+  assert.equal(job.commandId, commandId);
+  assert.equal(job.stream, "stderr");
+  assert.equal(job.offset, 4096);
+  assert.equal(job.maxBytes, 8192);
+  state.complete(accountId, workerId, {
+    requestId: job.requestId,
+    ok: true,
+    value: {
+      commandId,
+      stream: "stderr",
+      status: "failed",
+      offset: 4096,
+      content: "middle diagnostics",
+      nextOffset: 4114,
+      retainedBytes: 12000,
+      totalBytes: 12000,
+      retentionTruncated: false,
+      complete: true,
+    },
+  });
+  assert.deepEqual((await call).structuredContent, {
+    deviceId: workerId,
+    commandId,
+    stream: "stderr",
+    status: "failed",
+    offset: 4096,
+    content: "middle diagnostics",
+    nextOffset: 4114,
+    retainedBytes: 12000,
+    totalBytes: 12000,
+    retentionTruncated: false,
+    complete: true,
+  });
+
+  const errorCall = client.callTool({
+    name: "read_command_output",
+    arguments: {
+      deviceId: workerId,
+      commandId,
+      stream: "stdout",
+      offset: 99999,
+    },
+  });
+  const errorJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.ok(errorJob);
+  state.complete(accountId, workerId, {
+    requestId: errorJob.requestId,
+    ok: false,
+    error: {
+      code: "output_offset_out_of_range",
+      message: "C:\\private\\worker details",
+    },
+  });
+  const errorResult = await errorCall;
+  const serializedError = JSON.stringify(errorResult.content);
+  assert.equal(errorResult.isError, true);
+  assert.match(serializedError, /output_offset_out_of_range/);
+  assert.match(serializedError, /exceeds the retained stream length/);
+  assert.doesNotMatch(serializedError, /private|worker details/);
+
+  const unavailable = await client.callTool({
+    name: "read_command_output",
+    arguments: {
+      deviceId: legacyWorkerId,
+      commandId,
+      stream: "stdout",
+    },
+  });
+  assert.equal(unavailable.isError, true);
+  assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
+  assert.equal(
+    await state.poll(
+      accountId,
+      legacyDeviceId,
+      legacyWorkerId,
+      legacySession.generation,
+      1,
+    ),
+    null,
+  );
 });
 
 test("returns actionable guidance for Windows command shims", async (context) => {
