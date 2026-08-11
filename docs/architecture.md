@@ -80,7 +80,6 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs after relay-side profile and recognizable-authentication-secret input checks
 - request waiters
-- one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
 - recent nonces and bounded rate-limit counters
 
 ### Worker
@@ -113,7 +112,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
-- current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
+- command follow-ups always carry both the worker ID and command ID, so routing is explicit and remains valid across relay restarts;
 - `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;
 - `read_command_output` returns at most 64 KiB of one retained stream per request, reports a continuation offset, and never reruns the command;
 - `cancel_command` uses a separate bounded request;
