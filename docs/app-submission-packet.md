@@ -93,7 +93,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `make_directory` | No | Yes | No | Creates a relative directory inside the root, optionally including missing parents, when `writeFiles` and `structuredMutations` are true. |
 | `delete_path` | No | Yes | No | Deletes a relative regular file or directory inside the root, refuses the root itself, and requires an explicit recursive flag for non-empty directories. |
 | `move_path` | No | Yes | No | Renames or moves a relative regular file or directory inside the root, rejects links and existing destinations, and prevents self-nesting moves. |
-| `run_command` | No | Yes | Yes | Starts a local process only when `runCommands` is true. It inherits operating-system authority, credentials, environment, and network access, is not root-confined, and can affect external systems. |
+| `run_command` | No | Yes | Yes | Starts a local process only when `runCommands` is true. Its public `command` field is a schema-level union of direct `argv` and `shellCommand`, so both/neither forms are invalid. It inherits operating-system authority, credentials, environment, and network access, is not root-confined, and can affect external systems. |
 | `get_command` | Yes | No | No | Reads status and bounded captured output for a command previously started through Glossa. |
 | `read_command_output` | Yes | No | No | Reads one bounded retained stdout or stderr range without rerunning the command when `commandOutputRanges` is true; output remains transient and capped per stream. |
 | `cancel_command` | No | Yes | No | Terminates a running process tree but does not reverse effects already caused. |
@@ -135,7 +135,7 @@ Before submission:
 - reset the fixture and start it with the exact `system` profile and `openai-review` label above;
 - authorize the CLI and ChatGPT with the dedicated reviewer account;
 - verify from an unrelated network that OAuth, tool scanning, worker presence, and every reviewer test work without operator intervention;
-- confirm discovery reports contract `1.2.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, `run_command.waitMs`, `get_command.deviceId` plus `afterSequence`, and `read_command_output` required device ID, stream, offset, limit, continuation, and retention fields;
+- confirm discovery reports contract `1.2.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, `get_command.deviceId` plus `afterSequence`, and `read_command_output` required device ID, stream, offset, limit, continuation, and retention fields;
 - reset the fixture after any test run that mutates it;
 - run `glossa --access read-only` and default `glossa` in separate release-owner checks to verify write and command denials even though the portal reviewer fixture uses `system` to exercise all tools.
 
