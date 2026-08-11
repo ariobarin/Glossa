@@ -226,14 +226,14 @@ export const readFileRangeJobSchema = readFileRangeRequestSchema.extend({
 export const writeFileRequestSchema = z.object({
   path: relativePathSchema,
   content: boundedTextSchema.describe(
-    "Complete UTF-8 text content that will replace the file.",
+    "Complete UTF-8 text content for the new file or replacement revision.",
   ),
   expectedSha256: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
     .optional()
     .describe(
-      "Full-file SHA-256 returned by read_file or read_file_range. When provided, the write fails if the file changed.",
+      "Full-file SHA-256 returned by read_file or read_file_range. Omit only when creating a new path; when provided, write_file replaces exactly that existing revision and fails if it is missing or changed.",
     ),
 }).strict();
 

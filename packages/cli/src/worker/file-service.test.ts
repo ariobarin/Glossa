@@ -227,6 +227,10 @@ test("writes atomically and rejects stale revisions", async (context) => {
   });
 
   await assert.rejects(
+    files.writeText("note.txt", "blind overwrite"),
+    { code: "path_exists" },
+  );
+  await assert.rejects(
     files.writeText("note.txt", "second", "0".repeat(64)),
     { code: "stale_revision" },
   );
@@ -243,18 +247,19 @@ test("serializes guarded writes across file service instances", async (context) 
   const right = new FileService(await PathPolicy.create(root));
 
   for (let trial = 0; trial < 10; trial += 1) {
-    const original = await left.writeText("note.txt", `original-${trial}`);
+    const relativePath = `note-${trial}.txt`;
+    const original = await left.writeText(relativePath, `original-${trial}`);
     const contents = [`left-${trial}`, `right-${trial}`] as const;
     const results = await Promise.allSettled([
-      left.writeText("note.txt", contents[0], original.sha256),
-      right.writeText("note.txt", contents[1], original.sha256),
+      left.writeText(relativePath, contents[0], original.sha256),
+      right.writeText(relativePath, contents[1], original.sha256),
     ]);
 
     assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
     const rejected = results.find((result) => result.status === "rejected");
     assert.ok(rejected && rejected.status === "rejected");
     assert.equal((rejected.reason as WorkerError).code, "stale_revision");
-    const finalContent = await readFile(path.join(root, "note.txt"), "utf8");
+    const finalContent = await readFile(path.join(root, relativePath), "utf8");
     assert.ok(finalContent === contents[0] || finalContent === contents[1]);
     assert.deepEqual(
       (await readdir(root)).filter((name) => name.startsWith(".glossa-")),
