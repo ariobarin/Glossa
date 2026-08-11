@@ -43,3 +43,97 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+
+  staging-runtime:
+    name: Staging runtime smoke (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: glossa_staging_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d glossa_staging_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/glossa_staging_ci
+      GLOSSA_BIND_HOST: 127.0.0.1
+      PORT: 39100
+      GLOSSA_PUBLIC_ORIGIN: http://127.0.0.1:39100
+      GLOSSA_AUTH0_ISSUER: https://identity.glossa.test/
+      GLOSSA_AUTH0_AUDIENCE: https://mcp-staging.glossa.test/
+      GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: google-oauth2|
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run migrate --workspace @glossa/relay
+      - name: Boot relay and verify runtime surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/glossa-staging-relay.log"
+          headers="$RUNNER_TEMP/glossa-staging-headers.txt"
+          body="$RUNNER_TEMP/glossa-staging-body.json"
+          npm run start --workspace @glossa/relay >"$log" 2>&1 &
+          relay_pid=$!
+          smoke_ok=0
+          cleanup() {
+            kill "$relay_pid" 2>/dev/null || true
+            wait "$relay_pid" 2>/dev/null || true
+            if [[ "$smoke_ok" != "1" ]]; then
+              cat "$log"
+            fi
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:39100/healthz >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$relay_pid" 2>/dev/null; then
+              cat "$log"
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          node --input-type=module <<'NODE'
+          const health = await fetch("http://127.0.0.1:39100/healthz").then((response) => response.json());
+          if (health.ok !== true || health.service !== "glossa-relay") {
+            throw new Error(`Unexpected health response: ${JSON.stringify(health)}`);
+          }
+          const metadata = await fetch("http://127.0.0.1:39100/.well-known/oauth-protected-resource").then((response) => response.json());
+          if (metadata.resource !== "https://mcp-staging.glossa.test/") {
+            throw new Error(`Unexpected OAuth resource: ${JSON.stringify(metadata)}`);
+          }
+          if (metadata.authorization_servers?.[0] !== "https://identity.glossa.test/") {
+            throw new Error(`Unexpected OAuth issuer: ${JSON.stringify(metadata)}`);
+          }
+          if (!metadata.scopes_supported?.includes("glossa:access")) {
+            throw new Error(`Missing MCP scope: ${JSON.stringify(metadata)}`);
+          }
+          NODE
+
+          status=$(curl --silent --output "$body" --dump-header "$headers" --write-out "%{http_code}" \
+            --request POST http://127.0.0.1:39100/mcp \
+            --header "content-type: application/json" \
+            --data '{}')
+          test "$status" = "401"
+          grep -qi 'resource_metadata="http://127.0.0.1:39100/.well-known/oauth-protected-resource"' "$headers"
+          smoke_ok=1
