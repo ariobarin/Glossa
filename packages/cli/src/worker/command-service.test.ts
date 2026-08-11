@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -71,7 +71,7 @@ test(
   "covers Windows shim variants and the documented recovery path",
   { skip: process.platform !== "win32" },
   async (context) => {
-    const { commands } = await commandFixture(context);
+    const { root, commands } = await commandFixture(context);
     for (const shim of [
       "NPM.CMD",
       "tool.bat",
@@ -91,8 +91,9 @@ test(
       );
     }
 
+    await writeFile(path.join(root, "version.cmd"), "@echo 1.2.3\r\n", "utf8");
     let shimmed = await commands.start({
-      shellCommand: "npm.cmd --version",
+      shellCommand: ".\\version.cmd",
       timeoutMs: 10_000,
       waitMs: 5_000,
     });
