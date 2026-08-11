@@ -310,6 +310,15 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         ],
         truncation: "middle",
       };
+    case "read_command_output":
+      return {
+        target: `command ${job.commandId} ${job.stream}`,
+        details: [
+          ...(job.offset === undefined ? [] : [`offset ${job.offset}`]),
+          ...(job.maxBytes === undefined ? [] : [`max ${job.maxBytes} bytes`]),
+        ],
+        truncation: "middle",
+      };
     case "cancel_command":
       return {
         target: `command ${job.commandId}`,

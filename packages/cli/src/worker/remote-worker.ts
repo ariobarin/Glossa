@@ -20,6 +20,7 @@ interface RegisteredSession {
   concurrentJobs: boolean;
   structuredReads: boolean;
   structuredMutations: boolean;
+  commandOutputRanges: boolean;
   accessProfileAccepted: boolean;
   workspaceLabelAccepted: boolean;
   workerToken?: string;
@@ -89,7 +90,11 @@ function optionalWorkerToken(value: unknown): string | undefined {
 
 function supportsCapability(
   value: unknown,
-  capability: "concurrentJobs" | "structuredReads" | "structuredMutations",
+  capability:
+    | "concurrentJobs"
+    | "structuredReads"
+    | "structuredMutations"
+    | "commandOutputRanges",
 ): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
@@ -101,6 +106,7 @@ function supportsCapability(
 function jobLane(job: WorkerJob): JobLane {
   switch (job.type) {
     case "get_command":
+    case "read_command_output":
       return "status";
     case "cancel_command":
       return "cancel";
@@ -124,10 +130,14 @@ function acceptedJobTypes(
   total: number,
   structuredReads: boolean,
   structuredMutations: boolean,
+  commandOutputRanges: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
-  if (counts.status < 1) accepted.push("get_command");
+  if (counts.status < 1) {
+    accepted.push("get_command");
+    if (commandOutputRanges) accepted.push("read_command_output");
+  }
   if (counts.cancel < 1) accepted.push("cancel_command");
   if (counts.read < 2) {
     accepted.push("read_file");
@@ -262,6 +272,16 @@ export class RemoteWorker {
         concurrentJobs: true,
         structuredReads: true,
         structuredMutations: true,
+        commandOutputRanges: true,
+      },
+    };
+    const mutationBody = {
+      workerId: this.#workerId,
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
       },
     };
     const structuredBody = {
@@ -278,6 +298,9 @@ export class RemoteWorker {
     };
     const versionedCurrentBody = this.#workerVersion
       ? { ...currentBody, workerVersion: this.#workerVersion }
+      : undefined;
+    const versionedMutationBody = this.#workerVersion
+      ? { ...mutationBody, workerVersion: this.#workerVersion }
       : undefined;
     const versionedStructuredBody = this.#workerVersion
       ? { ...structuredBody, workerVersion: this.#workerVersion }
@@ -318,6 +341,31 @@ export class RemoteWorker {
         : []),
       {
         body: currentBody,
+        legacyRelay: false,
+      },
+      ...(versionedMutationBody && this.#workspaceLabel
+        ? [{
+            body: {
+              ...versionedMutationBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
+      ...(this.#workspaceLabel
+        ? [{
+            body: {
+              ...mutationBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
+      ...(versionedMutationBody
+        ? [{ body: versionedMutationBody, legacyRelay: false }]
+        : []),
+      {
+        body: mutationBody,
         legacyRelay: false,
       },
       ...(versionedStructuredBody && this.#workspaceLabel
@@ -411,6 +459,8 @@ export class RemoteWorker {
           !attempt.legacyRelay && supportsCapability(value, "structuredReads"),
         structuredMutations:
           !attempt.legacyRelay && supportsCapability(value, "structuredMutations"),
+        commandOutputRanges:
+          !attempt.legacyRelay && supportsCapability(value, "commandOutputRanges"),
         accessProfileAccepted:
           this.#accessProfile === undefined ||
           ("accessProfile" in value &&
@@ -521,6 +571,7 @@ export class RemoteWorker {
           inFlight.size,
           session.structuredReads,
           session.structuredMutations,
+          session.commandOutputRanges,
         );
         if (acceptedTypes.length === 0) {
           await Promise.race(inFlight);
@@ -553,6 +604,7 @@ export class RemoteWorker {
             inFlight.size,
             session.structuredReads,
             session.structuredMutations,
+            session.commandOutputRanges,
           );
           const newlyAcceptedTypes = refreshedTypes.filter(
             (type) => !acceptedTypes.includes(type),

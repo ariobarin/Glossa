@@ -150,9 +150,9 @@ A device token does not silently broaden a worker's selected access profile. The
 - disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
 - tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
 - reject recognizable authentication-secret inputs at the relay and worker;
-- scan file results, edit diffs, and command output locally; retain bounded overlap across command-output chunks, clear captured output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
+- scan file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
 - never enumerate, persist, or log environment variables automatically;
-- bound command duration, captured output, concurrency, and status waits;
+- keep default command snapshots bounded; cap each retained range at 64 KiB, each retained stream at 1 MiB, terminal records at five minutes, and recent command records at eight; also bound command duration, concurrency, and status waits;
 - terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;
 - make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;
 - recommend a dedicated OS account, container, or VM for unattended or sensitive use.
@@ -170,9 +170,9 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 - reject recognizable secret-bearing structured mutation paths plus `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
 - repeat input checks locally so older or compromised relay behavior cannot bypass the worker boundary;
 - preflight an edited file before mutation and bind the edit to the scanned SHA-256 when the caller did not already provide one;
-- inspect content-bearing file and command results before they leave the worker;
+- inspect content-bearing file results, command snapshots, and every retained command-output range before they leave the worker;
 - inspect command output incrementally with overlap across chunks so a token split across writes is still detected;
-- clear captured output, stop the command process tree, and return a fixed safe error without the matched value;
+- clear captured and retained output, stop the command process tree, and return a fixed safe error without the matched value;
 - redact restricted command inputs from local activity events;
 - permit explicit placeholders such as `<redacted>` and `replace-me` so documentation and fixtures remain usable;
 - test the detector against the repository corpus to prevent ordinary source code from becoming unreadable.
