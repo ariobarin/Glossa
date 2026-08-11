@@ -490,7 +490,7 @@ const safeWorkerMessages: Record<string, string> = {
   [RESTRICTED_DATA_ERROR_CODE]: RESTRICTED_DATA_ERROR_MESSAGE,
   write_access_disabled: "This workspace does not allow file writes. Do not retry; ask the user to restart with workspace access only if their request requires changes.",
   command_access_disabled: "This workspace does not allow commands. Do not retry; ask the user to restart with system access only if their request requires a local command.",
-  command_busy: "Another command is already running on this device.",
+  command_busy: "Another command is already running in this workspace.",
   invalid_command: "The command request is invalid.",
   invalid_timeout: "The command timeout is invalid.",
   invalid_wait: "The command status wait is invalid.",
@@ -564,7 +564,7 @@ function restrictedDataResult() {
 function routedError(error: unknown) {
   const code = error instanceof Error ? error.message : "relay_failure";
   if (code === "device_offline") {
-    return errorResult(code, "The device is offline.");
+    return errorResult(code, "The workspace is offline.");
   }
   if (code === "job_timeout") {
     return errorResult(code, "The worker did not respond in time.");
@@ -632,7 +632,7 @@ function structuredReadError(
   const online = state
     .listDevices(accountId)
     .some((device) => device.deviceId === deviceId);
-  if (!online) return errorResult("device_offline", "The device is offline.");
+  if (!online) return errorResult("device_offline", "The workspace is offline.");
   if (!state.supportsStructuredReads(accountId, deviceId)) {
     return errorResult(
       "worker_update_required",
@@ -1063,7 +1063,7 @@ function registerTools(
       if (!routedDeviceId) {
         return errorResult(
           "command_not_found",
-          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
+          "The command route is unavailable. Start the command again and pass workspaceId when the client supports it.",
         );
       }
       try {
@@ -1120,7 +1120,7 @@ function registerTools(
       if (!routedDeviceId) {
         return errorResult(
           "command_not_found",
-          "The command route is unavailable. Start the command again and pass deviceId when the client supports it.",
+          "The command route is unavailable. Start the command again and pass workspaceId when the client supports it.",
         );
       }
       try {
