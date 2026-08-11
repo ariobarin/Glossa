@@ -183,10 +183,10 @@ export async function acquireWorkspaceLease(
         };
       } catch (error) {
         await closeServer(server);
-        if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
         if (await endpointIsActive(endpoint)) {
           throw new WorkspaceAlreadyActiveError();
         }
+        if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
         if (process.platform !== "win32") await rm(endpoint, { force: true });
       }
     }
