@@ -15,9 +15,9 @@ const expectedTools = [
   "delete_path",
   "edit_file",
   "get_command",
+  "get_logout_instructions",
   "list_devices",
   "list_files",
-  "logout",
   "make_directory",
   "move_path",
   "read_command_output",
@@ -34,7 +34,7 @@ const expectedToolTitles: Record<string, string> = {
   get_command: "Check Workspace Command",
   list_devices: "Find Glossa Workspaces",
   list_files: "List Workspace Files",
-  logout: "Get Glossa Sign-Out Steps",
+  get_logout_instructions: "Get Glossa Sign-Out Steps",
   make_directory: "Create Workspace Directory",
   move_path: "Move Workspace Path",
   read_command_output: "Read Workspace Command Output",
@@ -490,7 +490,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
 
   const logout = await client.callTool({
-    name: "logout",
+    name: "get_logout_instructions",
     arguments: {},
   });
   const logoutUrl = "https://identity.glossa.test/v2/logout";
@@ -502,7 +502,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
 
   const selfHostedLogout = await selfHostedClient.callTool({
-    name: "logout",
+    name: "get_logout_instructions",
     arguments: {},
   });
   assert.match(

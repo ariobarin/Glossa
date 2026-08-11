@@ -476,7 +476,7 @@ const MCP_TOOL_COPY = {
     title: "Find Glossa Workspaces",
     description: "Use this when no earlier Glossa result identifies an online workspace, when multiple workspaces must be distinguished, or before an operation whose required permission is unknown. It returns identifiers, user labels, worker versions, access profiles, permissions, and negotiated capabilities. Do not call it repeatedly when a prior result already selected an unambiguous online workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
   },
-  logout: {
+  get_logout_instructions: {
     title: "Get Glossa Sign-Out Steps",
     description: "Use this only when the user asks to sign out of Glossa or switch accounts. It returns user-facing steps and a fallback logout URL; it does not require an online workspace, revoke credentials, open a browser, or sign the user out itself.",
   },
@@ -904,9 +904,9 @@ function registerTools(
   );
 
   server.registerTool(
-    "logout",
+    "get_logout_instructions",
     {
-      ...MCP_TOOL_COPY.logout,
+      ...MCP_TOOL_COPY.get_logout_instructions,
       inputSchema: z.object({}).strict(),
       outputSchema: logoutOutputSchema,
       _meta: toolMetadata,
