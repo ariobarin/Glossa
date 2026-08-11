@@ -149,6 +149,7 @@ requireAll(quickstart, [
   'unsandboxed',
   'href="/security"',
   'Review security',
+  'Review permissions and requested actions.',
   "data-copy-target=",
 ], "site/docs/quickstart.html");
 for (const unnecessary of [

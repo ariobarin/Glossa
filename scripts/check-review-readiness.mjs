@@ -192,6 +192,7 @@ await requiredText("site/docs/quickstart.md", [
   "`system` access is optional and unsandboxed",
   "commands inherit the account's environment, credentials, filesystem permissions, and network access",
   "[Review security](/security)",
+  "Review permissions and requested actions.",
 ]);
 await requiredText("site/docs/why.md", [
   "a folder on your computer",

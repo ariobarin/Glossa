@@ -31,7 +31,9 @@ Sign in if prompted and keep the terminal open.
 https://mcp.glossa.sh/mcp
 ```
 
-3. Choose **OAuth**, authorize with the same Glossa account as the CLI, then **Scan Tools** and **Create**.
+3. Choose **OAuth**, then **Scan Tools**. Complete authorization with the same Glossa account as the CLI, wait for the scan, then **Create**.
+
+Review permissions and requested actions.
 
 ## 4. Test it
 

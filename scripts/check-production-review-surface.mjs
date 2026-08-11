@@ -80,13 +80,8 @@ await check("quickstart is concise and accurate", async () => {
   const source = await publicText("https://glossa.sh/docs/quickstart");
   requireMatch(
     source,
-    /glossa --access read-only/,
-    "quickstart does not document read-only access",
-  );
-  requireMatch(
-    source,
-    /glossa --access system/,
-    "quickstart does not document explicit system access",
+    /workspace.*read and edit.*cannot run commands/is,
+    "quickstart does not explain the default workspace access",
   );
   requireMatch(
     source,
@@ -100,13 +95,18 @@ await check("quickstart is concise and accurate", async () => {
   );
   requireMatch(
     source,
-    /is not sandboxed/i,
+    /system.*unsandboxed/is,
     "quickstart does not disclose the system command boundary",
   );
   requireMatch(
     source,
-    /Review requested writes and commands carefully/i,
-    "quickstart does not tell users to review high-impact actions",
+    /Choose <strong>OAuth<\/strong>, then <strong>Scan Tools<\/strong>\. Complete authorization.*wait for the scan, then <strong>Create<\/strong>/is,
+    "quickstart does not match the current OAuth tool-scan sequence",
+  );
+  requireMatch(
+    source,
+    /Review permissions and requested actions/i,
+    "quickstart does not tell users to review app permissions and actions",
   );
   forbidMatch(
     source,
@@ -117,6 +117,11 @@ await check("quickstart is concise and accurate", async () => {
     source,
     /@ariobarin\/glossa@beta/i,
     "quickstart still installs the beta npm tag",
+  );
+  forbidMatch(
+    source,
+    /glossa --access (?:read-only|system)/i,
+    "quickstart should keep alternate access commands in the operations guide",
   );
   forbidMatch(source, /open beta/i, "quickstart still labels Glossa as open beta");
 });
