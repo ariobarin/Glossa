@@ -62,9 +62,33 @@ const makeDirectoryInputSchema = makeDirectoryRequestSchema.extend(
 );
 const deletePathInputSchema = deletePathRequestSchema.extend(deviceIdSchema.shape);
 const movePathInputSchema = movePathRequestSchema.extend(deviceIdSchema.shape);
-const runCommandInputSchema = runCommandRequestSchema.safeExtend(
-  deviceIdSchema.shape,
-);
+const runCommandSelectionSchema = z
+  .union([
+    z
+      .object({
+        argv: runCommandRequestSchema.shape.argv.unwrap().describe(
+          runCommandRequestSchema.shape.argv.description ?? "Direct command arguments.",
+        ),
+      })
+      .strict(),
+    z
+      .object({
+        shellCommand: runCommandRequestSchema.shape.shellCommand.unwrap().describe(
+          runCommandRequestSchema.shape.shellCommand.description ?? "Shell command text.",
+        ),
+      })
+      .strict(),
+  ])
+  .describe("Command form. Provide exactly one of argv for direct execution or shellCommand for shell syntax.");
+const runCommandInputSchema = z
+  .object({
+    deviceId: deviceIdFieldSchema,
+    command: runCommandSelectionSchema,
+    stdin: runCommandRequestSchema.shape.stdin,
+    timeoutMs: runCommandRequestSchema.shape.timeoutMs,
+    waitMs: runCommandRequestSchema.shape.waitMs,
+  })
+  .strict();
 const getCommandInputSchema = getCommandRequestSchema.extend(
   optionalCommandDeviceIdSchema.shape,
 );
@@ -1256,7 +1280,11 @@ function registerTools(
         openWorldHint: true,
       },
     },
-    async ({ deviceId, argv, shellCommand, stdin, timeoutMs, waitMs }) => {
+    async ({ deviceId, command, stdin, timeoutMs, waitMs }) => {
+      const argv = "argv" in command ? command.argv : undefined;
+      const shellCommand = "shellCommand" in command
+        ? command.shellCommand
+        : undefined;
       if (
         containsRestrictedAuthenticationData({ argv, shellCommand, stdin })
       ) {
