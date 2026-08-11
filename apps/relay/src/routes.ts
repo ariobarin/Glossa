@@ -41,6 +41,9 @@ const workerJobTypeSchema = z.enum([
   "read_file_range",
   "write_file",
   "edit_file",
+  "make_directory",
+  "delete_path",
+  "move_path",
   "run_command",
   "get_command",
   "cancel_command",
@@ -60,6 +63,7 @@ const registerSchema = z.union([
         commandProgress: z.literal(true).optional(),
         concurrentJobs: z.literal(true).optional(),
         structuredReads: z.literal(true).optional(),
+        structuredMutations: z.literal(true).optional(),
       })
       .strict()
       .optional(),
@@ -70,7 +74,7 @@ const pollSchema = z.union([
   z.object({
     workerId: workerIdSchema,
     generation: z.string().uuid(),
-    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(9).optional(),
+    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(12).optional(),
     waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
   }).strict(),
   z.object({ generation: z.string().uuid() }).strict(),
@@ -494,6 +498,9 @@ export function buildRoutes(
         structuredReads:
           "capabilities" in parsed.data &&
           parsed.data.capabilities?.structuredReads === true,
+        structuredMutations:
+          "capabilities" in parsed.data &&
+          parsed.data.capabilities?.structuredMutations === true,
         ...("accessProfile" in parsed.data && parsed.data.accessProfile
           ? { accessProfile: parsed.data.accessProfile }
           : {}),
@@ -515,6 +522,10 @@ export function buildRoutes(
         commandProgress: state.supportsCommandProgress(device.accountId, workerId),
         concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
         structuredReads: state.supportsStructuredReads(device.accountId, workerId),
+        structuredMutations: state.supportsStructuredMutations(
+          device.accountId,
+          workerId,
+        ),
       },
       ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
         ? { workspaceLabel: parsed.data.workspaceLabel }

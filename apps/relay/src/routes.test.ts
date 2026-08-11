@@ -192,6 +192,7 @@ test("uses worker credentials without repeating device authentication", async (c
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
     },
   });
   assert.equal(legacy.workerId, deviceId);
@@ -200,12 +201,14 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
   assert.equal(state.supportsStructuredReads(accountId, deviceId), false);
+  assert.equal(state.supportsStructuredMutations(accountId, deviceId), false);
   assert.equal(state.workerAccessProfile(accountId, deviceId), "system");
   assert.equal(state.supportsFileWrites(accountId, deviceId), true);
   assert.equal(state.supportsCommands(accountId, deviceId), true);
   assert.equal(state.supportsCommandProgress(accountId, workerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
   assert.equal(state.supportsStructuredReads(accountId, workerId), true);
+  assert.equal(state.supportsStructuredMutations(accountId, workerId), true);
   assert.equal(state.workerAccessProfile(accountId, workerId), "workspace");
   assert.equal(state.supportsFileWrites(accountId, workerId), true);
   assert.equal(state.supportsCommands(accountId, workerId), false);
@@ -223,6 +226,7 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   assert.equal(deviceAuthentications, 2);
   assert.equal(typeof current.workerToken, "string");
@@ -234,6 +238,7 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   const workerAuthorization = `Worker ${String(current.workerToken)}`;
 

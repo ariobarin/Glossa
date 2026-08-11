@@ -3,11 +3,13 @@ import type { Dir, Dirent, Stats } from "node:fs";
 import {
   chmod,
   lstat,
+  mkdir,
   opendir,
   open,
   readFile,
   rename,
   rm,
+  rmdir,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -25,10 +27,18 @@ import {
   MAX_TEXT_BYTES,
 } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
-import type { PathPolicy } from "./path-policy.js";
+import { samePath, type PathPolicy } from "./path-policy.js";
 
 function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function isPathWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative));
 }
 
 const fileWriteTails = new Map<string, Promise<void>>();
@@ -52,6 +62,22 @@ async function withFileWriteLock<T>(
     release();
     if (fileWriteTails.get(key) === tail) fileWriteTails.delete(key);
   }
+}
+
+async function withFileWriteLocks<T>(
+  targets: string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  const unique = [...new Set(targets.map((target) => path.normalize(target)))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  const run = async (index: number): Promise<T> => {
+    const target = unique[index];
+    return target === undefined
+      ? await operation()
+      : await withFileWriteLock(target, async () => await run(index + 1));
+  };
+  return await run(0);
 }
 
 async function requireRevision(target: string, expectedSha256: string): Promise<void> {
@@ -128,6 +154,18 @@ export interface EditTextResult extends WriteTextResult {
   replacements: number;
   diff: string;
   diffTruncated: boolean;
+}
+
+export interface MakeDirectoryResult {
+  created: boolean;
+}
+
+export interface DeletePathResult {
+  deletedType: "file" | "directory";
+}
+
+export interface MovePathResult {
+  movedType: "file" | "directory";
 }
 
 interface LocatedEdit extends EditTextOperation {
@@ -1154,6 +1192,134 @@ export class FileService {
       contentBytes,
       ...(endLine < lines.length ? { nextLine: endLine + 1 } : {}),
     };
+  }
+
+  async makeDirectory(
+    relativePath: string,
+    recursive = false,
+  ): Promise<MakeDirectoryResult> {
+    const initial = await this.policy.resolveWritableDirectory(
+      relativePath,
+      recursive,
+    );
+    if (initial.exists) return { created: false };
+    return await withFileWriteLock(initial.target, async () => {
+      const current = await this.policy.resolveWritableDirectory(
+        relativePath,
+        recursive,
+      );
+      if (current.exists) return { created: false };
+      try {
+        await mkdir(current.target, { recursive });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      const resolved = await this.policy.resolveExisting(relativePath);
+      if (!(await stat(resolved)).isDirectory()) {
+        throw new WorkerError("not_directory", "The destination is not a directory.");
+      }
+      return { created: true };
+    });
+  }
+
+  async deletePath(
+    relativePath: string,
+    recursive = false,
+  ): Promise<DeletePathResult> {
+    const initial = await this.policy.resolveExisting(relativePath);
+    if (samePath(initial, this.policy.root)) {
+      throw new WorkerError(
+        "root_operation_refused",
+        "The exposed workspace root cannot be deleted.",
+      );
+    }
+    return await withFileWriteLock(initial, async () => {
+      const target = await this.policy.resolveExisting(relativePath);
+      if (samePath(target, this.policy.root)) {
+        throw new WorkerError(
+          "root_operation_refused",
+          "The exposed workspace root cannot be deleted.",
+        );
+      }
+      const targetStat = await lstat(target);
+      if (!targetStat.isFile() && !targetStat.isDirectory()) {
+        throw new WorkerError(
+          "unsupported_path_type",
+          "Only regular files and directories can be deleted.",
+        );
+      }
+      try {
+        if (targetStat.isDirectory()) {
+          if (recursive) {
+            await rm(target, { recursive: true, force: false });
+          } else {
+            await rmdir(target);
+          }
+        } else {
+          await rm(target, { force: false });
+        }
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          targetStat.isDirectory() &&
+          !recursive &&
+          (code === "ENOTEMPTY" || code === "EEXIST" || code === "EPERM")
+        ) {
+          throw new WorkerError(
+            "directory_not_empty",
+            "The directory is not empty. Set recursive to true to delete its contents.",
+          );
+        }
+        throw error;
+      }
+      return {
+        deletedType: targetStat.isDirectory() ? "directory" : "file",
+      };
+    });
+  }
+
+  async movePath(
+    sourcePath: string,
+    destinationPath: string,
+  ): Promise<MovePathResult> {
+    const initialSource = await this.policy.resolveExisting(sourcePath);
+    if (samePath(initialSource, this.policy.root)) {
+      throw new WorkerError(
+        "root_operation_refused",
+        "The exposed workspace root cannot be moved.",
+      );
+    }
+    const initialDestination = await this.policy.resolveVacantPath(destinationPath);
+    return await withFileWriteLocks(
+      [initialSource, initialDestination],
+      async () => {
+        const source = await this.policy.resolveExisting(sourcePath);
+        if (samePath(source, this.policy.root)) {
+          throw new WorkerError(
+            "root_operation_refused",
+            "The exposed workspace root cannot be moved.",
+          );
+        }
+        const destination = await this.policy.resolveVacantPath(destinationPath);
+        const sourceStat = await lstat(source);
+        if (!sourceStat.isFile() && !sourceStat.isDirectory()) {
+          throw new WorkerError(
+            "unsupported_path_type",
+            "Only regular files and directories can be moved.",
+          );
+        }
+        if (sourceStat.isDirectory() && isPathWithin(source, destination)) {
+          throw new WorkerError(
+            "invalid_destination",
+            "A directory cannot be moved inside itself.",
+          );
+        }
+        await rename(source, destination);
+        return {
+          movedType: sourceStat.isDirectory() ? "directory" : "file",
+        };
+      },
+    );
   }
 
   async editText(

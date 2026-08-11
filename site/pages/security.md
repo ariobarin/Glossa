@@ -4,7 +4,7 @@ Glossa connects one project folder to an authenticated client through a local wo
 
 ## Access profiles
 
-| Profile | Read files | Edit files inside the project | Run commands |
+| Profile | Read files | Change files and paths inside the project | Run commands |
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
@@ -16,7 +16,7 @@ The selected profile appears in the local terminal and in `list_devices`. Both t
 
 ## What Glossa enforces
 
-- Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes.
+- Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes. Workspace mode can create directories, move files or directories, and delete paths without enabling commands.
 - File changes require `workspace` or `system`; commands require an explicit `system` session.
 - OAuth, account scoping, device credentials, and HTTPS protect the relay connection.
 - The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
@@ -32,7 +32,7 @@ When credentials must be unreachable, run `system` in a credential-free dedicate
 
 ## Safer use
 
-- Start with the default `workspace` mode for ordinary code changes.
+- Start with the default `workspace` mode for ordinary code changes, directory creation, moves, and scoped deletions.
 - Use `read-only` for inspection when no edits are needed.
 - Enable `system` only for a task that needs the local toolchain.
 - Expose a narrow project, never a home directory, filesystem root, credential store, or secrets directory.
