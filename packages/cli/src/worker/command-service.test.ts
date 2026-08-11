@@ -91,11 +91,14 @@ test(
       );
     }
 
-    const shimmed = await commands.start({
+    let shimmed = await commands.start({
       shellCommand: "npm.cmd --version",
       timeoutMs: 10_000,
       waitMs: 5_000,
     });
+    if (shimmed.status === "running") {
+      shimmed = await commands.get(shimmed.commandId, 15_000);
+    }
     assert.equal(shimmed.status, "succeeded");
     assert.equal(shimmed.exitCode, 0);
     assert.match(shimmed.stdout ?? "", /^\d+\.\d+\.\d+/);
