@@ -126,7 +126,7 @@ for (const [path, maximum] of [
 const cliPackage = JSON.parse(
   await readFile(join(repositoryRoot, "packages", "cli", "package.json"), "utf8"),
 );
-assert.match(cliPackage.version, /^\d+\.\d+\.\d+$/, "CLI version must be stable SemVer");
+assert.match(cliPackage.version, /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/, "CLI version must be release SemVer");
 assert.equal(cliPackage.publishConfig?.tag, "latest", "CLI must publish to npm latest");
 
 const mcpSource = await readFile(
