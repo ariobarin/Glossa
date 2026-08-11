@@ -135,6 +135,7 @@ function activitySafeJob(job: WorkerJob): WorkerJob {
         ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
       };
     case "get_command":
+    case "read_command_output":
     case "cancel_command":
       return job;
   }

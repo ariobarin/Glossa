@@ -113,9 +113,35 @@ test("system access preserves full local command execution", async (context) => 
     waitMs: 5_000,
   });
   assert.equal(commandResult.ok, true);
-  const value = commandResult.value as { status?: unknown; stdout?: unknown };
+  const value = commandResult.value as {
+    commandId?: unknown;
+    status?: unknown;
+    stdout?: unknown;
+  };
   assert.equal(value.status, "succeeded");
   assert.equal(value.stdout, "system-ok");
+  assert.equal(typeof value.commandId, "string");
+
+  const outputResult = await worker.handle({
+    type: "read_command_output",
+    requestId: "00000000-0000-4000-8000-000000000007",
+    commandId: String(value.commandId),
+    stream: "stdout",
+    offset: 0,
+    maxBytes: 64,
+  });
+  assert.equal(outputResult.ok, true);
+  assert.deepEqual(outputResult.value, {
+    commandId: value.commandId,
+    stream: "stdout",
+    status: "succeeded",
+    offset: 0,
+    content: "system-ok",
+    retainedBytes: 9,
+    totalBytes: 9,
+    retentionTruncated: false,
+    complete: true,
+  });
 });
 
 test("blocks recognizable authentication data before it leaves the worker", async (context) => {

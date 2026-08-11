@@ -39,6 +39,7 @@ interface ConnectedWorker {
   concurrentJobs: boolean;
   structuredReads: boolean;
   structuredMutations: boolean;
+  commandOutputRanges: boolean;
   accessProfile: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
@@ -100,6 +101,7 @@ function jobPermissionError(
   if (
     (job.type === "run_command" ||
       job.type === "get_command" ||
+      job.type === "read_command_output" ||
       job.type === "cancel_command") &&
     !permissions.runCommands
   ) {
@@ -129,6 +131,7 @@ export class RouterState {
       concurrentJobs?: boolean;
       structuredReads?: boolean;
       structuredMutations?: boolean;
+      commandOutputRanges?: boolean;
       accessProfile?: WorkerAccessProfile;
       workspaceLabel?: string;
       workerVersion?: string;
@@ -168,6 +171,7 @@ export class RouterState {
       concurrentJobs: options.concurrentJobs === true,
       structuredReads: options.structuredReads === true,
       structuredMutations: options.structuredMutations === true,
+      commandOutputRanges: options.commandOutputRanges === true,
       // A missing profile identifies a legacy worker, whose historical behavior
       // included full command authority. New workers always declare a profile.
       accessProfile: options.accessProfile ?? "system",
@@ -446,6 +450,7 @@ export class RouterState {
       concurrentJobs: boolean;
       structuredReads: boolean;
       structuredMutations: boolean;
+      commandOutputRanges: boolean;
     };
   }> {
     this.#pruneStaleWorkers();
@@ -463,6 +468,7 @@ export class RouterState {
           concurrentJobs: worker.concurrentJobs,
           structuredReads: worker.structuredReads,
           structuredMutations: worker.structuredMutations,
+          commandOutputRanges: worker.commandOutputRanges,
         },
         ...(worker.workspaceLabel
           ? { workspaceLabel: worker.workspaceLabel }
@@ -516,6 +522,12 @@ export class RouterState {
     this.#pruneStaleWorkers();
     const worker = this.#workers.get(workerId);
     return worker?.accountId === accountId && worker.structuredMutations;
+  }
+
+  supportsCommandOutputRanges(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.commandOutputRanges;
   }
 
   #pruneStaleWorkers(): void {
