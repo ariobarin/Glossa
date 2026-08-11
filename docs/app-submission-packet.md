@@ -86,7 +86,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `logout` | Yes | No | No | Returns sign-out steps and a browser logout URL. It does not revoke credentials, navigate, or claim logout is complete. |
 | `read_file` | Yes | No | No | Reads one bounded relative UTF-8 file inside the exposed root. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |
-| `search_text` | Yes | No | No | Searches literal text across bounded UTF-8 files without invoking a shell. |
+| `search_text` | Yes | No | No | Searches bounded UTF-8 files with literal or regex matching plus extension and root-relative include/exclude glob filters, without invoking a shell. |
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
 | `write_file` | No | Yes | No | Creates or replaces one file inside the root when `writeFiles` is true. `expectedSha256` can reject stale overwrites. |
 | `edit_file` | No | Yes | No | Applies exact guarded replacements inside the root when `writeFiles` is true and returns a bounded unified diff. |

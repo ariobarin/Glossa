@@ -152,11 +152,14 @@ export class LocalWorker {
           value = await this.files.searchText({
             query: job.query,
             ...(job.path ? { path: job.path } : {}),
+            ...(job.matchMode === undefined ? {} : { matchMode: job.matchMode }),
             ...(job.caseSensitive === undefined
               ? {}
               : { caseSensitive: job.caseSensitive }),
             ...(job.maxResults === undefined ? {} : { maxResults: job.maxResults }),
             ...(job.extensions ? { extensions: job.extensions } : {}),
+            ...(job.includeGlobs ? { includeGlobs: job.includeGlobs } : {}),
+            ...(job.excludeGlobs ? { excludeGlobs: job.excludeGlobs } : {}),
             timeoutMs: job.timeoutMs,
           });
           break;

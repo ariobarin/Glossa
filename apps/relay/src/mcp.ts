@@ -479,7 +479,7 @@ const MCP_TOOL_COPY = {
   },
   search_text: {
     title: "Search Workspace Text",
-    description: "Use this to find literal text across bounded UTF-8 files in the exposed workspace without running a shell command. It returns matching lines, relative paths, and scan statistics, but blocks results that appear to contain access credentials or authentication secrets. It does not interpret regular expressions; use a narrower literal query instead of shell search when possible.",
+    description: "Use this to search bounded UTF-8 files in the exposed workspace without running a shell command. It supports literal or regex matching plus extension and root-relative include/exclude glob filters, and returns matching lines, relative paths, and scan statistics. Content results that appear to contain access credentials or authentication secrets are blocked. Prefer these structured controls over run_command/ripgrep when they can express the requested repository search.",
   },
   read_file_range: {
     title: "Read Workspace File Range",
@@ -996,8 +996,8 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ deviceId, query, path, caseSensitive, maxResults, extensions }) => {
-      if (containsRestrictedAuthenticationData({ query, path, extensions })) {
+    async ({ deviceId, query, path, matchMode, caseSensitive, maxResults, extensions, includeGlobs, excludeGlobs }) => {
+      if (containsRestrictedAuthenticationData({ query, path, extensions, includeGlobs, excludeGlobs })) {
         return restrictedDataResult();
       }
       const unavailable = structuredReadError(state, accountId, deviceId);
@@ -1009,9 +1009,12 @@ function registerTools(
           timeoutMs: structuredReadTimeoutMs(config),
           query,
           ...(path ? { path } : {}),
+          ...(matchMode === undefined ? {} : { matchMode }),
           ...(caseSensitive === undefined ? {} : { caseSensitive }),
           ...(maxResults === undefined ? {} : { maxResults }),
           ...(extensions ? { extensions } : {}),
+          ...(includeGlobs ? { includeGlobs } : {}),
+          ...(excludeGlobs ? { excludeGlobs } : {}),
         });
         return workerSuccess(result, searchTextOutputSchema);
       } catch (error) {

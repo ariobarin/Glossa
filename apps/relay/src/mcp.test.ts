@@ -243,6 +243,13 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     assert.ok(inputSchema.properties?.deviceId);
     assert.equal(inputSchema.required?.includes("deviceId") ?? false, false);
   }
+  const searchTextInputSchema = byName.get("search_text")?.inputSchema as {
+    properties?: Record<string, unknown>;
+  };
+  assert.ok(searchTextInputSchema.properties?.matchMode);
+  assert.ok(searchTextInputSchema.properties?.includeGlobs);
+  assert.ok(searchTextInputSchema.properties?.excludeGlobs);
+
   const getCommandInputSchema = byName.get("get_command")?.inputSchema as {
     properties?: Record<string, unknown>;
   };
@@ -269,7 +276,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
   assert.match(byName.get("write_file")?.description ?? "", /use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
-  assert.match(byName.get("search_text")?.description ?? "", /does not interpret regular expressions/);
+  assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
   assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
   assert.match(byName.get("cancel_command")?.description ?? "", /does not undo.*effects/);
   const writeFileSchema = byName.get("write_file")?.inputSchema as {
