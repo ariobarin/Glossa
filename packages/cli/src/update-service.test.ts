@@ -8,6 +8,7 @@ import {
   checkForUpdate,
   cleanupUpdateBackups,
   installUpdate,
+  npmInstallInvocation,
   parseReleaseChecksum,
   standaloneAssetName,
 } from "./update-service.js";
@@ -59,6 +60,29 @@ test("accepts only the checksum for the requested asset", () => {
   assert.throws(
     () => parseReleaseChecksum(`${hash}  another-file\n`, "glossa-linux-x64"),
     /checksum file was invalid/,
+  );
+});
+
+test("routes Windows npm updates through cmd.exe", () => {
+  assert.deepEqual(
+    npmInstallInvocation("0.1.1", "win32", "C:\\Windows\\System32\\cmd.exe"),
+    {
+      command: "C:\\Windows\\System32\\cmd.exe",
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        "npm.cmd install --global @ariobarin/glossa@0.1.1",
+      ],
+    },
+  );
+  assert.deepEqual(npmInstallInvocation("0.1.1", "linux"), {
+    command: "npm",
+    args: ["install", "--global", "@ariobarin/glossa@0.1.1"],
+  });
+  assert.throws(
+    () => npmInstallInvocation("0.1.1 & echo unsafe", "win32", "cmd.exe"),
+    /invalid/,
   );
 });
 
