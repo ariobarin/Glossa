@@ -57,6 +57,9 @@ interface JsonSchemaNode {
   description?: unknown;
   properties?: Record<string, JsonSchemaNode>;
   items?: JsonSchemaNode;
+  anyOf?: JsonSchemaNode[];
+  required?: string[];
+  additionalProperties?: boolean;
 }
 
 function assertFieldDescriptions(schema: JsonSchemaNode, label: string): void {
@@ -153,6 +156,23 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   }
 
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const runCommandInput = byName.get("run_command")?.inputSchema as JsonSchemaNode;
+  assert.deepEqual(
+    new Set(runCommandInput.required ?? []),
+    new Set(["deviceId", "command"]),
+  );
+  const commandSchema = runCommandInput.properties?.command;
+  assert.equal(commandSchema?.anyOf?.length, 2);
+  const commandRequired = commandSchema?.anyOf?.map((branch) =>
+    new Set(branch.required ?? [])
+  ) ?? [];
+  assert.ok(commandRequired.some((required) =>
+    required.has("argv") && !required.has("shellCommand")
+  ));
+  assert.ok(commandRequired.some((required) =>
+    required.has("shellCommand") && !required.has("argv")
+  ));
+  assert.ok(commandSchema?.anyOf?.every((branch) => branch.additionalProperties === false));
   assert.equal(byName.get("run_command")?.annotations?.readOnlyHint, false);
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
@@ -172,19 +192,22 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     byName.get("run_command")?.description ?? "",
     /waitMs 0.*1500 to 2000.*default is 750/i,
   );
-  const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
-    properties?: Record<string, { description?: unknown }>;
-  };
+  const argvCommandSchema = commandSchema?.anyOf?.find((branch) =>
+    branch.properties?.argv
+  );
+  const shellCommandSchema = commandSchema?.anyOf?.find((branch) =>
+    branch.properties?.shellCommand
+  );
   assert.match(
-    String(runCommandInputSchema.properties?.argv?.description),
+    String(argvCommandSchema?.properties?.argv?.description),
     /Preferred for native executables.*without shell startup.*Windows.*npm/,
   );
   assert.match(
-    String(runCommandInputSchema.properties?.shellCommand?.description),
+    String(shellCommandSchema?.properties?.shellCommand?.description),
     /Use when shell features are required.*Windows.*npm.*PowerShell/,
   );
   assert.match(
-    String(runCommandInputSchema.properties?.waitMs?.description),
+    String(runCommandInput.properties?.waitMs?.description),
     /Use 0.*1500 to 2000.*Defaults to 750/,
   );
   const readCommandOutputTool = byName.get("read_command_output");
@@ -558,7 +581,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
     name: "run_command",
     arguments: {
       deviceId: workspaceWorkerId,
-      argv: ["node", "--version"],
+      command: { argv: ["node", "--version"] },
     },
   });
   assert.equal(commandResult.isError, true);
@@ -741,7 +764,7 @@ test("returns actionable guidance for Windows command shims", async (context) =>
     name: "run_command",
     arguments: {
       deviceId: workerId,
-      argv: ["npm.cmd", "--version"],
+      command: { argv: ["npm.cmd", "--version"] },
     },
   });
   const job = await state.poll(
@@ -935,7 +958,9 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
       name: "run_command",
       arguments: {
         deviceId: workerId,
-        argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+        command: {
+          argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+        },
       },
     }),
   ]) {
@@ -1251,7 +1276,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const runCall = client.callTool({
     name: "run_command",
-    arguments: { deviceId: workerId, argv: ["echo", "ok"] },
+    arguments: { deviceId: workerId, command: { argv: ["echo", "ok"] } },
   });
   const runJob = await state.poll(
     accountId,
@@ -1350,7 +1375,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const secondRunCall = client.callTool({
     name: "run_command",
-    arguments: { deviceId: workerId, argv: ["sleep", "10"] },
+    arguments: { deviceId: workerId, command: { argv: ["sleep", "10"] } },
   });
   const secondRunJob = await state.poll(
     accountId,
