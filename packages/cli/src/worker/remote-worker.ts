@@ -19,6 +19,7 @@ interface RegisteredSession {
   legacyRelay: boolean;
   concurrentJobs: boolean;
   structuredReads: boolean;
+  structuredMutations: boolean;
   accessProfileAccepted: boolean;
   workspaceLabelAccepted: boolean;
   workerToken?: string;
@@ -88,7 +89,7 @@ function optionalWorkerToken(value: unknown): string | undefined {
 
 function supportsCapability(
   value: unknown,
-  capability: "concurrentJobs" | "structuredReads",
+  capability: "concurrentJobs" | "structuredReads" | "structuredMutations",
 ): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
@@ -110,6 +111,9 @@ function jobLane(job: WorkerJob): JobLane {
       return "read";
     case "write_file":
     case "edit_file":
+    case "make_directory":
+    case "delete_path":
+    case "move_path":
     case "run_command":
       return "mutation";
   }
@@ -119,6 +123,7 @@ function acceptedJobTypes(
   counts: LaneCounts,
   total: number,
   structuredReads: boolean,
+  structuredMutations: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
@@ -132,6 +137,9 @@ function acceptedJobTypes(
   }
   if (counts.mutation < 1) {
     accepted.push("write_file", "edit_file", "run_command");
+    if (structuredMutations) {
+      accepted.push("make_directory", "delete_path", "move_path");
+    }
   }
   return accepted;
 }
@@ -247,6 +255,15 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
+    const currentBody = {
+      workerId: this.#workerId,
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
+      },
+    };
     const structuredBody = {
       workerId: this.#workerId,
       capabilities: {
@@ -259,12 +276,15 @@ export class RemoteWorker {
       workerId: this.#workerId,
       capabilities: { commandProgress: true, concurrentJobs: true },
     };
+    const versionedCurrentBody = this.#workerVersion
+      ? { ...currentBody, workerVersion: this.#workerVersion }
+      : undefined;
     const versionedStructuredBody = this.#workerVersion
       ? { ...structuredBody, workerVersion: this.#workerVersion }
       : undefined;
     const preferredProfileBody = this.#accessProfile
       ? {
-          ...(versionedStructuredBody ?? structuredBody),
+          ...(versionedCurrentBody ?? currentBody),
           accessProfile: this.#accessProfile,
           ...(this.#workspaceLabel
             ? { workspaceLabel: this.#workspaceLabel }
@@ -275,6 +295,31 @@ export class RemoteWorker {
       ...(preferredProfileBody
         ? [{ body: preferredProfileBody, legacyRelay: false }]
         : []),
+      ...(versionedCurrentBody && this.#workspaceLabel
+        ? [{
+            body: {
+              ...versionedCurrentBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
+      ...(this.#workspaceLabel
+        ? [{
+            body: {
+              ...currentBody,
+              workspaceLabel: this.#workspaceLabel,
+            },
+            legacyRelay: false,
+          }]
+        : []),
+      ...(versionedCurrentBody
+        ? [{ body: versionedCurrentBody, legacyRelay: false }]
+        : []),
+      {
+        body: currentBody,
+        legacyRelay: false,
+      },
       ...(versionedStructuredBody && this.#workspaceLabel
         ? [{
             body: {
@@ -364,6 +409,8 @@ export class RemoteWorker {
           !attempt.legacyRelay && supportsCapability(value, "concurrentJobs"),
         structuredReads:
           !attempt.legacyRelay && supportsCapability(value, "structuredReads"),
+        structuredMutations:
+          !attempt.legacyRelay && supportsCapability(value, "structuredMutations"),
         accessProfileAccepted:
           this.#accessProfile === undefined ||
           ("accessProfile" in value &&
@@ -473,6 +520,7 @@ export class RemoteWorker {
           counts,
           inFlight.size,
           session.structuredReads,
+          session.structuredMutations,
         );
         if (acceptedTypes.length === 0) {
           await Promise.race(inFlight);
@@ -504,6 +552,7 @@ export class RemoteWorker {
             counts,
             inFlight.size,
             session.structuredReads,
+            session.structuredMutations,
           );
           const newlyAcceptedTypes = refreshedTypes.filter(
             (type) => !acceptedTypes.includes(type),

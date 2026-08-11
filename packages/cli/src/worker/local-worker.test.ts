@@ -62,6 +62,34 @@ test("workspace access permits guarded file writes but not commands", async (con
   assert.equal(writeResult.ok, true);
   assert.equal(await readFile(path.join(root, "note.txt"), "utf8"), "workspace write");
 
+  const directoryResult = await worker.handle({
+    type: "make_directory",
+    requestId: "00000000-0000-4000-8000-000000000040",
+    path: "nested",
+  });
+  assert.equal(directoryResult.ok, true);
+  const moveResult = await worker.handle({
+    type: "move_path",
+    requestId: "00000000-0000-4000-8000-000000000041",
+    source: "note.txt",
+    destination: "nested/note.txt",
+  });
+  assert.equal(moveResult.ok, true);
+  assert.equal(
+    await readFile(path.join(root, "nested", "note.txt"), "utf8"),
+    "workspace write",
+  );
+  const deleteResult = await worker.handle({
+    type: "delete_path",
+    requestId: "00000000-0000-4000-8000-000000000042",
+    path: "nested",
+    recursive: true,
+  });
+  assert.equal(deleteResult.ok, true);
+  await assert.rejects(readFile(path.join(root, "nested", "note.txt"), "utf8"), {
+    code: "ENOENT",
+  });
+
   const commandResult = await worker.handle({
     type: "run_command",
     requestId: "00000000-0000-4000-8000-000000000005",

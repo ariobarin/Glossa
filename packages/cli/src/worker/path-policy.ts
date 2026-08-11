@@ -156,6 +156,117 @@ export class PathPolicy {
     return path.join(canonicalParent, path.basename(lexical));
   }
 
+  async resolveWritableDirectory(
+    relativePath: string,
+    recursive: boolean,
+  ): Promise<{ target: string; exists: boolean }> {
+    const lexical = this.resolveLexical(relativePath);
+    await this.rejectLinkedComponents(lexical);
+    try {
+      const targetStat = await lstat(lexical);
+      if (targetStat.isSymbolicLink()) {
+        throw new WorkerError("linked_path", "Directory creation through links is not allowed.");
+      }
+      if (!targetStat.isDirectory()) {
+        throw new WorkerError("not_directory", "The destination is not a directory.");
+      }
+      const canonicalTarget = await realpath(lexical);
+      if (!isWithin(this.root, canonicalTarget)) {
+        throw new WorkerError("path_escape", "The destination escapes the exposed root.");
+      }
+      return { target: canonicalTarget, exists: true };
+    } catch (error) {
+      if (error instanceof WorkerError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+
+    if (!recursive) {
+      const parent = path.dirname(lexical);
+      await this.rejectLinkedComponents(parent);
+      const canonicalParent = await realpath(parent).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") {
+            throw new WorkerError(
+              "parent_not_found",
+              "The destination directory does not exist.",
+            );
+          }
+          throw error;
+        },
+      );
+      if (!isWithin(this.root, canonicalParent)) {
+        throw new WorkerError("path_escape", "The destination escapes the exposed root.");
+      }
+      if (!(await stat(canonicalParent)).isDirectory()) {
+        throw new WorkerError("not_directory", "The destination parent is not a directory.");
+      }
+      return {
+        target: path.join(canonicalParent, path.basename(lexical)),
+        exists: false,
+      };
+    }
+
+    let existingAncestor = path.dirname(lexical);
+    while (!samePath(existingAncestor, this.root)) {
+      try {
+        await this.rejectLinkedComponents(existingAncestor);
+        const canonicalAncestor = await realpath(existingAncestor);
+        if (!isWithin(this.root, canonicalAncestor)) {
+          throw new WorkerError("path_escape", "The destination escapes the exposed root.");
+        }
+        if (!(await stat(canonicalAncestor)).isDirectory()) {
+          throw new WorkerError("not_directory", "The destination parent is not a directory.");
+        }
+        return {
+          target: path.join(
+            canonicalAncestor,
+            path.relative(existingAncestor, lexical),
+          ),
+          exists: false,
+        };
+      } catch (error) {
+        if (error instanceof WorkerError) throw error;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      existingAncestor = path.dirname(existingAncestor);
+    }
+    return { target: lexical, exists: false };
+  }
+
+  async resolveVacantPath(relativePath: string): Promise<string> {
+    const lexical = this.resolveLexical(relativePath);
+    const parent = path.dirname(lexical);
+    await this.rejectLinkedComponents(parent);
+    const canonicalParent = await realpath(parent).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") {
+          throw new WorkerError(
+            "parent_not_found",
+            "The destination directory does not exist.",
+          );
+        }
+        throw error;
+      },
+    );
+    if (!isWithin(this.root, canonicalParent)) {
+      throw new WorkerError("path_escape", "The destination escapes the exposed root.");
+    }
+    if (!(await stat(canonicalParent)).isDirectory()) {
+      throw new WorkerError("not_directory", "The destination parent is not a directory.");
+    }
+    try {
+      await lstat(lexical);
+      throw new WorkerError(
+        "destination_exists",
+        "The destination already exists.",
+      );
+    } catch (error) {
+      if (error instanceof WorkerError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return path.join(canonicalParent, path.basename(lexical));
+  }
+
   private resolveLexical(relativePath: string): string {
     const validated = validateRelativePath(relativePath);
     const candidate = path.resolve(this.root, validated);

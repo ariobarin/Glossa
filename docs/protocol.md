@@ -101,7 +101,7 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
-MCP initialization advertises public tool-contract version `1.0.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
+MCP initialization advertises public tool-contract version `1.1.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
 
 Tools:
 
@@ -113,6 +113,9 @@ Tools:
 - `read_file_range`
 - `write_file`
 - `edit_file`
+- `make_directory`
+- `delete_path`
+- `move_path`
 - `run_command`
 - `get_command`
 - `cancel_command`
@@ -131,7 +134,7 @@ When no workers are active, `devices` is empty and `availability` is `"offline"`
 
 `read_file_range` returns at most 500 complete normalized lines and 64 KiB per call, together with the full-file SHA-256, total line count, and `nextLine` continuation metadata. The full file remains subject to the 1 MiB UTF-8 limit. Every structured repository job receives a worker-local deadline equal to at most half the hosted request window and never more than 8 seconds. After that deadline, the read lane remains occupied until the current filesystem operation settles, any late directory handle is closed, and the worker returns `scan_timeout`; this bounds stalled work instead of accumulating background I/O.
 
-Tool annotations must describe actual behavior. `write_file`, `edit_file`, and `run_command` are non-read-only and destructive-capable. `cancel_command` is also non-read-only and destructive because it terminates a process tree, although it does not undo effects already caused. Discovery, logout instructions, file reads, and command status are read-only.
+Tool annotations must describe actual behavior. `write_file`, `edit_file`, `make_directory`, `delete_path`, `move_path`, and `run_command` are non-read-only and destructive-capable. `cancel_command` is also non-read-only and destructive because it terminates a process tree, although it does not undo effects already caused. Discovery, logout instructions, file reads, and command status are read-only.
 Every tool advertises the `glossa:access` OAuth scheme in descriptor metadata and is visible to the model. `run_command` declares `openWorldHint: true` because a command can use the worker account's inherited network access and affect external systems. All other tools declare `openWorldHint: false`.
 Every tool description begins with when to use it, includes disallowed cases when materially relevant, and states important behavior the schema cannot express, including Restricted Data handling. The server instruction contains shared product scope, profile semantics, untrusted-data rules, and the authentication-secret prohibition. Every public input and output field includes a description. Successful results always provide the complete typed value in `structuredContent`. Results through 16 KiB also mirror the equivalent JSON in text content for compatibility; larger results use a short text notice instead of transmitting the same payload twice.
 
@@ -182,6 +185,24 @@ type WorkerJob =
       expectedSha256?: string;
     }
   | {
+      type: "make_directory";
+      requestId: string;
+      path: string;
+      recursive?: boolean;
+    }
+  | {
+      type: "delete_path";
+      requestId: string;
+      path: string;
+      recursive?: boolean;
+    }
+  | {
+      type: "move_path";
+      requestId: string;
+      source: string;
+      destination: string;
+    }
+  | {
       type: "run_command";
       requestId: string;
       argv?: string[];
@@ -202,9 +223,11 @@ type WorkerJob =
 
 `argv` and `shellCommand` are mutually exclusive. Clients should use `argv` for native executables such as Git and Node.js. Direct execution avoids shell startup and parsing. Use `shellCommand` when the operation requires shell syntax such as pipes, redirection, variable expansion, or multiple statements. On Windows, also use `shellCommand` for command shims and name the `.cmd` or `.bat` file explicitly, for example `npm.cmd test`, because direct process spawning does not resolve those scripts and PowerShell may otherwise select a blocked `.ps1` shim.
 
-An active worker executes a job without a separate local confirmation round trip only when the selected startup profile permits it. `read-only` accepts structured reads only. `workspace` accepts structured reads plus `write_file` and `edit_file` inside the root. `system` accepts those operations plus the command lifecycle. Session startup is the local authorization boundary for that selected profile, not for broader authority. Both the relay and worker return `write_access_disabled` or `command_access_disabled` before performing a forbidden operation. Structured file tools remain confined to the exposed root. System commands retain the full operating-system authority of the local worker account.
+An active worker executes a job without a separate local confirmation round trip only when the selected startup profile permits it. `read-only` accepts structured reads only. `workspace` accepts structured reads plus `write_file`, `edit_file`, `make_directory`, `delete_path`, and `move_path` inside the root. `system` accepts those operations plus the command lifecycle. Session startup is the local authorization boundary for that selected profile, not for broader authority. Both the relay and worker return `write_access_disabled` or `command_access_disabled` before performing a forbidden operation. Structured file tools remain confined to the exposed root. System commands retain the full operating-system authority of the local worker account.
 
-The relay rejects recognizable authentication-secret material in `write_file`, `edit_file`, and `run_command` inputs before it creates a worker job. The worker independently repeats those checks and scans content-bearing file and command results. A match returns `restricted_data_blocked` with a fixed message and never returns the matched value. Explicit placeholders remain allowed. This is a high-confidence egress guard rather than a complete data-loss-prevention guarantee.
+The relay rejects recognizable authentication-secret material in structured mutation paths, `write_file`, `edit_file`, and `run_command` inputs before it creates a worker job. The worker independently repeats those checks and scans content-bearing file and command results. A match returns `restricted_data_blocked` with a fixed message and never returns the matched value. Explicit placeholders remain allowed. This is a high-confidence egress guard rather than a complete data-loss-prevention guarantee.
+
+`make_directory` creates one relative directory and optionally its missing parents. `delete_path` removes a regular file or directory; non-empty directories require `recursive: true`, and the exposed root can never be deleted. `move_path` renames or relocates a regular file or directory inside the root, refuses existing destinations, and prevents moving a directory inside itself. All three operations reject symlinks and junctions, are serialized with other structured mutations, require a worker that negotiated `structuredMutations`, and remain available in the default `workspace` profile without command authority.
 
 `edit_file` applies one or more exact old-text/new-text replacements against the same original file. Every old-text value must be non-empty and occur exactly once, replacements may not overlap, and the worker always guards the final atomic write with the hash of the file it read. Before mutation, the worker scans the current file for recognizable authentication-secret material and uses the scanned SHA-256 as the write guard when the caller did not supply one. The optional caller-provided SHA-256 adds an earlier stale-revision check. A successful result returns the new hash, replacement count, and a bounded unified diff of the affected lines.
 
@@ -218,7 +241,7 @@ Full text-file reads and writes are limited to 1 MiB. Structured listings, searc
 
 The requested command timeout defaults to 900,000 milliseconds and must be between 1 millisecond and the 3,600,000 millisecond hard maximum.
 
-These are ordinary MCP tools so clients do not need native MCP Tasks support. Native task negotiation may be added after target client support is dependable, but it is not part of the public `1.0.0` contract.
+These are ordinary MCP tools so clients do not need native MCP Tasks support. Native task negotiation may be added after target client support is dependable, but it is not part of the public `1.1.0` contract.
 
 ## Error principles
 

@@ -38,6 +38,7 @@ interface ConnectedWorker {
   commandProgress: boolean;
   concurrentJobs: boolean;
   structuredReads: boolean;
+  structuredMutations: boolean;
   accessProfile: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
@@ -87,7 +88,11 @@ function jobPermissionError(
 ): "write_access_disabled" | "command_access_disabled" | null {
   const permissions = workerPermissions(worker.accessProfile);
   if (
-    (job.type === "write_file" || job.type === "edit_file") &&
+    (job.type === "write_file" ||
+      job.type === "edit_file" ||
+      job.type === "make_directory" ||
+      job.type === "delete_path" ||
+      job.type === "move_path") &&
     !permissions.writeFiles
   ) {
     return "write_access_disabled";
@@ -123,6 +128,7 @@ export class RouterState {
       commandProgress: boolean;
       concurrentJobs?: boolean;
       structuredReads?: boolean;
+      structuredMutations?: boolean;
       accessProfile?: WorkerAccessProfile;
       workspaceLabel?: string;
       workerVersion?: string;
@@ -161,6 +167,7 @@ export class RouterState {
       commandProgress: options.commandProgress === true,
       concurrentJobs: options.concurrentJobs === true,
       structuredReads: options.structuredReads === true,
+      structuredMutations: options.structuredMutations === true,
       // A missing profile identifies a legacy worker, whose historical behavior
       // included full command authority. New workers always declare a profile.
       accessProfile: options.accessProfile ?? "system",
@@ -438,6 +445,7 @@ export class RouterState {
       commandProgress: boolean;
       concurrentJobs: boolean;
       structuredReads: boolean;
+      structuredMutations: boolean;
     };
   }> {
     this.#pruneStaleWorkers();
@@ -454,6 +462,7 @@ export class RouterState {
           commandProgress: worker.commandProgress,
           concurrentJobs: worker.concurrentJobs,
           structuredReads: worker.structuredReads,
+          structuredMutations: worker.structuredMutations,
         },
         ...(worker.workspaceLabel
           ? { workspaceLabel: worker.workspaceLabel }
@@ -501,6 +510,12 @@ export class RouterState {
     this.#pruneStaleWorkers();
     const worker = this.#workers.get(workerId);
     return worker?.accountId === accountId && worker.structuredReads;
+  }
+
+  supportsStructuredMutations(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.structuredMutations;
   }
 
   #pruneStaleWorkers(): void {

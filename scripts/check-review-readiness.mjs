@@ -134,7 +134,7 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "1.0.0", "MCP public contract must be 1.0.0");
+assert.equal(contractVersion, "1.1.0", "MCP public contract must be 1.1.0");
 
 const expectedTools = [
   "list_devices",
@@ -145,6 +145,9 @@ const expectedTools = [
   "read_file_range",
   "write_file",
   "edit_file",
+  "make_directory",
+  "delete_path",
+  "move_path",
   "run_command",
   "get_command",
   "cancel_command",
@@ -236,8 +239,8 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `1.0.0`",
-  "Nine positive reviewer tests",
+  "MCP tool contract: `1.1.0`",
+  "Ten positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",
   "dedicated reviewer account",
@@ -248,8 +251,8 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "actual ChatGPT confirmation test",
 ]);
 assert.ok(
-  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 9,
-  "submission packet must retain at least nine explicit positive prompt cases",
+  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 10,
+  "submission packet must retain at least ten explicit positive prompt cases",
 );
 assert.ok(
   (submissionPacket.match(/^\| \d+ \|/gm) ?? []).length >= 8,
