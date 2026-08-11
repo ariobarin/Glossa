@@ -188,14 +188,30 @@ async function fetchText(
   return await response.text();
 }
 
+export function npmInstallInvocation(
+  version: string,
+  platform: NodeJS.Platform = process.platform,
+  commandShell = process.env.ComSpec ?? "cmd.exe",
+): { command: string; args: string[] } {
+  const normalizedVersion = semver.valid(version);
+  if (!normalizedVersion) throw new Error(`Glossa version ${version} is invalid.`);
+  const packageSpec = `${PACKAGE_NAME}@${normalizedVersion}`;
+  if (platform === "win32") {
+    return {
+      command: commandShell,
+      args: ["/d", "/s", "/c", `npm.cmd install --global ${packageSpec}`],
+    };
+  }
+  return {
+    command: "npm",
+    args: ["install", "--global", packageSpec],
+  };
+}
+
 async function runNpmInstall(version: string): Promise<void> {
-  const command = process.platform === "win32" ? "npm.cmd" : "npm";
+  const { command, args } = npmInstallInvocation(version);
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      command,
-      ["install", "--global", `${PACKAGE_NAME}@${version}`],
-      { stdio: "inherit" },
-    );
+    const child = spawn(command, args, { stdio: "inherit" });
     child.once("error", reject);
     child.once("close", (status) => {
       if (status === 0) resolve();
