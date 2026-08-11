@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Dir, Dirent, Stats } from "node:fs";
 import {
   chmod,
+  link,
   lstat,
   mkdir,
   opendir,
@@ -1415,6 +1416,12 @@ export class FileService {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+      if (existingMode !== undefined && expectedSha256 === undefined) {
+        throw new WorkerError(
+          "path_exists",
+          "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
+        );
+      }
       if (expectedSha256) await requireRevision(target, expectedSha256);
 
       const temporary = path.join(path.dirname(target), `.glossa-${randomUUID()}.tmp`);
@@ -1428,8 +1435,22 @@ export class FileService {
         if (existingMode !== undefined && process.platform !== "win32") {
           await chmod(temporary, existingMode);
         }
-        if (expectedSha256) await requireRevision(target, expectedSha256);
-        await rename(temporary, target);
+        if (expectedSha256) {
+          await requireRevision(target, expectedSha256);
+          await rename(temporary, target);
+        } else {
+          try {
+            await link(temporary, target);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+              throw new WorkerError(
+                "path_exists",
+                "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
+              );
+            }
+            throw error;
+          }
+        }
       } finally {
         await rm(temporary, { force: true });
       }

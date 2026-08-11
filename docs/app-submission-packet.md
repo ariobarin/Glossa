@@ -88,7 +88,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |
 | `search_text` | Yes | No | No | Searches bounded UTF-8 files with literal or regex matching plus extension and root-relative include/exclude glob filters, without invoking a shell. |
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
-| `write_file` | No | Yes | No | Creates or replaces one file inside the root when `writeFiles` is true. `expectedSha256` can reject stale overwrites. |
+| `write_file` | No | Yes | No | Creates one new file when `expectedSha256` is omitted, or replaces exactly the supplied existing revision when it is present. Blind overwrite of an existing path is rejected. |
 | `edit_file` | No | Yes | No | Applies exact guarded replacements inside the root when `writeFiles` is true and returns a bounded unified diff. |
 | `make_directory` | No | Yes | No | Creates a relative directory inside the root, optionally including missing parents, when `writeFiles` and `structuredMutations` are true. |
 | `delete_path` | No | Yes | No | Deletes a relative regular file or directory inside the root, refuses the root itself, and requires an explicit recursive flag for non-empty directories. |
