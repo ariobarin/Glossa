@@ -135,6 +135,13 @@ export const listFilesJobSchema = listFilesRequestSchema.extend({
   timeoutMs: structuredReadTimeoutSchema,
 });
 
+const searchGlobSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .refine((value) => !/[\r\n\u0000]/.test(value), "Search glob must fit on one line")
+  .describe("Root-relative glob pattern using forward slashes, for example src/**/*.ts.");
+
 export const searchTextRequestSchema = z.object({
   query: z
     .string()
@@ -144,10 +151,14 @@ export const searchTextRequestSchema = z.object({
       (value) => !/[\r\n\u0000]/.test(value),
       "Search text must fit on one line",
     )
-    .describe("Literal single-line UTF-8 text to search for."),
+    .describe("Single-line UTF-8 search expression. Interpreted literally by default or as a JavaScript regular expression when matchMode is regex."),
   path: relativePathSchema
     .optional()
     .describe("File or directory relative to the exposed root. Defaults to the root."),
+  matchMode: z
+    .enum(["literal", "regex"])
+    .optional()
+    .describe("How to interpret query. Defaults to literal; regex uses JavaScript regular-expression syntax."),
   caseSensitive: z
     .boolean()
     .optional()
@@ -169,6 +180,18 @@ export const searchTextRequestSchema = z.object({
     .max(20)
     .optional()
     .describe("Optional filename extensions to search."),
+  includeGlobs: z
+    .array(searchGlobSchema)
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Optional root-relative glob patterns. A file must match at least one include pattern before its contents are scanned."),
+  excludeGlobs: z
+    .array(searchGlobSchema)
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Optional root-relative glob patterns. Matching files are skipped before their contents are scanned."),
 }).strict();
 
 export const searchTextJobSchema = searchTextRequestSchema.extend({
