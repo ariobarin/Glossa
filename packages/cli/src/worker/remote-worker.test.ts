@@ -216,6 +216,7 @@ test("reports its package version and falls back for older relays", async () => 
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
 });
 
@@ -270,6 +271,7 @@ test("falls back without a label when the relay does not accept labels", async (
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   const connected = statuses.find((status) => status.state === "connected");
   assert.equal(connected?.state, "connected");
@@ -318,12 +320,17 @@ test("falls back when structured and concurrent capabilities are unsupported", a
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   assert.deepEqual(registerBodies[1]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
-  assert.deepEqual(registerBodies[2]?.capabilities, { commandProgress: true });
+  assert.deepEqual(registerBodies[2]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
   assert.equal(
     statuses.find((status) => status.state === "connected")?.legacyRelay,
     false,
@@ -370,12 +377,15 @@ test("keeps structured job types out of concurrency-only relay polls", async () 
     fetcher,
   }).run();
 
-  assert.equal(registerBodies.length, 2);
+  assert.equal(registerBodies.length, 3);
   const accepted = pollBody?.acceptedTypes as string[];
   assert.equal(accepted.includes("read_file"), true);
   assert.equal(accepted.includes("list_files"), false);
   assert.equal(accepted.includes("search_text"), false);
   assert.equal(accepted.includes("read_file_range"), false);
+  assert.equal(accepted.includes("make_directory"), false);
+  assert.equal(accepted.includes("delete_path"), false);
+  assert.equal(accepted.includes("move_path"), false);
 });
 
 test("falls back to the legacy single-worker protocol", async () => {
@@ -414,19 +424,25 @@ test("falls back to the legacy single-worker protocol", async () => {
     onStatus: (status) => statuses.push(status),
   }).run();
 
-  assert.equal(registerBodies.length, 5);
+  assert.equal(registerBodies.length, 6);
   assert.deepEqual(registerBodies[0]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
   });
   assert.deepEqual(registerBodies[1]?.capabilities, {
     commandProgress: true,
     concurrentJobs: true,
+    structuredReads: true,
   });
-  assert.deepEqual(registerBodies[2]?.capabilities, { commandProgress: true });
-  assert.equal("capabilities" in registerBodies[3]!, false);
-  assert.deepEqual(registerBodies[4], {});
+  assert.deepEqual(registerBodies[2]?.capabilities, {
+    commandProgress: true,
+    concurrentJobs: true,
+  });
+  assert.deepEqual(registerBodies[3]?.capabilities, { commandProgress: true });
+  assert.equal("capabilities" in registerBodies[4]!, false);
+  assert.deepEqual(registerBodies[5], {});
   assert.equal(
     statuses.find((status) => status.state === "connected")?.legacyRelay,
     true,

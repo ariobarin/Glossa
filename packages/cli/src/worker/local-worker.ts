@@ -47,6 +47,14 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
         path: job.path,
         edits: job.edits,
       });
+    case "make_directory":
+    case "delete_path":
+      return containsRestrictedAuthenticationData(job.path);
+    case "move_path":
+      return containsRestrictedAuthenticationData({
+        source: job.source,
+        destination: job.destination,
+      });
     case "run_command":
       return containsRestrictedAuthenticationData({
         argv: job.argv,
@@ -97,7 +105,11 @@ export class LocalWorker {
     try {
       const permissions = workerPermissions(this.accessProfile);
       if (
-        (job.type === "write_file" || job.type === "edit_file") &&
+        (job.type === "write_file" ||
+          job.type === "edit_file" ||
+          job.type === "make_directory" ||
+          job.type === "delete_path" ||
+          job.type === "move_path") &&
         !permissions.writeFiles
       ) {
         throw new WorkerError(
@@ -172,6 +184,15 @@ export class LocalWorker {
           );
           break;
         }
+        case "make_directory":
+          value = await this.files.makeDirectory(job.path, job.recursive);
+          break;
+        case "delete_path":
+          value = await this.files.deletePath(job.path, job.recursive);
+          break;
+        case "move_path":
+          value = await this.files.movePath(job.source, job.destination);
+          break;
         case "run_command":
           value = await this.commands.start({
             ...(job.argv ? { argv: job.argv } : {}),

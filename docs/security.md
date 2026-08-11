@@ -6,7 +6,7 @@ How Glossa protects local workspaces, accounts, credentials, and data.
 
 Each worker exposes one canonical local directory and one access profile:
 
-| Profile | Structured reads | Guarded writes inside root | Commands |
+| Profile | Structured reads | Guarded mutations inside root | Commands |
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
@@ -20,7 +20,7 @@ A worker from an older release that did not declare a profile is reported as `sy
 
 `system` access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.
 
-Use the default `workspace` profile when file changes are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
+Use the default `workspace` profile when file changes, directory creation, deletion, or moves inside the exposed root are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
 
 ## Trust assumptions
 
@@ -130,7 +130,8 @@ A device token does not silently broaden a worker's selected access profile. The
 - enforce canonicalization, realpath, symlink, junction, and reparse-point checks for the host operating system;
 - validate existing paths and nearest writable ancestors locally;
 - reject absolute paths and lexical parent escapes;
-- revalidate root-relative paths for every structured file operation;
+- revalidate root-relative paths for every structured file operation, including directory creation, deletion, and moves;
+- reject deleting or moving the exposed root, reject existing move destinations and self-nesting directory moves, and require an explicit recursive flag before deleting non-empty directories;
 - stream directory entries into bounded traversal state, skip links and unavailable files during listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;
 - preserve discovered native filenames; prefix POSIX names containing literal backslashes with `./` so they remain safely reusable, and normalize returned separators only on Windows;
 - preserve correct case-sensitive or case-insensitive comparison for the host;
@@ -166,7 +167,7 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 
 **Controls:**
 
-- reject recognizable secret-bearing `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
+- reject recognizable secret-bearing structured mutation paths plus `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
 - repeat input checks locally so older or compromised relay behavior cannot bypass the worker boundary;
 - preflight an edited file before mutation and bind the edit to the scanned SHA-256 when the caller did not already provide one;
 - inspect content-bearing file and command results before they leave the worker;

@@ -270,6 +270,16 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         `${job.edits.length} ${job.edits.length === 1 ? "edit" : "edits"}`,
         ...(job.expectedSha256 ? ["guarded"] : []),
       ]);
+    case "make_directory":
+      return pathSummary(job.path, job.recursive ? ["recursive"] : []);
+    case "delete_path":
+      return pathSummary(job.path, job.recursive ? ["recursive"] : []);
+    case "move_path":
+      return {
+        target: `${quoteActivityInput(job.source)} → ${quoteActivityInput(job.destination)}`,
+        details: [],
+        truncation: "middle",
+      };
     case "run_command":
       return {
         target: job.argv
