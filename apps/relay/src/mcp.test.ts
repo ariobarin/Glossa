@@ -274,7 +274,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
   assert.match(byName.get("read_file")?.description ?? "", /access credentials or authentication secrets.*use read_file_range/);
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
-  assert.match(byName.get("write_file")?.description ?? "", /use edit_file/i);
+  assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
   assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
   assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
@@ -287,7 +287,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   };
   assert.match(
     String(writeFileSchema.properties?.expectedSha256?.description),
-    /read_file or read_file_range.*write fails if the file changed/,
+    /read_file or read_file_range.*omit only when creating.*replaces exactly.*missing or changed/i,
   );
   assert.match(
     String(editFileSchema.properties?.expectedSha256?.description),
