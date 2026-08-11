@@ -3,11 +3,15 @@ import type { Request, RequestHandler } from "express";
 
 const MCP_TOOL_NAMES = new Set([
   "cancel_command",
+  "delete_path",
   "edit_file",
   "get_command",
-  "list_devices",
-  "list_files",
   "get_logout_instructions",
+  "list_files",
+  "list_workspaces",
+  "make_directory",
+  "move_path",
+  "read_command_output",
   "read_file",
   "read_file_range",
   "run_command",

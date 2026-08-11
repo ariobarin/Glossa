@@ -12,7 +12,7 @@ Each worker exposes one canonical local directory and one access profile:
 | `workspace` (default) | Yes | Yes | No |
 | `system` | Yes | Yes | Yes |
 
-The selected profile is visible in the local terminal and returned by `list_devices` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
+The selected profile is visible in the local terminal and returned by `list_workspaces` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
 
 A worker from an older release that did not declare a profile is reported as `system`, because that release historically accepted commands. Compatibility never understates legacy authority.
 
@@ -114,7 +114,7 @@ A device token does not silently broaden a worker's selected access profile. The
 
 - use one protocol enum and one permission-mapping function across the CLI and relay;
 - include the profile in current worker registration and echo it in the registration response;
-- expose the profile and derived booleans through `list_devices`;
+- expose the profile and derived booleans through `list_workspaces`;
 - reject writes and commands before relay dispatch when permission is absent;
 - reject the same operations again inside `LocalWorker`;
 - return stable, actionable `write_access_disabled` and `command_access_disabled` errors that tell the model not to retry or bypass the boundary;

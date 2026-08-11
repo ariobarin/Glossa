@@ -16,8 +16,8 @@ const expectedTools = [
   "edit_file",
   "get_command",
   "get_logout_instructions",
-  "list_devices",
   "list_files",
+  "list_workspaces",
   "make_directory",
   "move_path",
   "read_command_output",
@@ -32,9 +32,9 @@ const expectedToolTitles: Record<string, string> = {
   delete_path: "Delete Workspace Path",
   edit_file: "Edit Workspace File",
   get_command: "Check Workspace Command",
-  list_devices: "Find Glossa Workspaces",
-  list_files: "List Workspace Files",
   get_logout_instructions: "Get Glossa Sign-Out Steps",
+  list_files: "List Workspace Files",
+  list_workspaces: "Find Glossa Workspaces",
   make_directory: "Create Workspace Directory",
   move_path: "Move Workspace Path",
   read_command_output: "Read Workspace Command Output",
@@ -103,7 +103,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "1.2.0");
+  assert.equal(MCP_SERVER_VERSION, "2.0.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
@@ -156,10 +156,29 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   }
 
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  for (const toolName of [
+    "read_file",
+    "list_files",
+    "search_text",
+    "read_file_range",
+    "write_file",
+    "edit_file",
+    "make_directory",
+    "delete_path",
+    "move_path",
+    "run_command",
+    "get_command",
+    "read_command_output",
+    "cancel_command",
+  ]) {
+    const inputSchema = byName.get(toolName)?.inputSchema as JsonSchemaNode;
+    assert.ok(inputSchema.properties?.workspaceId, `${toolName} must route by workspaceId`);
+    assert.equal(inputSchema.properties?.deviceId, undefined, `${toolName} must not expose deviceId`);
+  }
   const runCommandInput = byName.get("run_command")?.inputSchema as JsonSchemaNode;
   assert.deepEqual(
     new Set(runCommandInput.required ?? []),
-    new Set(["deviceId", "command"]),
+    new Set(["workspaceId", "command"]),
   );
   const commandSchema = runCommandInput.properties?.command;
   assert.equal(commandSchema?.anyOf?.length, 2);
@@ -216,13 +235,13 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(readCommandOutputTool?.annotations?.openWorldHint, false);
   assert.match(
     readCommandOutputTool?.description ?? "",
-    /deviceId and commandId.*one bounded retained byte range.*without rerunning.*Follow nextOffset.*transient.*capped per stream.*deleted with the command record/,
+    /workspaceId and commandId.*one bounded retained byte range.*without rerunning.*Follow nextOffset.*transient.*capped per stream.*deleted with the command record/,
   );
   const readCommandOutputInputSchema = readCommandOutputTool?.inputSchema as {
     required?: string[];
     properties?: Record<string, { description?: unknown }>;
   };
-  assert.equal(readCommandOutputInputSchema.required?.includes("deviceId"), true);
+  assert.equal(readCommandOutputInputSchema.required?.includes("workspaceId"), true);
   assert.equal(readCommandOutputInputSchema.required?.includes("commandId"), true);
   assert.equal(readCommandOutputInputSchema.required?.includes("stream"), true);
   assert.match(
@@ -231,31 +250,34 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     MCP_SERVER_INSTRUCTIONS,
-    /output is truncated.*read_command_output.*deviceId and commandId.*rather than rerunning/,
+    /output is truncated.*read_command_output.*workspaceId and commandId.*rather than rerunning/,
   );
   assert.match(
-    byName.get("list_devices")?.description ?? "",
+    byName.get("list_workspaces")?.description ?? "",
     /no earlier Glossa result identifies.*required permission is unknown.*worker versions, access profiles, permissions, and negotiated capabilities.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
   );
   assert.doesNotMatch(
-    JSON.stringify(byName.get("list_devices")?.outputSchema),
+    JSON.stringify(byName.get("list_workspaces")?.outputSchema),
     /\bWindows\b/,
   );
-  const listDevicesSchema = byName.get("list_devices")?.outputSchema as JsonSchemaNode;
+  const listWorkspacesSchema = byName.get("list_workspaces")?.outputSchema as JsonSchemaNode;
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.workspaceLabel,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.workspaceId,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.workerVersion,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.workspaceLabel,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.accessProfile,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.workerVersion,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.permissions,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.accessProfile,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.capabilities,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.permissions,
+  );
+  assert.ok(
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.capabilities,
   );
 
   for (const toolName of ["get_command", "cancel_command"]) {
@@ -263,8 +285,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       properties?: Record<string, unknown>;
       required?: string[];
     };
-    assert.ok(inputSchema.properties?.deviceId);
-    assert.equal(inputSchema.required?.includes("deviceId") ?? false, true);
+    assert.ok(inputSchema.properties?.workspaceId);
+    assert.equal(inputSchema.required?.includes("workspaceId") ?? false, true);
   }
   const searchTextInputSchema = byName.get("search_text")?.inputSchema as {
     properties?: Record<string, unknown>;
@@ -281,7 +303,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;
   };
-  assert.ok(commandOutputSchema.properties?.deviceId);
+  assert.ok(commandOutputSchema.properties?.workspaceId);
+  assert.equal(commandOutputSchema.properties?.deviceId, undefined);
   assert.ok(commandOutputSchema.properties?.commandId);
   assert.ok(commandOutputSchema.properties?.status);
   assert.ok(commandOutputSchema.properties?.sequence);
@@ -318,14 +341,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
 
   const result = await client.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.equal(result.isError, undefined);
   assert.deepEqual(result.structuredContent, {
     product,
     documentationUrl: managedDocumentationUrl,
-    devices: [],
+    workspaces: [],
     availability: "offline",
     message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
   });
@@ -343,7 +366,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       text: JSON.stringify({
         product,
         documentationUrl: managedDocumentationUrl,
-        devices: [],
+        workspaces: [],
         availability: "offline",
         message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
       }),
@@ -358,14 +381,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     onlineWorkerId,
   );
   const onlineResult = await client.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.deepEqual(onlineResult.structuredContent, {
     product,
     documentationUrl: managedDocumentationUrl,
-    devices: [{
-      deviceId: onlineWorkerId,
+    workspaces: [{
+      workspaceId: onlineWorkerId,
       name: "Test PC",
       path: ".",
       accessProfile: "system",
@@ -400,7 +423,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await selfHostedServer.connect(selfHostedServerTransport);
   await selfHostedClient.connect(selfHostedClientTransport);
   const selfHostedResult = await selfHostedClient.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.equal(selfHostedResult.isError, undefined);
@@ -446,7 +469,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     },
   );
   const selfHostedOnlineResult = await selfHostedClient.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.equal(
@@ -466,10 +489,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.deepEqual(
     (selfHostedOnlineResult.structuredContent as {
-      devices?: unknown;
-    }).devices,
+      workspaces?: unknown;
+    }).workspaces,
     [{
-      deviceId: "00000000-0000-4000-8000-000000000005",
+      workspaceId: "00000000-0000-4000-8000-000000000005",
       name: "Self-hosted PC",
       path: ".",
       workerVersion: "1.0.0",
@@ -557,7 +580,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
   const writeResult = await client.callTool({
     name: "write_file",
     arguments: {
-      deviceId: readOnlyWorkerId,
+      workspaceId: readOnlyWorkerId,
       path: "README.md",
       content: "not dispatched",
     },
@@ -570,7 +593,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
   const deleteResult = await client.callTool({
     name: "delete_path",
     arguments: {
-      deviceId: readOnlyWorkerId,
+      workspaceId: readOnlyWorkerId,
       path: "README.md",
     },
   });
@@ -580,7 +603,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
   const commandResult = await client.callTool({
     name: "run_command",
     arguments: {
-      deviceId: workspaceWorkerId,
+      workspaceId: workspaceWorkerId,
       command: { argv: ["node", "--version"] },
     },
   });
@@ -592,7 +615,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
   const outputResult = await client.callTool({
     name: "read_command_output",
     arguments: {
-      deviceId: workspaceWorkerId,
+      workspaceId: workspaceWorkerId,
       commandId: "00000000-0000-4000-8000-000000000039",
       stream: "stdout",
     },
@@ -637,7 +660,7 @@ test("routes retained command output ranges and gates legacy workers", async (co
   const call = client.callTool({
     name: "read_command_output",
     arguments: {
-      deviceId: workerId,
+      workspaceId: workerId,
       commandId,
       stream: "stderr",
       offset: 4096,
@@ -674,7 +697,7 @@ test("routes retained command output ranges and gates legacy workers", async (co
     },
   });
   assert.deepEqual((await call).structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId,
     stream: "stderr",
     status: "failed",
@@ -690,7 +713,7 @@ test("routes retained command output ranges and gates legacy workers", async (co
   const errorCall = client.callTool({
     name: "read_command_output",
     arguments: {
-      deviceId: workerId,
+      workspaceId: workerId,
       commandId,
       stream: "stdout",
       offset: 99999,
@@ -722,7 +745,7 @@ test("routes retained command output ranges and gates legacy workers", async (co
   const unavailable = await client.callTool({
     name: "read_command_output",
     arguments: {
-      deviceId: legacyWorkerId,
+      workspaceId: legacyWorkerId,
       commandId,
       stream: "stdout",
     },
@@ -763,7 +786,7 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   const call = client.callTool({
     name: "run_command",
     arguments: {
-      deviceId: workerId,
+      workspaceId: workerId,
       command: { argv: ["npm.cmd", "--version"] },
     },
   });
@@ -832,7 +855,7 @@ test("routes structured path lifecycle jobs and gates legacy workers", async (co
 
   const makeCall = client.callTool({
     name: "make_directory",
-    arguments: { deviceId: workerId, path: "build/cache", recursive: true },
+    arguments: { workspaceId: workerId, path: "build/cache", recursive: true },
   });
   const makeJob = await state.poll(
     accountId,
@@ -855,7 +878,7 @@ test("routes structured path lifecycle jobs and gates legacy workers", async (co
   const moveCall = client.callTool({
     name: "move_path",
     arguments: {
-      deviceId: workerId,
+      workspaceId: workerId,
       source: "build/cache",
       destination: "build/archive",
     },
@@ -882,7 +905,7 @@ test("routes structured path lifecycle jobs and gates legacy workers", async (co
 
   const deleteCall = client.callTool({
     name: "delete_path",
-    arguments: { deviceId: workerId, path: "build/archive", recursive: true },
+    arguments: { workspaceId: workerId, path: "build/archive", recursive: true },
   });
   const deleteJob = await state.poll(
     accountId,
@@ -905,7 +928,7 @@ test("routes structured path lifecycle jobs and gates legacy workers", async (co
 
   const unavailable = await client.callTool({
     name: "make_directory",
-    arguments: { deviceId: legacyWorkerId, path: "unsupported" },
+    arguments: { workspaceId: legacyWorkerId, path: "unsupported" },
   });
   assert.equal(unavailable.isError, true);
   assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
@@ -944,20 +967,20 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
   for (const call of [
     client.callTool({
       name: "read_file",
-      arguments: { deviceId: workerId, path: key },
+      arguments: { workspaceId: workerId, path: key },
     }),
     client.callTool({
       name: "search_text",
-      arguments: { deviceId: workerId, query: key },
+      arguments: { workspaceId: workerId, query: key },
     }),
     client.callTool({
       name: "write_file",
-      arguments: { deviceId: workerId, path: "secret.txt", content: key },
+      arguments: { workspaceId: workerId, path: "secret.txt", content: key },
     }),
     client.callTool({
       name: "run_command",
       arguments: {
-        deviceId: workerId,
+        workspaceId: workerId,
         command: {
           argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
         },
@@ -984,7 +1007,7 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
 
   const readCall = client.callTool({
     name: "read_file",
-    arguments: { deviceId: workerId, path: "secret.txt" },
+    arguments: { workspaceId: workerId, path: "secret.txt" },
   });
   const readJob = await state.poll(
     accountId,
@@ -1045,7 +1068,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   for (const [code, expectedMessage] of cases) {
     const call = client.callTool({
       name: "read_file",
-      arguments: { deviceId: workerId, path: "fixture.txt" },
+      arguments: { workspaceId: workerId, path: "fixture.txt" },
     });
     const job = await state.poll(
       accountId,
@@ -1077,7 +1100,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
 
   const unknownCall = client.callTool({
     name: "read_file",
-    arguments: { deviceId: workerId, path: "fixture.txt" },
+    arguments: { workspaceId: workerId, path: "fixture.txt" },
   });
   const unknownJob = await state.poll(
     accountId,
@@ -1096,7 +1119,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
 });
 
-test("redacts restricted legacy device metadata from list_devices", async (context) => {
+test("redacts restricted legacy device metadata from list_workspaces", async (context) => {
   const state = new RouterState();
   const key = "sk-proj-" + "A".repeat(32);
   const workerId = "00000000-0000-4000-8000-000000000042";
@@ -1122,7 +1145,7 @@ test("redacts restricted legacy device metadata from list_devices", async (conte
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  const result = await client.callTool({ name: "list_devices", arguments: {} });
+  const result = await client.callTool({ name: "list_workspaces", arguments: {} });
   assert.equal(result.isError, undefined);
   const serialized = JSON.stringify(result.structuredContent);
   assert.doesNotMatch(serialized, new RegExp(key));
@@ -1151,7 +1174,7 @@ test("does not mirror large structured results into text content", async (contex
   const content = "x".repeat(64 * 1024);
   const readCall = client.callTool({
     name: "read_file",
-    arguments: { deviceId: workerId, path: "large.txt" },
+    arguments: { workspaceId: workerId, path: "large.txt" },
   });
   const readJob = await state.poll(
     accountId,
@@ -1210,7 +1233,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
     const call = client.callTool({
       name: "get_command",
       arguments: {
-        deviceId: workerId,
+        workspaceId: workerId,
         commandId,
         waitMs: requestedWaitMs,
         afterSequence: 0,
@@ -1243,7 +1266,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
   }
 });
 
-test("routes command follow-ups only by explicit deviceId", async (context) => {
+test("routes command follow-ups only by explicit workspaceId", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000010";
   const workerId = "00000000-0000-4000-8000-000000000011";
@@ -1276,7 +1299,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
 
   const runCall = client.callTool({
     name: "run_command",
-    arguments: { deviceId: workerId, command: { argv: ["echo", "ok"] } },
+    arguments: { workspaceId: workerId, command: { argv: ["echo", "ok"] } },
   });
   const runJob = await state.poll(
     accountId,
@@ -1297,7 +1320,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
   );
   const runResult = await runCall;
   assert.deepEqual(runResult.structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId,
     status: "running",
     sequence: 1,
@@ -1306,7 +1329,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
   for (const toolName of ["get_command", "cancel_command"]) {
     const misroutedCall = client.callTool({
       name: toolName,
-      arguments: { deviceId: otherWorkerId, commandId },
+      arguments: { workspaceId: otherWorkerId, commandId },
     });
     const misroutedJob = await state.poll(
       accountId,
@@ -1338,7 +1361,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
 
   const getCall = client.callTool({
     name: "get_command",
-    arguments: { deviceId: workerId, commandId },
+    arguments: { workspaceId: workerId, commandId },
   });
   const getJob = await state.poll(
     accountId,
@@ -1359,7 +1382,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
   );
   const getResult = await getCall;
   assert.deepEqual(getResult.structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId,
     status: "succeeded",
     sequence: 2,
@@ -1371,11 +1394,11 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
     arguments: { commandId },
   });
   assert.equal(missingRoute.isError, true);
-  assert.match(JSON.stringify(missingRoute.content), /deviceId/);
+  assert.match(JSON.stringify(missingRoute.content), /workspaceId/);
 
   const secondRunCall = client.callTool({
     name: "run_command",
-    arguments: { deviceId: workerId, command: { argv: ["sleep", "10"] } },
+    arguments: { workspaceId: workerId, command: { argv: ["sleep", "10"] } },
   });
   const secondRunJob = await state.poll(
     accountId,
@@ -1398,7 +1421,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
 
   const cancelCall = client.callTool({
     name: "cancel_command",
-    arguments: { deviceId: workerId, commandId: canceledCommandId },
+    arguments: { workspaceId: workerId, commandId: canceledCommandId },
   });
   const cancelJob = await state.poll(
     accountId,
@@ -1423,7 +1446,7 @@ test("routes command follow-ups only by explicit deviceId", async (context) => {
   );
   const cancelResult = await cancelCall;
   assert.deepEqual(cancelResult.structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId: canceledCommandId,
     status: "canceled",
     sequence: 2,
@@ -1450,7 +1473,7 @@ test("structured repository tools require a current worker", async (context) => 
 
   const result = await client.callTool({
     name: "list_files",
-    arguments: { deviceId: workerId },
+    arguments: { workspaceId: workerId },
   });
   assert.equal(result.isError, true);
   assert.match(JSON.stringify(result.content), /worker_update_required/);
