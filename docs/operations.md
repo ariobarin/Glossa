@@ -70,7 +70,7 @@ Glossa does not derive labels from local paths. A duplicate process for the same
 
 ## Interactive HUD
 
-The HUD opens on **Activity**, the primary view of what connected clients are doing. `A` returns there from anywhere. `W` opens **Workspace**, which shows the exposed directory, device identity, and current access boundary. On Workspace, left arrow lowers access immediately and right arrow proposes a higher access level; increasing access requires confirmation, and Glossa restarts only the worker connection in place. `D` opens **Devices**; use up/down to select a device and Enter or `R` to revoke the selected device. `?` opens Help and Escape returns to Activity.
+The HUD opens on **Workspace**, which shows the exposed directory, device identity, current access boundary, and a compact preview of the newest activity. `A` expands that preview into the full **Activity** view with history and paging; `W` or Escape returns to Workspace. On Workspace, left arrow lowers access immediately and right arrow proposes a higher access level; increasing access requires confirmation, and Glossa restarts only the worker connection in place. `D` opens **Devices**; use up/down to select a device and Enter or `R` to revoke the selected device. `?` opens Help.
 
 ## Local usage history
 

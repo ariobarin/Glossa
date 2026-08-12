@@ -80,7 +80,7 @@ Keys:
   ↑↓ select or browse
   ←→ change workspace access
   Enter/r  revoke selected device
-  Esc  activity
+  Esc  workspace
   l  sign out
   ?  help
   q  disconnect and quit`;

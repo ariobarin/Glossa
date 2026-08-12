@@ -184,14 +184,16 @@ function accessProfileCapability(accessProfile: WorkerAccessProfile): string {
   return "Read + write files + commands · inherits this OS account's permissions";
 }
 
-const PRIMARY_FOOTER_HINTS: HudHint[] = [
-  { key: "A", label: "Activity" },
-  { key: "W", label: "Workspace" },
-  { key: "D", label: "Devices" },
-  { key: "?", label: "Help" },
-  { key: "L", label: "Sign out", tone: COLORS.coral },
-  { key: "Q", label: "Quit", tone: COLORS.coral },
-];
+function primaryFooterHints(): HudHint[] {
+  return [
+    { key: "A", label: "Activity" },
+    { key: "W", label: "Workspace" },
+    { key: "D", label: "Devices" },
+    { key: "?", label: "Help" },
+    { key: "L", label: "Sign out", tone: COLORS.coral },
+    { key: "Q", label: "Quit", tone: COLORS.coral },
+  ];
+}
 
 function contextualFooterHints(state: HudState): HudHint[] {
   if (state.view === "activity") {
@@ -247,7 +249,7 @@ function splitFooterHints(hints: HudHint[], usable: number): HudHint[][] {
 }
 
 function buildFooterRows(state: HudState, usable: number): HudFooterRow[] {
-  const rows = splitFooterHints(PRIMARY_FOOTER_HINTS, usable).map((left) => ({
+  const rows = splitFooterHints(primaryFooterHints(), usable).map((left) => ({
     left,
     right: [] as HudHint[],
   }));
@@ -379,7 +381,7 @@ function Header({ state, usable, bodyBudget, color }: {
 }): React.ReactNode {
   const statusColor = state.connection === "error" ? COLORS.coral : COLORS.purpleReadable;
   const pageTitle = state.view === "activity"
-    ? "Recent Activity"
+    ? "Activity"
     : state.view === "devices"
       ? "Devices"
       : state.view === "workspace"
@@ -438,12 +440,45 @@ function Blank(): React.ReactNode {
   return <Box height={1} />;
 }
 
-function WorkspaceView({ state, bodyBudget, color }: {
-  state: HudState;
-  bodyBudget: number;
+function ActivityPreviewHeader({ usable, color }: {
+  usable: number;
   color: boolean;
 }): React.ReactNode {
+  return (
+    <Box width={usable}>
+      <Box flexGrow={1} flexShrink={1}>
+        <SectionTitle color={color} tone={COLORS.muted}>Activity</SectionTitle>
+      </Box>
+      {usable >= 24 ? (
+        <Box marginLeft={1} flexShrink={0}>
+          <Text bold color={color ? COLORS.purpleReadable : undefined}>A</Text>
+          <Text color={color ? COLORS.muted : undefined}> Expand</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+function WorkspaceView({ state, usable, bodyBudget, color, now }: {
+  state: HudState;
+  usable: number;
+  bodyBudget: number;
+  color: boolean;
+  now: number;
+}): React.ReactNode {
   const displayedAccessProfile = state.pendingAccessProfile ?? state.accessProfile;
+  const showConnectionMessage = Boolean(
+    state.message && (state.connection === "retrying" || state.connection === "error"),
+  );
+  let fixedLines = 3;
+  if (displayedAccessProfile) fixedLines += 4;
+  if (state.deviceName) fixedLines += 3;
+  if (showConnectionMessage) fixedLines += 2;
+  const activityCapacity = Math.min(3, Math.max(0, bodyBudget - fixedLines - 2));
+  const activityPreview = activityCapacity > 0
+    ? state.activities.slice(-activityCapacity)
+    : [];
+
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
@@ -466,7 +501,24 @@ function WorkspaceView({ state, bodyBudget, color }: {
           <Text color={color ? COLORS.ink : undefined} wrap="truncate">{state.deviceName}</Text>
         </>
       ) : null}
-      {state.message && (state.connection === "retrying" || state.connection === "error") ? (
+      {activityCapacity > 0 ? (
+        <>
+          <Blank />
+          <ActivityPreviewHeader usable={usable} color={color} />
+          {state.activities.length === 0 ? (
+            <Text color={color ? COLORS.muted : undefined}>No activity yet.</Text>
+          ) : activityPreview.map((activity) => (
+            <ActivityRow
+              key={activity.requestId}
+              activity={activity}
+              usable={usable}
+              color={color}
+              now={now}
+            />
+          ))}
+        </>
+      ) : null}
+      {showConnectionMessage ? (
         <>
           <Blank />
           <Text color={color ? COLORS.coral : undefined} wrap="truncate">{state.message}</Text>
@@ -706,7 +758,7 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
       <HelpRow keyLabel="W" label="Workspace" color={color} />
       <HelpRow keyLabel="D" label="Devices" color={color} />
       <HelpRow keyLabel="?" label="Help" color={color} />
-      <HelpRow keyLabel="Esc" label="Activity" color={color} />
+      <HelpRow keyLabel="Esc" label="Workspace" color={color} />
       <Blank />
       <SectionTitle color={color} tone={COLORS.coral}>Manage</SectionTitle>
       <HelpRow keyLabel="←/→" label="Change workspace access" color={color} tone={COLORS.coral} />
@@ -817,7 +869,13 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
           color={color}
         />
       ) : state.view === "workspace" ? (
-        <WorkspaceView state={state} bodyBudget={metrics.bodyBudget} color={color} />
+        <WorkspaceView
+          state={state}
+          usable={metrics.usable}
+          bodyBudget={metrics.bodyBudget}
+          color={color}
+          now={now}
+        />
       ) : (
         <HelpView bodyBudget={metrics.bodyBudget} color={color} />
       )}
@@ -917,7 +975,10 @@ function HudRuntime({ store, actions, signal, stop }: {
   const [, setClock] = useState(0);
 
   useEffect(() => {
-    if (state.view !== "activity" || state.activities.length === 0) return;
+    if (
+      (state.view !== "activity" && state.view !== "workspace") ||
+      state.activities.length === 0
+    ) return;
     const timer = setInterval(() => setClock((value) => value + 1), ACTIVITY_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [state.view, state.activities.length]);
@@ -1043,7 +1104,7 @@ function HudRuntime({ store, actions, signal, stop }: {
     }
 
     if (key.escape) {
-      store.update((state) => ({ ...state, view: "activity", notice: undefined }));
+      store.update((state) => ({ ...state, view: "workspace", notice: undefined }));
       return;
     }
     if (value === "a") {

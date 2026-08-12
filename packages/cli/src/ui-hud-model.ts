@@ -102,7 +102,7 @@ export function initialHudState(workspace: string): HudState {
     message: undefined,
     activities: [],
     activityPage: 0,
-    view: "activity",
+    view: "workspace",
     status: undefined,
     deviceSelection: 0,
     pendingAccessProfile: undefined,

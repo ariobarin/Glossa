@@ -17,21 +17,42 @@ function connectedState(): HudState {
   };
 }
 
-test("activity is the default view and anchors controls at the bottom", () => {
+test("workspace is the default view with an activity preview", () => {
   const output = renderHud(connectedState(), 60, false, 16);
   const lines = output.split("\n");
 
   assert.equal(lines.length, 16);
-  assert.match(lines[0]!, /Glossa \/ Recent Activity\s+Connected/);
+  assert.match(lines[0]!, /Glossa \/ Workspace\s+Connected/);
+  assert.match(output, /WORKSPACE/);
+  assert.match(output, /DEVICE/);
+  assert.match(output, /ACTIVITY\s+A Expand/);
   assert.match(output, /No activity yet/);
-  assert.doesNotMatch(output, /DIRECTORY|ACCESS|DEVICE/);
   assert.match(lines.slice(-3).join("\n"), /A Activity/);
   assert.match(lines.slice(-3).join("\n"), /W Workspace/);
   assert.match(lines.slice(-3).join("\n"), /D Devices/);
   assert.doesNotMatch(output, /AGENT/);
-
-
   assert.match(lines.slice(-3).join("\n"), /Q Quit/);
+});
+
+test("workspace activity preview shows only the newest rows", () => {
+  const now = Date.now();
+  const activities = Array.from({ length: 5 }, (_, index) => ({
+    tool: "read_file" as const,
+    summary: {
+      target: `path \"file-${index + 1}.txt\"`,
+      details: [],
+      truncation: "middle" as const,
+    },
+    requestId: `request-${index + 1}`,
+    state: "returned" as const,
+    updatedAt: now,
+  }));
+  const output = renderHud({ ...connectedState(), activities }, 80, false, 24, now);
+
+  assert.match(output, /file-3\.txt/);
+  assert.match(output, /file-4\.txt/);
+  assert.match(output, /file-5\.txt/);
+  assert.doesNotMatch(output, /file-1\.txt|file-2\.txt/);
 });
 
 test("activity view keeps state and age on the activity row", () => {
@@ -42,7 +63,7 @@ test("activity view keeps state and age on the activity row", () => {
     22,
   );
   assert.doesNotMatch(empty, /AGENT/);
-  assert.match(empty.split("\n")[0]!, /Glossa \/ Recent Activity\s+Connected/);
+  assert.match(empty.split("\n")[0]!, /Glossa \/ Activity\s+Connected/);
   assert.match(empty, /No activity yet/);
 
   const job = {
@@ -731,7 +752,7 @@ test("activity pagination shows newest entries and range only when needed", () =
     24,
   );
 
-  assert.match(newest.split("\n")[0]!, /Glossa \/ Recent Activity \(1-18\/22\)/);
+  assert.match(newest.split("\n")[0]!, /Glossa \/ Activity \(1-18\/22\)/);
   assert.doesNotMatch(newest, /file-[1234]\.txt/);
   for (let index = 5; index <= 22; index += 1) {
     assert.match(newest, new RegExp(`file-${index}\\.txt`));
@@ -743,7 +764,7 @@ test("activity pagination shows newest entries and range only when needed", () =
     false,
     24,
   );
-  assert.match(older.split("\n")[0]!, /Glossa \/ Recent Activity \(19-22\/22\)/);
+  assert.match(older.split("\n")[0]!, /Glossa \/ Activity \(19-22\/22\)/);
   assert.match(older, /file-1\.txt/);
   assert.match(older, /file-4\.txt/);
   assert.doesNotMatch(older, /file-(?:5|22)\.txt/);
@@ -754,8 +775,8 @@ test("activity pagination shows newest entries and range only when needed", () =
     false,
     24,
   );
-  assert.match(unpaged.split("\n")[0]!, /Glossa \/ Recent Activity\s+Connected/);
-  assert.doesNotMatch(unpaged.split("\n")[0]!, /Recent Activity \(/);
+  assert.match(unpaged.split("\n")[0]!, /Glossa \/ Activity\s+Connected/);
+  assert.doesNotMatch(unpaged.split("\n")[0]!, /Activity \(/);
 });
 
 test("devices page shows account overview and active devices", () => {
@@ -901,7 +922,7 @@ test("help keeps the useful navigation without removed commands", () => {
   assert.match(output, /A\s+Activity/);
   assert.match(output, /D\s+Devices/);
   assert.match(output, /\?\s+Help/);
-  assert.match(output, /Esc\s+Activity/);
+  assert.match(output, /Esc\s+Workspace/);
   assert.match(output, /Enter\/R\s+Revoke selected device/);
   assert.match(output, /L\s+Sign out/);
   assert.match(output, /Q\s+Disconnect and quit/);
