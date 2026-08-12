@@ -106,7 +106,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "2.1.0");
+  assert.equal(MCP_SERVER_VERSION, "2.0.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);

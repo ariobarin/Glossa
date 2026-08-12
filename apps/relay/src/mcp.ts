@@ -34,7 +34,7 @@ import type { RouterState } from "./router-state.js";
 import { DevicePairingState } from "./device-pairing.js";
 
 // Bump when a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "2.1.0";
+export const MCP_SERVER_VERSION = "2.0.0";
 
 const workspaceIdFieldSchema = z
   .string()

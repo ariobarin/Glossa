@@ -15,7 +15,7 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Security policy: `https://github.com/ariobarin/glossa/blob/main/SECURITY.md`
 - Technical security model: `https://glossa.sh/docs/security`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
-- MCP tool contract: `2.1.0` (16 tools)
+- MCP tool contract: `2.0.0` (16 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 Proposed short description:
