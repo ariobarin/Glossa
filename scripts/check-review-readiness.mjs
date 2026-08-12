@@ -134,11 +134,12 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "2.0.0", "MCP public contract must be 2.0.0");
+assert.equal(contractVersion, "2.1.0", "MCP public contract must be 2.1.0");
 
 const expectedTools = [
   "list_workspaces",
   "get_logout_instructions",
+  "pair_device",
   "read_file",
   "list_files",
   "search_text",
@@ -240,7 +241,7 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `2.0.0`",
+  "MCP tool contract: `2.1.0`",
   "Eleven positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",

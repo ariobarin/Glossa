@@ -62,6 +62,7 @@ test("keeps the reduced direct CLI actions", () => {
     deviceId: "device-1",
   });
   assert.deepEqual(parseInvocation(["logout"]), { command: "logout" });
+  assert.deepEqual(parseInvocation(["unpair"]), { command: "unpair" });
 });
 
 test("parses update actions and settings", () => {
@@ -115,6 +116,7 @@ test("rejects malformed retained commands and removed flags", () => {
     UsageError,
   );
   assert.throws(() => parseInvocation(["logout", "--browser"]), UsageError);
+  assert.throws(() => parseInvocation(["unpair", "--local"]), UsageError);
   assert.throws(() => parseInvocation(["--label"]), UsageError);
   assert.throws(() => parseInvocation(["--access"]), UsageError);
   assert.throws(() => parseInvocation(["--access", "admin"]), UsageError);

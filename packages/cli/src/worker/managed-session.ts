@@ -5,12 +5,6 @@ import {
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
-import {
-  accessTokenSubject,
-  type FetchLike,
-  validCredentials,
-} from "../auth-session.js";
-import { loadCredentials, type StoredCredentials } from "../config-store.js";
 import { announceConnectHint, connectHintStore, shouldShowConnectHint } from "../first-run.js";
 import {
   deleteDeviceCredential,
@@ -18,12 +12,8 @@ import {
   saveDeviceCredential,
   type StoredDeviceCredential,
 } from "../device-store.js";
-import {
-  accountOwnsDevice,
-  defaultDeviceName,
-  enrollDevice,
-  type RelayEndpoints,
-} from "../relay-client.js";
+import { pairDevice } from "../device-pairing.js";
+import type { RelayEndpoints } from "../relay-client.js";
 import { LocalWorker } from "./local-worker.js";
 import {
   DeviceRejectedError,
@@ -49,7 +39,7 @@ export interface ManagedSessionOptions {
   onEvent?: (event: ManagedSessionEvent) => void;
   quiet?: boolean;
   handleProcessSignals?: boolean;
-  credentials?: StoredCredentials;
+  device?: StoredDeviceCredential;
   accessProfile?: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
@@ -180,17 +170,10 @@ export function visibleWorker(
 }
 
 export interface ManagedDeviceDependencies {
-  credentials?: StoredCredentials;
-  accessTokenSubject?: typeof accessTokenSubject;
-  loadCredentials?: typeof loadCredentials;
-  validCredentials?: typeof validCredentials;
   loadDeviceCredential?: typeof loadDeviceCredential;
   deleteDeviceCredential?: typeof deleteDeviceCredential;
   saveDeviceCredential?: typeof saveDeviceCredential;
-  accountOwnsDevice?: typeof accountOwnsDevice;
-  enrollDevice?: typeof enrollDevice;
-  defaultDeviceName?: typeof defaultDeviceName;
-  fetch?: FetchLike;
+  pairDevice?: typeof pairDevice;
 }
 
 export async function deviceForSession(
@@ -199,59 +182,19 @@ export async function deviceForSession(
   signal?: AbortSignal,
 ): Promise<StoredDeviceCredential> {
   const loadDevice = dependencies.loadDeviceCredential ?? loadDeviceCredential;
-  const loadLogin = dependencies.loadCredentials ?? loadCredentials;
-  const validate = dependencies.validCredentials ?? validCredentials;
-  const subjectFor = dependencies.accessTokenSubject ?? accessTokenSubject;
   const removeDevice = dependencies.deleteDeviceCredential ?? deleteDeviceCredential;
-  const enroll = dependencies.enrollDevice ?? enrollDevice;
   const saveDevice = dependencies.saveDeviceCredential ?? saveDeviceCredential;
-  const ownsDevice = dependencies.accountOwnsDevice ?? accountOwnsDevice;
-  const name = dependencies.defaultDeviceName ?? defaultDeviceName;
-  const baseFetch = dependencies.fetch ?? fetch;
-  const fetchRequest: FetchLike = signal
-    ? async (input, init) => await baseFetch(input, { ...init, signal })
-    : baseFetch;
+  const pair = dependencies.pairDevice ?? pairDevice;
 
   signal?.throwIfAborted();
   const stored = await loadDevice();
-  let credentials = dependencies.credentials;
-  const currentCredentials = async (): Promise<StoredCredentials> => {
-    if (credentials) return credentials;
-    const loaded = await loadLogin();
-    if (!loaded) throw new Error("Not signed in. Run Glossa again to sign in.");
-    credentials = await validate(loaded.credentials, { fetch: fetchRequest });
-    return credentials;
-  };
-
-  if (stored?.relayOrigin === endpoints.relayOrigin) {
-    const current = await currentCredentials();
-    const accountSubject = subjectFor(current);
-    if (stored.accountSubject === accountSubject) return stored;
-    if (
-      stored.accountSubject === undefined &&
-      await ownsDevice(endpoints, current, stored.deviceId, fetchRequest)
-    ) {
-      const migrated = { ...stored, accountSubject };
-      await saveDevice(migrated);
-      return migrated;
-    }
-    await removeDevice();
-  }
+  if (stored?.relayOrigin === endpoints.relayOrigin) return stored;
+  if (stored) await removeDevice();
 
   signal?.throwIfAborted();
-  const current = await currentCredentials();
-  const enrolled = await enroll(
-    endpoints,
-    current,
-    name(),
-    fetchRequest,
-  );
-  const bound = {
-    ...enrolled,
-    accountSubject: subjectFor(current),
-  };
-  await saveDevice(bound);
-  return bound;
+  const paired = await pair(endpoints, signal);
+  await saveDevice(paired);
+  return paired;
 }
 
 export async function reenrollRejectedDevice(
@@ -422,18 +365,6 @@ async function connectRemoteWorker(
   }
 }
 
-export function shouldRecoverRejectedDevice(
-  error: unknown,
-  recoveredRejectedDevice: boolean,
-  connected: boolean,
-): boolean {
-  return (
-    error instanceof DeviceRejectedError &&
-    !recoveredRejectedDevice &&
-    !connected
-  );
-}
-
 export async function runManagedSession(
   root: string,
   endpoints: RelayEndpoints,
@@ -455,9 +386,9 @@ export async function runManagedSession(
     const accessProfile =
       options.accessProfile ?? DEFAULT_WORKER_ACCESS_PROFILE;
     const sessionOptions: ManagedSessionOptions = { ...options, accessProfile };
-    let device = await deviceForSession(
+    const device = options.device ?? await deviceForSession(
       endpoints,
-      options.credentials ? { credentials: options.credentials } : {},
+      {},
       controller.signal,
     );
     controller.signal.throwIfAborted();
@@ -480,41 +411,18 @@ export async function runManagedSession(
       console.error("Press Ctrl+C to disconnect.");
     }
 
-    let recoveredRejectedDevice = false;
-    while (!controller.signal.aborted) {
-      let connected = false;
-      try {
-        await connectRemoteWorker(
-          endpoints,
-          device,
-          worker,
-          sessionOptions,
-          controller.signal,
-          () => {
-            connected = true;
-          },
-        );
-        break;
-      } catch (error) {
-        if (!shouldRecoverRejectedDevice(
-          error,
-          recoveredRejectedDevice,
-          connected,
-        )) {
-          throw error;
-        }
-        recoveredRejectedDevice = true;
-        device = await reenrollRejectedDevice(
-          endpoints,
-          options.credentials ? { credentials: options.credentials } : {},
-          controller.signal,
-        );
-      }
-    }
+    await connectRemoteWorker(
+      endpoints,
+      device,
+      worker,
+      sessionOptions,
+      controller.signal,
+      () => undefined,
+    );
   } catch (error) {
     if (error instanceof DeviceRejectedError) {
       await deleteDeviceCredential();
-      throw new Error("The relay rejected this device. Run Glossa again to reenroll it.");
+      throw new Error("The relay rejected this paired computer. Run Glossa again to pair it with your account.");
     }
     throw error;
   } finally {

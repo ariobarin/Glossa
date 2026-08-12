@@ -189,7 +189,7 @@ const PRIMARY_FOOTER_HINTS: HudHint[] = [
   { key: "W", label: "Workspace" },
   { key: "D", label: "Devices" },
   { key: "?", label: "Help" },
-  { key: "L", label: "Sign out", tone: COLORS.coral },
+  { key: "L", label: "Account sign out", tone: COLORS.coral },
   { key: "Q", label: "Quit", tone: COLORS.coral },
 ];
 
@@ -273,7 +273,10 @@ function promptText(
   if (state.busy) return { message: "Working…" };
   if (!state.prompt) return undefined;
   if (state.prompt.type === "logout") {
-    return { message: "Sign out and disconnect?", choices: "Y confirm  N cancel" };
+    return {
+      message: "Sign out the CLI account and disconnect? Computer pairing stays active.",
+      choices: "Y confirm  N cancel",
+    };
   }
   if (state.prompt.type === "access-confirm") {
     const detail = state.prompt.accessProfile === "system"
@@ -711,7 +714,7 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
       <SectionTitle color={color} tone={COLORS.coral}>Manage</SectionTitle>
       <HelpRow keyLabel="←/→" label="Change workspace access" color={color} tone={COLORS.coral} />
       <HelpRow keyLabel="Enter/R" label="Revoke selected device" color={color} tone={COLORS.coral} />
-      <HelpRow keyLabel="L" label="Sign out" color={color} tone={COLORS.coral} />
+      <HelpRow keyLabel="L" label="Account sign out" color={color} tone={COLORS.coral} />
       <Blank />
       <SectionTitle color={color}>App</SectionTitle>
       <HelpRow keyLabel="Q" label="Disconnect and quit" color={color} tone={COLORS.coral} />

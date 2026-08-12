@@ -87,7 +87,7 @@ test("footer keeps stable navigation left and contextual controls right", () => 
     20,
   ).split("\n").at(-1)!;
 
-  const stableNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+L Sign out\s+Q Quit/;
+  const stableNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+L Account sign out\s+Q Quit/;
   for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, stableNav);
     assert.equal(footer.indexOf("A Activity"), activity.indexOf("A Activity"));

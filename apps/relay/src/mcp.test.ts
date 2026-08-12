@@ -9,6 +9,7 @@ import {
   MCP_SERVER_VERSION,
 } from "./mcp.js";
 import { RouterState } from "./router-state.js";
+import { DevicePairingState } from "./device-pairing.js";
 
 const expectedTools = [
   "cancel_command",
@@ -20,6 +21,7 @@ const expectedTools = [
   "list_workspaces",
   "make_directory",
   "move_path",
+  "pair_device",
   "read_command_output",
   "read_file",
   "read_file_range",
@@ -37,6 +39,7 @@ const expectedToolTitles: Record<string, string> = {
   list_workspaces: "Find Glossa Workspaces",
   make_directory: "Create Workspace Directory",
   move_path: "Move Workspace Path",
+  pair_device: "Pair Glossa Computer",
   read_command_output: "Read Workspace Command Output",
   read_file: "Read Workspace File",
   read_file_range: "Read Workspace File Range",
@@ -103,11 +106,12 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "2.0.0");
+  assert.equal(MCP_SERVER_VERSION, "2.1.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /do not use it for general questions, web research, built-in ChatGPT tasks/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /pair_device only when the user explicitly asks to pair a computer/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Never attempt a write when writeFiles is false or a command when runCommands is false/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
@@ -520,7 +524,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(logout.isError, undefined);
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
-    instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts sign-in automatically the next time it needs an account. Choose the same intended sign-in account for both authorizations.`,
+    instructions: `Run glossa logout to sign out the CLI account used for status and device administration. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. This does not unpair a computer. To move a computer to another Glossa account, run glossa unpair on that computer, start glossa there again, and approve its new pairing code from the intended ChatGPT account. Then disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
   });
   assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
 
@@ -530,11 +534,45 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   });
   assert.match(
     JSON.stringify(selfHostedLogout.structuredContent),
-    /same intended sign-in account/,
+    /run glossa unpair/,
   );
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
 
+
+test("approves an explicit one-time computer pairing", async (context) => {
+  const state = new RouterState();
+  const pairings = new DevicePairingState();
+  const pending = pairings.create("gpu-box", "linux-x64");
+  const server = createMcpServer(testConfig(), state, accountId, pairings);
+  const client = new Client({ name: "glossa-pairing-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "pair_device",
+    arguments: { code: pending.userCode.toLowerCase() },
+  });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent, {
+    paired: true,
+    device: { name: "gpu-box", platform: "linux-x64" },
+    expiresAt: pending.expiresAt,
+    instructions: "Pairing approved. Keep the Glossa CLI running on that computer; it will connect automatically and store only its revocable device credential.",
+  });
+  assert.deepEqual(pairings.complete(pending.pairingId, pending.pairingSecret), {
+    status: "approved",
+    accountId,
+    name: "gpu-box",
+    platform: "linux-x64",
+  });
+});
 
 test("returns actionable permission errors without dispatching forbidden work", async (context) => {
   const state = new RouterState();
