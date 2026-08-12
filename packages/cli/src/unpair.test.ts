@@ -14,11 +14,8 @@ test("revokes the paired device before deleting the local credential", async () 
   const calls: string[] = [];
   await unpairComputer({
     loadDeviceCredential: async () => device,
-    loadRelayEndpoints: () => ({
-      relayOrigin: device.relayOrigin,
-      workerOrigin: device.relayOrigin,
-    }),
-    revokePairedDevice: async (_endpoints, received) => {
+    revokePairedDevice: async (endpoints, received) => {
+      assert.equal(endpoints.relayOrigin, device.relayOrigin);
       assert.equal(received, device);
       calls.push("revoke");
     },
@@ -50,24 +47,22 @@ test("reports an already unpaired computer without contacting the relay", async 
   assert.deepEqual(messages, ["This computer is not paired with Glossa."]);
 });
 
-test("forgets a credential for another relay without sending it elsewhere", async () => {
-  let deleted = false;
+test("revokes a credential at its stored relay before deleting it", async () => {
+  const calls: string[] = [];
+  const oldRelay = "https://old-relay.glossa.test";
   await unpairComputer({
     loadDeviceCredential: async () => ({
       ...device,
-      relayOrigin: "https://old-relay.glossa.test",
+      relayOrigin: oldRelay,
     }),
-    loadRelayEndpoints: () => ({
-      relayOrigin: device.relayOrigin,
-      workerOrigin: device.relayOrigin,
-    }),
-    revokePairedDevice: async () => {
-      throw new Error("old relay credential must not be sent to current relay");
+    revokePairedDevice: async (endpoints) => {
+      assert.equal(endpoints.relayOrigin, oldRelay);
+      calls.push("revoke");
     },
     deleteDeviceCredential: async () => {
-      deleted = true;
+      calls.push("delete");
     },
     log: () => undefined,
   });
-  assert.equal(deleted, true);
+  assert.deepEqual(calls, ["revoke", "delete"]);
 });

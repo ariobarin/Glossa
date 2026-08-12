@@ -14,7 +14,10 @@ import {
 } from "../device-store.js";
 import { withDevicePairingLease } from "../device-pairing-lock.js";
 import { pairDevice } from "../device-pairing.js";
-import type { RelayEndpoints } from "../relay-client.js";
+import {
+  revokePairedDevice,
+  type RelayEndpoints,
+} from "../relay-client.js";
 import { LocalWorker } from "./local-worker.js";
 import {
   DeviceRejectedError,
@@ -175,6 +178,7 @@ export interface ManagedDeviceDependencies {
   deleteDeviceCredential?: typeof deleteDeviceCredential;
   saveDeviceCredential?: typeof saveDeviceCredential;
   pairDevice?: typeof pairDevice;
+  revokePairedDevice?: typeof revokePairedDevice;
   withDevicePairingLease?: <T>(
     action: () => Promise<T>,
     signal?: AbortSignal,
@@ -190,6 +194,7 @@ export async function deviceForSession(
   const removeDevice = dependencies.deleteDeviceCredential ?? deleteDeviceCredential;
   const saveDevice = dependencies.saveDeviceCredential ?? saveDeviceCredential;
   const pair = dependencies.pairDevice ?? pairDevice;
+  const revoke = dependencies.revokePairedDevice ?? revokePairedDevice;
   const withPairingLease = dependencies.withDevicePairingLease ?? withDevicePairingLease;
 
   signal?.throwIfAborted();
@@ -200,7 +205,10 @@ export async function deviceForSession(
     signal?.throwIfAborted();
     const current = await loadDevice();
     if (current?.relayOrigin === endpoints.relayOrigin) return current;
-    if (current) await removeDevice();
+    if (current) {
+      await revoke({ relayOrigin: current.relayOrigin }, current);
+      await removeDevice();
+    }
 
     signal?.throwIfAborted();
     const paired = await pair(endpoints, signal);

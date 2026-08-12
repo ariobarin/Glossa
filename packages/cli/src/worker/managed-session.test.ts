@@ -125,26 +125,34 @@ test("reuses an existing paired computer without user OAuth", async () => {
   assert.equal(result.deviceName, "Old Desk");
 });
 
-test("drops a pairing from another relay before pairing again", async () => {
-  let deleteCalls = 0;
-  let pairCalls = 0;
+test("revokes a pairing at its old relay before pairing again", async () => {
+  const calls: string[] = [];
+  const oldRelay = "https://old-relay.glossa.test";
+  const stored = {
+    ...pairingResult,
+    relayOrigin: oldRelay,
+  };
   const result = await deviceForSession(pairingEndpoints, {
     ...pairingDependencies(),
-    loadDeviceCredential: async () => ({
-      ...pairingResult,
-      relayOrigin: "https://old-relay.glossa.test",
-    }),
+    loadDeviceCredential: async () => stored,
+    revokePairedDevice: async (endpoints, device) => {
+      assert.equal(endpoints.relayOrigin, oldRelay);
+      assert.equal(device, stored);
+      calls.push("revoke");
+    },
     deleteDeviceCredential: async () => {
-      deleteCalls += 1;
+      calls.push("delete");
     },
     pairDevice: async () => {
-      pairCalls += 1;
+      calls.push("pair");
       return pairingResult;
+    },
+    saveDeviceCredential: async () => {
+      calls.push("save");
     },
   });
 
-  assert.equal(deleteCalls, 1);
-  assert.equal(pairCalls, 1);
+  assert.deepEqual(calls, ["revoke", "delete", "pair", "save"]);
   assert.equal(result, pairingResult);
 });
 

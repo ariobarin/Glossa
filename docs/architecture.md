@@ -60,6 +60,8 @@ The database stores the device ID, account ID, salt, and scrypt hash. The relay 
 
 A machine-wide local pairing lease ensures concurrent first-run workspace processes share one computer pairing instead of racing to mint separate credentials. A stored device credential is sufficient for later workspace startups on that computer, so a headless SSH target does not need a browser session or the user's Google/Auth0 refresh token. `glossa unpair` authenticates with the device credential, revokes that device at the relay, and removes the local credential. Re-pairing is the explicit way to move a computer to another Glossa account.
 
+During the v2 deployment transition, the authenticated `POST /v1/devices/enroll` route remains available only for published 0.1.x and 0.2.x CLIs. The short-code flow is the current enrollment path and the legacy route can be removed after those clients are no longer supported.
+
 ## State ownership
 
 ### Postgres

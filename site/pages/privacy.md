@@ -2,7 +2,7 @@
 
 Glossa routes requests between an authenticated ChatGPT or MCP client and a local project that you explicitly expose from your computer.
 
-*Last updated August 7, 2026*
+*Last updated August 12, 2026*
 
 The public app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. See [Security and permissions](/security).
 
@@ -12,6 +12,7 @@ Glossa processes:
 
 - Account identity supplied by Auth0.
 - Device metadata such as a device ID, chosen name, platform, creation time, last-seen time, and revocation status.
+- Short-lived computer pairing data, including a human code, a hash of the private pairing secret, approval state, and a retry-cached issued device credential.
 - Active routing metadata such as an ephemeral worker ID, selected access profile, optional user-supplied label, worker version, capabilities, connection generation, and liveness state. Glossa does not derive or transmit a repository name or local absolute root.
 - Metadata-only security audit records, limited to event type, status, timestamp, and related account or device identifiers.
 - Tool requests and responses in transit, including relative paths, text file contents, command arguments, command input, and captured command output. Glossa may check text for recognizable authentication-secret patterns so it can block accidental disclosure.
@@ -31,6 +32,8 @@ Account, device, and audit metadata are retained for the life of the account or 
 
 Active worker IDs, profiles, labels, capabilities, command routes, pending jobs, command output, and liveness state are held only in relay memory. When recognizable authentication data is blocked, the matched content is not returned to the client.
 
+Computer pairing data is held only in relay process memory, expires after five minutes, and is never written to the durable database. The private pairing secret is stored only as a SHA-256 digest. After approval, the newly issued raw device credential may remain in that short-lived memory until the pairing expires so a dropped completion response can be retried.
+
 The Glossa CLI stores OAuth and device credentials on the user's computer using the operating-system credential store when available. If that store is unavailable, the CLI warns before using a restricted local credential file.
 
 ## Service providers
@@ -43,6 +46,7 @@ ChatGPT or another connected MCP client receives the file contents, command deta
 
 - Choose `read-only`, `workspace`, or explicit `system` access for each worker.
 - Stop the worker with Ctrl+C or `q`.
+- Run `glossa unpair` to revoke this computer's device credential and remove its local copy.
 - Run `glossa logout` to remove locally stored OAuth credentials and open browser sign-out.
 - Disconnect Glossa in ChatGPT to revoke the client's authorization.
 - Run `glossa devices revoke <id>` to invalidate an enrolled computer.

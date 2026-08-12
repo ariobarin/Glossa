@@ -137,7 +137,7 @@ Before submission:
 - reset the fixture and start it with the exact `system` profile and `openai-review` label above;
 - authorize the CLI and ChatGPT with the dedicated reviewer account;
 - verify from an unrelated network that OAuth, tool scanning, worker presence, and every reviewer test work without operator intervention;
-- confirm discovery reports contract `2.0.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command.afterSequence`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
+- confirm discovery reports contract `2.0.0`, the app-wide instructions, all 16 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command.afterSequence`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
 - reset the fixture after any test run that mutates it;
 - run `glossa --access read-only` and default `glossa` in separate release-owner checks to verify write and command denials even though the portal reviewer fixture uses `system` to exercise all tools.
 
@@ -204,7 +204,7 @@ Suggested release note:
 Do not submit until all of the following are true:
 
 - the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
-- the production relay serves MCP contract `2.0.0` and the scan matches all 15 tools, schemas, descriptions, output contracts, and annotations in this packet;
+- the production relay serves MCP contract `2.0.0` and the scan matches all 16 tools, schemas, descriptions, output contracts, and annotations in this packet;
 - the production website, privacy, terms, security, and support URLs are public and match the implementation;
 - the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;
 - the isolated fixture worker remains online and no other workspace is exposed;

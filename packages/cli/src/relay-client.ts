@@ -309,7 +309,7 @@ export async function renameDevice(
 }
 
 export async function revokePairedDevice(
-  endpoints: RelayEndpoints,
+  endpoints: Pick<RelayEndpoints, "relayOrigin">,
   device: StoredDeviceCredential,
   fetchRequest: FetchLike = fetch,
 ): Promise<void> {

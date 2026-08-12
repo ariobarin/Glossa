@@ -28,6 +28,10 @@ Rename a device owned by the account.
 
 Revoke a device owned by the account.
 
+### `POST /v1/devices/enroll`
+
+Legacy OAuth enrollment remains available temporarily so published 0.1.x and 0.2.x CLIs continue working during the v2 rollout. New v2 CLIs use the short-code pairing flow instead; remove this compatibility route only after supported published clients no longer call it.
+
 ## Worker API authentication
 
 Register with the durable device credential:

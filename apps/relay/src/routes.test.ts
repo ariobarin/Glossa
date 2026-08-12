@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import express from "express";
 import { MAX_TEXT_BYTES, type WorkerJob } from "@glossa/protocol";
+import type { AuthenticatedRequest } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { DevicePairingState } from "./device-pairing.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
@@ -125,6 +126,77 @@ test("pairs and self-revokes a headless computer without user OAuth", async (con
   });
   assert.equal(unpaired.status, 204);
   assert.equal(revoked, true);
+});
+
+test("keeps legacy OAuth enrollment compatible during v2 rollout", async (context) => {
+  const subject = "google-oauth2|published-cli";
+  let invokedScope: string | undefined;
+  const store: RelayStore = {
+    accountIdForSubject: async (received) => {
+      assert.equal(received, subject);
+      return accountId;
+    },
+    enrollDevice: async (receivedAccountId, name, platform) => {
+      assert.equal(receivedAccountId, accountId);
+      assert.equal(name, "Published CLI");
+      assert.equal(platform, "win32-x64");
+      return { device: { ...device, name, platform }, token };
+    },
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: unused,
+    touchDevice: unused,
+    authenticateDevice: unused,
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: (_config, scope) => {
+      return (request, _response, next) => {
+        invokedScope = scope;
+        (request as AuthenticatedRequest).auth = {
+          subject,
+          scopes: new Set(scope ? [scope] : []),
+          claims: {},
+        };
+        next();
+      };
+    },
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/v1/devices/enroll`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Published CLI", platform: "win32-x64" }),
+    },
+  );
+
+  assert.equal(invokedScope, config.GLOSSA_DEVICE_ENROLL_SCOPE);
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), {
+    device: {
+      id: deviceId,
+      name: "Published CLI",
+      platform: "win32-x64",
+      lastSeenAt: null,
+      revokedAt: null,
+      activeWorkers: 0,
+    },
+    device_token: token,
+  });
 });
 
 test("bounds coalesced presence writes by the relay deadline", async (context) => {

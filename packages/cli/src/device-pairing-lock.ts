@@ -1,11 +1,10 @@
-import { readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
+import { readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { processIsAlive, updateRuntimeDirectory } from "./update-lock.js";
 
 const DEVICE_PAIRING_LOCK = "device-pairing.lock";
 const DEVICE_PAIRING_LOCK_POLL_MS = 100;
-const DEVICE_PAIRING_LOCK_STALE_MS = 10 * 60_000;
 
 interface DevicePairingLockOwner {
   pid: number;
@@ -24,13 +23,7 @@ async function lockIsStale(file: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
   }
   if (!owner || !processIsAlive(owner.pid)) return true;
-  try {
-    const metadata = await stat(file);
-    return Date.now() - metadata.mtimeMs > DEVICE_PAIRING_LOCK_STALE_MS;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
+  return false;
 }
 
 async function acquireDevicePairingLock(

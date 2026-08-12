@@ -484,6 +484,43 @@ export function buildRoutes(
     },
   );
 
+  router.post(
+    "/v1/devices/enroll",
+    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
+    async (request: AuthenticatedRequest, response: Response) => {
+      if (
+        rejectRateLimit(
+          response,
+          enrollmentRateLimiter,
+          request.auth!.subject,
+        )
+      ) {
+        return;
+      }
+      const parsed = enrollSchema.safeParse(request.body);
+      if (!parsed.success) {
+        rejectInvalidInput(response);
+        return;
+      }
+      const accountId = await activeAccountId(request, response, store);
+      if (!accountId) return;
+      try {
+        const enrolled = await store.enrollDevice(
+          accountId,
+          parsed.data.name,
+          parsed.data.platform ?? null,
+        );
+        response.status(201).json({
+          device: publicDevice(enrolled.device, state),
+          device_token: enrolled.token,
+        });
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        response.status(409).json({ error: "device_name_conflict" });
+      }
+    },
+  );
+
   router.get(
     "/v1/devices",
     authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),

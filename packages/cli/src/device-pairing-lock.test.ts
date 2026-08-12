@@ -51,3 +51,24 @@ test("reclaims a stale device pairing lock", async (context) => {
   );
   assert.equal(result, "recovered");
 });
+
+test("does not reclaim an old lock owned by a live process", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-pairing-lock-live-"));
+  context.after(async () => await rm(directory, { recursive: true, force: true }));
+  await writeFile(
+    path.join(directory, "device-pairing.lock"),
+    `${JSON.stringify({ pid: process.pid, startedAt: new Date(0).toISOString() })}\n`,
+    "utf8",
+  );
+  const controller = new AbortController();
+  const pending = withDevicePairingLease(
+    async () => {
+      throw new Error("A live owner's lock must not be reclaimed.");
+    },
+    controller.signal,
+    directory,
+  );
+
+  setTimeout(() => controller.abort(), 25);
+  await assert.rejects(pending, { name: "AbortError" });
+});
