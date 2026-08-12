@@ -30,6 +30,7 @@ const COLORS = {
   muted: "#aaa4b5",
   purple: "#8054ff",
   purpleReadable: "#ad98ff",
+  success: "#65d6a6",
   coral: "#ff665f",
   line: "#5c556e",
 } as const;
@@ -46,6 +47,7 @@ function Text({ color, ...props }: HudTextProps): React.ReactNode {
 }
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
+const ACTIVITY_STATUS_COLUMN_WIDTH = 2;
 const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
 const ACTIVITY_AGE_COLUMN_WIDTH = 10;
 const ACTIVITY_PREAMBLE_LINES = 1;
@@ -121,10 +123,10 @@ function activityAge(updatedAt: number | undefined, working: boolean, now: numbe
   return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
 }
 
-function activityAgeColor(activity: HudActivity): string {
-  if (activity.state === "failed") return COLORS.coral;
-  if (activity.state === "working") return COLORS.purpleReadable;
-  return COLORS.muted;
+function activityStatus(activity: HudActivity): { symbol: string; tone: string } {
+  if (activity.state === "failed") return { symbol: "×", tone: COLORS.coral };
+  if (activity.state === "working") return { symbol: "○", tone: COLORS.purpleReadable };
+  return { symbol: "✓", tone: COLORS.success };
 }
 
 function activitySummary(activity: HudActivity): string {
@@ -444,16 +446,41 @@ function ActivityPreviewHeader({ usable, color }: {
   );
 }
 
+function AccessSectionTitle({ accessProfile, usable, color }: {
+  accessProfile: WorkerAccessProfile;
+  usable: number;
+  color: boolean;
+}): React.ReactNode {
+  const lower = adjacentAccessProfile(accessProfile, -1);
+  const higher = adjacentAccessProfile(accessProfile, 1);
+  const key = lower && higher ? "←/→" : lower ? "←" : "→";
+  return (
+    <Box width={usable}>
+      <SectionTitle color={color}>Access</SectionTitle>
+      {usable >= 24 ? (
+        <Box marginLeft={3} flexShrink={0}>
+          <Text bold color={color ? COLORS.purpleReadable : undefined}>{key}</Text>
+          <Text color={color ? COLORS.muted : undefined}> Switch</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 function activityLayout(usable: number): {
   toolWidth: number;
   showSummary: boolean;
   showAge: boolean;
 } {
-  const toolWidth = Math.min(ACTIVITY_TOOL_COLUMN_WIDTH, usable);
+  const toolWidth = Math.min(
+    ACTIVITY_TOOL_COLUMN_WIDTH,
+    Math.max(0, usable - ACTIVITY_STATUS_COLUMN_WIDTH),
+  );
   return {
     toolWidth,
-    showSummary: usable >= toolWidth + 5,
-    showAge: usable >= toolWidth + ACTIVITY_AGE_COLUMN_WIDTH + 10,
+    showSummary: usable >= ACTIVITY_STATUS_COLUMN_WIDTH + toolWidth + 5,
+    showAge: usable >=
+      ACTIVITY_STATUS_COLUMN_WIDTH + toolWidth + ACTIVITY_AGE_COLUMN_WIDTH + 10,
   };
 }
 
@@ -485,7 +512,11 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
       {displayedAccessProfile ? (
         <>
           <Blank />
-          <SectionTitle color={color}>Access</SectionTitle>
+          <AccessSectionTitle
+            accessProfile={displayedAccessProfile}
+            usable={usable}
+            color={color}
+          />
           <Text bold color={color ? COLORS.ink : undefined} wrap="truncate">
             {accessProfileLabel(displayedAccessProfile)}
           </Text>
@@ -539,8 +570,12 @@ function ActivityRow({ activity, usable, color, now }: {
 }): React.ReactNode {
   const { toolWidth, showSummary, showAge } = activityLayout(usable);
   const age = activityAge(activity.updatedAt, activity.state === "working", now);
+  const status = activityStatus(activity);
   return (
     <Box width={usable} height={1} flexShrink={0}>
+      <Box width={ACTIVITY_STATUS_COLUMN_WIDTH} flexShrink={0}>
+        <Text bold color={color ? status.tone : undefined}>{status.symbol}</Text>
+      </Box>
       <Box width={toolWidth} flexShrink={0}>
         <Text
           bold
@@ -564,7 +599,7 @@ function ActivityRow({ activity, usable, color, now }: {
           flexShrink={0}
           justifyContent="flex-end"
         >
-          <Text color={color ? activityAgeColor(activity) : undefined}>{age}</Text>
+          <Text color={color ? COLORS.muted : undefined}>{age}</Text>
         </Box>
       ) : null}
     </Box>

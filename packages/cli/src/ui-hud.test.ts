@@ -173,7 +173,9 @@ test("activity layout aligns tool arguments and timestamps", () => {
   assert.match(rows[0]!, /15s ago$/);
   assert.match(rows[1]!, /1m ago$/);
   assert.match(rows[2]!, /now$/);
-  assert.doesNotMatch(output, /[●◌×]/);
+  assert.match(rows[0]!, /✓\s+read_file/);
+  assert.match(rows[1]!, /×\s+search_text/);
+  assert.match(rows[2]!, /○\s+run_command/);
 });
 
 test("activity view paginates newest-first without an agent block", () => {

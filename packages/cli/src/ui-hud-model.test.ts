@@ -86,7 +86,7 @@ test("activity view keeps state and age on the activity row", () => {
   const activeRow = active.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
   assert.match(
     activeRow ?? "",
-    /read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+now$/,
+    /○\s+read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+now$/,
   );
 
   const idleState = applyHudEvent(activeState, {
@@ -105,7 +105,7 @@ test("activity view keeps state and age on the activity row", () => {
   const idleRow = idle.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
   assert.match(
     idleRow ?? "",
-    /read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+just now$/,
+    /✓\s+read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+just now$/,
   );
 });
 
@@ -147,8 +147,8 @@ test("shows the selected access boundary in the workspace screen", () => {
     20,
   );
 
-  assert.match(output, /ACCESS/);
-  assert.match(output, /ACCESS\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
+  assert.match(output, /ACCESS\s+← Switch/);
+  assert.match(output, /System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
 });
 
