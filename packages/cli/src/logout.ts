@@ -49,8 +49,8 @@ export async function logoutFromGlossa(
   await remove();
   log(
     present
-      ? "Signed out of Glossa."
-      : "Already signed out of Glossa.",
+      ? "Signed out of the Glossa account. Computer pairing stays active."
+      : "Already signed out of the Glossa account. Computer pairing stays active.",
   );
 
   const url = browserLogoutUrl(issuer ?? loadAuthConfig().issuer);

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Install Glossa, start it in a project, and connect ChatGPT." />
+    <meta name="description" content="Install Glossa, add it to ChatGPT, then pair the computer that will expose your project." />
     <meta name="theme-color" content="#111016" />
     <title>Quickstart | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
@@ -68,8 +68,8 @@
           <h1>Connect ChatGPT to a local workspace</h1>
           <button class="copy-page-button" type="button" data-copy-page aria-label="Copy page">Copy</button>
         </div>
-        <script type="application/json" data-page-markdown>"# Connect ChatGPT to a local workspace\n\nInstall Glossa, start it in a project, and connect ChatGPT.\n\n## 1. Install\n\nRequires Node.js 22.9 or newer.\n\n```shell\nnpm install --global @ariobarin/glossa\n```\n\n## 2. Start a workspace\n\nOpen a terminal in your project folder and run:\n\n```shell\nglossa\n```\n\nSign in if prompted and keep the terminal open.\n\n> Glossa starts with `workspace` access: ChatGPT can read and edit the selected project, but cannot run commands. `system` access is optional and unsandboxed; commands inherit the account's environment, credentials, filesystem permissions, and network access. [Review security](/security) before enabling it.\n\n## 3. Add Glossa to ChatGPT\n\n1. In ChatGPT web, use [Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.\n2. Name it **Glossa** and use this MCP server URL:\n\n```text\nhttps://mcp.glossa.sh/mcp\n```\n\n3. Choose **OAuth**, then **Scan Tools**. Complete authorization with the same Glossa account as the CLI, wait for the scan, then **Create**.\n\nReview permissions and requested actions.\n\n## 4. Test it\n\nSelect Glossa in a new chat and send:\n\n```text\nUse Glossa to list my connected workspaces and report each access profile.\n```\n\nIf your workspace appears, you're connected.\n\nHaving trouble? Visit [support](/support).\n"</script>
-        <p class="docs-summary">Install Glossa, start it in a project, and connect ChatGPT.</p>
+        <script type="application/json" data-page-markdown>"# Connect ChatGPT to a local workspace\n\nInstall Glossa, add it to ChatGPT, then pair the computer that will expose your project.\n\n## 1. Install\n\nRequires Node.js 22.9 or newer.\n\n```shell\nnpm install --global @ariobarin/glossa\n```\n\n## 2. Add Glossa to ChatGPT\n\n1. In ChatGPT web, use [Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.\n2. Name it **Glossa** and use this MCP server URL:\n\n```text\nhttps://mcp.glossa.sh/mcp\n```\n\n3. Choose **OAuth**, then **Scan Tools**. Complete authorization, wait for the scan, then **Create**.\n\nReview permissions and requested actions.\n\n## 3. Start and pair a workspace\n\nOpen a terminal in your project folder and run:\n\n```shell\nglossa\n```\n\nOn a computer that has not been paired before, Glossa prints a short one-time code and waits. In an authenticated ChatGPT conversation with Glossa enabled, approve the code shown by that terminal. The computer receives its own revocable device credential; it does not need your Google/Auth0 refresh token or a browser session. This works the same way on a headless machine reached over SSH.\n\nKeep the terminal open after pairing. Later `glossa` runs on that computer reuse the device pairing without user sign-in. Run `glossa unpair` to revoke the computer before pairing it with another Glossa account.\n\n> Glossa starts with `workspace` access: ChatGPT can read and edit the selected project, but cannot run commands. `system` access is optional and unsandboxed; commands inherit the account's environment, credentials, filesystem permissions, and network access. [Review security](/security) before enabling it.\n\n## 4. Test it\n\nSelect Glossa in a new chat and send:\n\n```text\nUse Glossa to list my connected workspaces and report each access profile.\n```\n\nIf your workspace appears, you're connected.\n\nHaving trouble? Visit [support](/support).\n"</script>
+        <p class="docs-summary">Install Glossa, add it to ChatGPT, then pair the computer that will expose your project.</p>
       </header>
 
       <article class="docs-content">
@@ -85,35 +85,36 @@
 </div>
 </section>
 <section class="doc-section">
-<h2 id="2-start-a-workspace"><a class="heading-anchor" href="#2-start-a-workspace" aria-label="Link to 2. Start a workspace"></a>2. Start a workspace</h2>
-<p>Open a terminal in your project folder and run:</p>
-<div class="code-block">
-  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-2" aria-label="Copy code">
-    <span class="copy-tooltip" aria-hidden="true">Copy</span>
-  </button>
-  <pre><code class="language-shell" id="docs-quickstart-code-2">glossa</code></pre>
-</div>
-<p>Sign in if prompted and keep the terminal open.</p>
-<blockquote>
-<p>Glossa starts with <code>workspace</code> access: ChatGPT can read and edit the selected project, but cannot run commands. <code>system</code> access is optional and unsandboxed; commands inherit the account&#39;s environment, credentials, filesystem permissions, and network access. <a href="/security">Review security</a> before enabling it.</p>
-</blockquote>
-</section>
-<section class="doc-section">
-<h2 id="3-add-glossa-to-chatgpt"><a class="heading-anchor" href="#3-add-glossa-to-chatgpt" aria-label="Link to 3. Add Glossa to ChatGPT"></a>3. Add Glossa to ChatGPT</h2>
+<h2 id="2-add-glossa-to-chatgpt"><a class="heading-anchor" href="#2-add-glossa-to-chatgpt" aria-label="Link to 2. Add Glossa to ChatGPT"></a>2. Add Glossa to ChatGPT</h2>
 <ol>
 <li>In ChatGPT web, use <a href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt">Developer Mode</a> to create a custom MCP app.</li>
 <li>Name it <strong>Glossa</strong> and use this MCP server URL:</li>
 </ol>
 <div class="code-block">
+  <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-2" aria-label="Copy code">
+    <span class="copy-tooltip" aria-hidden="true">Copy</span>
+  </button>
+  <pre><code class="language-text" id="docs-quickstart-code-2">https://mcp.glossa.sh/mcp</code></pre>
+</div>
+<ol start="3">
+<li>Choose <strong>OAuth</strong>, then <strong>Scan Tools</strong>. Complete authorization, wait for the scan, then <strong>Create</strong>.</li>
+</ol>
+<p>Review permissions and requested actions.</p>
+</section>
+<section class="doc-section">
+<h2 id="3-start-and-pair-a-workspace"><a class="heading-anchor" href="#3-start-and-pair-a-workspace" aria-label="Link to 3. Start and pair a workspace"></a>3. Start and pair a workspace</h2>
+<p>Open a terminal in your project folder and run:</p>
+<div class="code-block">
   <button class="copy-button" type="button" data-copy-target="docs-quickstart-code-3" aria-label="Copy code">
     <span class="copy-tooltip" aria-hidden="true">Copy</span>
   </button>
-  <pre><code class="language-text" id="docs-quickstart-code-3">https://mcp.glossa.sh/mcp</code></pre>
+  <pre><code class="language-shell" id="docs-quickstart-code-3">glossa</code></pre>
 </div>
-<ol start="3">
-<li>Choose <strong>OAuth</strong>, then <strong>Scan Tools</strong>. Complete authorization with the same Glossa account as the CLI, wait for the scan, then <strong>Create</strong>.</li>
-</ol>
-<p>Review permissions and requested actions.</p>
+<p>On a computer that has not been paired before, Glossa prints a short one-time code and waits. In an authenticated ChatGPT conversation with Glossa enabled, approve the code shown by that terminal. The computer receives its own revocable device credential; it does not need your Google/Auth0 refresh token or a browser session. This works the same way on a headless machine reached over SSH.</p>
+<p>Keep the terminal open after pairing. Later <code>glossa</code> runs on that computer reuse the device pairing without user sign-in. Run <code>glossa unpair</code> to revoke the computer before pairing it with another Glossa account.</p>
+<blockquote>
+<p>Glossa starts with <code>workspace</code> access: ChatGPT can read and edit the selected project, but cannot run commands. <code>system</code> access is optional and unsandboxed; commands inherit the account&#39;s environment, credentials, filesystem permissions, and network access. <a href="/security">Review security</a> before enabling it.</p>
+</blockquote>
 </section>
 <section class="doc-section">
 <h2 id="4-test-it"><a class="heading-anchor" href="#4-test-it" aria-label="Link to 4. Test it"></a>4. Test it</h2>
@@ -134,8 +135,8 @@
         <strong>On this page</strong>
         <ol>
           <li><a href="#1-install">1. Install</a></li>
-          <li><a href="#2-start-a-workspace">2. Start a workspace</a></li>
-          <li><a href="#3-add-glossa-to-chatgpt">3. Add Glossa to ChatGPT</a></li>
+          <li><a href="#2-add-glossa-to-chatgpt">2. Add Glossa to ChatGPT</a></li>
+          <li><a href="#3-start-and-pair-a-workspace">3. Start and pair a workspace</a></li>
           <li><a href="#4-test-it">4. Test it</a></li>
         </ol>
       </nav>

@@ -13,6 +13,10 @@ import type { RelayConfig } from "./config.js";
 import { requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { parseDeviceToken } from "./device-token.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
+import {
+  DevicePairingCapacityError,
+  DevicePairingState,
+} from "./device-pairing.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import type { RouterState } from "./router-state.js";
@@ -32,6 +36,9 @@ const enrollSchema = z
   .strict();
 
 const renameSchema = z.object({ name: deviceNameSchema }).strict();
+const pairingCompleteSchema = z
+  .object({ pairing_secret: z.string().min(32).max(128) })
+  .strict();
 const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
 const workerJobTypeSchema = z.enum([
@@ -126,6 +133,7 @@ export interface RouteDependencies {
   authFactory?: AuthFactory;
   enrollmentRateLimiter?: FixedWindowRateLimiter;
   deviceRateLimiter?: FixedWindowRateLimiter;
+  pairingState?: DevicePairingState;
   beforeDeadline?: DeadlineRunner;
   timingSink?: RelayTimingSink;
 }
@@ -323,6 +331,26 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+async function enrollPairedDevice(
+  store: RelayStore,
+  accountId: string,
+  requestedName: string,
+  platform: string | null,
+): Promise<{ device: DeviceRecord; token: string }> {
+  for (let suffix = 1; suffix <= 10; suffix += 1) {
+    const ending = suffix === 1 ? "" : `-${suffix}`;
+    const name = deviceNameSchema.parse(
+      `${requestedName.slice(0, 80 - ending.length)}${ending}`,
+    );
+    try {
+      return await store.enrollDevice(accountId, name, platform);
+    } catch (error) {
+      if (!isUniqueViolation(error) || suffix === 10) throw error;
+    }
+  }
+  throw new Error("Failed to enroll paired device.");
+}
+
 export function buildRoutes(
   config: RelayConfig,
   store: RelayStore,
@@ -344,6 +372,7 @@ export function buildRoutes(
       config.GLOSSA_DEVICE_AUTH_RATE_LIMIT,
       config.GLOSSA_RATE_LIMIT_WINDOW_MS,
     );
+  const pairingState = dependencies.pairingState ?? new DevicePairingState();
   const timingSink = dependencies.timingSink ??
     (config.GLOSSA_TIMING_LOGS ? consoleRelayTimingSink : undefined);
   if (timingSink) router.use(relayTimingMiddleware(timingSink));
@@ -368,6 +397,97 @@ export function buildRoutes(
       bearer_methods_supported: ["header"],
     });
   });
+
+  router.post("/v1/device-pairings", (request, response) => {
+    const source = request.ip || request.socket.remoteAddress || "unknown";
+    if (
+      rejectRateLimit(
+        response,
+        enrollmentRateLimiter,
+        `pairing-create:${source}`,
+      )
+    ) {
+      return;
+    }
+    const parsed = enrollSchema.safeParse(request.body);
+    if (!parsed.success) {
+      rejectInvalidInput(response);
+      return;
+    }
+    try {
+      const pairing = pairingState.create(
+        parsed.data.name,
+        parsed.data.platform ?? null,
+      );
+      response.status(201).json({
+        pairing_id: pairing.pairingId,
+        user_code: pairing.userCode,
+        pairing_secret: pairing.pairingSecret,
+        expires_at: pairing.expiresAt,
+        poll_interval_ms: 2_000,
+      });
+    } catch (error) {
+      if (!(error instanceof DevicePairingCapacityError)) throw error;
+      response.status(503).json({ error: "pairing_capacity" });
+    }
+  });
+
+  router.post(
+    "/v1/device-pairings/:pairingId/complete",
+    async (request, response) => {
+      const rawPairingId = request.params.pairingId;
+      const pairingId = Array.isArray(rawPairingId)
+        ? rawPairingId[0]
+        : rawPairingId;
+      const parsedId = deviceIdSchema.safeParse(pairingId);
+      const parsed = pairingCompleteSchema.safeParse(request.body);
+      if (!parsedId.success || !parsed.success) {
+        rejectInvalidInput(response);
+        return;
+      }
+      const source = request.ip || request.socket.remoteAddress || "unknown";
+      if (
+        rejectRateLimit(
+          response,
+          deviceRateLimiter,
+          `pairing-complete:${source}`,
+        )
+      ) {
+        return;
+      }
+      const completed = pairingState.complete(
+        parsedId.data,
+        parsed.data.pairing_secret,
+      );
+      if (completed.status === "pending") {
+        response.status(202).json({ status: "authorization_pending" });
+        return;
+      }
+      if (completed.status === "expired") {
+        response.status(410).json({ error: "pairing_expired" });
+        return;
+      }
+      if (completed.status === "invalid") {
+        response.status(404).json({ error: "pairing_not_found" });
+        return;
+      }
+      try {
+        const enrolled = await enrollPairedDevice(
+          store,
+          completed.accountId,
+          completed.name,
+          completed.platform,
+        );
+        response.status(201).json({
+          device: publicDevice(enrolled.device, state),
+          device_token: enrolled.token,
+        });
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        response.status(409).json({ error: "device_name_conflict" });
+      }
+    },
+  );
 
   router.post(
     "/v1/devices/enroll",
@@ -467,6 +587,26 @@ export function buildRoutes(
       response.status(204).end();
     },
   );
+
+  router.delete("/device", async (request, response) => {
+    const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
+    const device = await authenticatedDevice(
+      request,
+      response,
+      store,
+      deviceRateLimiter,
+      deadlineAt,
+      runBeforeDeadline,
+    );
+    if (!device) return;
+    const revoked = await store.revokeDevice(device.accountId, device.id);
+    if (!revoked) {
+      response.status(404).json({ error: "device_not_found" });
+      return;
+    }
+    state.unregisterDevice(device.id);
+    response.status(204).end();
+  });
 
   router.post("/device/register", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
@@ -721,7 +861,14 @@ export function buildRoutes(
     async (request: AuthenticatedRequest, response: Response) => {
       const accountId = await activeAccountId(request, response, store);
       if (!accountId) return;
-      await handleMcpRequest(request, response, config, state, accountId);
+      await handleMcpRequest(
+        request,
+        response,
+        config,
+        state,
+        accountId,
+        pairingState,
+      );
     },
   );
 

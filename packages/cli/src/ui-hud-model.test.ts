@@ -903,7 +903,7 @@ test("help keeps the useful navigation without removed commands", () => {
   assert.match(output, /\?\s+Help/);
   assert.match(output, /Esc\s+Activity/);
   assert.match(output, /Enter\/R\s+Revoke selected device/);
-  assert.match(output, /L\s+Sign out/);
+  assert.match(output, /L\s+Account sign out/);
   assert.match(output, /Q\s+Disconnect and quit/);
   assert.doesNotMatch(output, /update/i);
 });

@@ -81,10 +81,34 @@ interface EnrollmentResponse {
   device?: { id?: unknown; name?: unknown };
   device_token?: unknown;
   error?: unknown;
+  status?: unknown;
 }
 
 interface RelayErrorResponse {
   error?: unknown;
+}
+
+interface PairingStartResponse extends RelayErrorResponse {
+  pairing_id?: unknown;
+  user_code?: unknown;
+  pairing_secret?: unknown;
+  expires_at?: unknown;
+  poll_interval_ms?: unknown;
+}
+
+export interface DevicePairingChallenge {
+  pairingId: string;
+  userCode: string;
+  pairingSecret: string;
+  expiresAt: string;
+  pollIntervalMs: number;
+}
+
+export class DevicePairingExpiredError extends Error {
+  constructor() {
+    super("The Glossa pairing code expired. Run Glossa again to get a new code.");
+    this.name = "DevicePairingExpiredError";
+  }
 }
 
 export interface RelayDevice {
@@ -180,6 +204,101 @@ export async function accountOwnsDevice(
   );
 }
 
+export async function beginDevicePairing(
+  endpoints: RelayEndpoints,
+  deviceName: string,
+  fetchRequest: FetchLike = fetch,
+): Promise<DevicePairingChallenge> {
+  const name = deviceNameSchema.parse(deviceName);
+  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/device-pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, platform: `${process.platform}-${process.arch}` }),
+  });
+  let data: PairingStartResponse = {};
+  try {
+    data = (await response.json()) as PairingStartResponse;
+  } catch {
+    // Stable fallback error below for non-JSON proxy responses.
+  }
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new Error("Glossa pairing is rate limited. Try again later.");
+    }
+    throw new Error(`The Glossa relay returned HTTP ${response.status}.`);
+  }
+  if (
+    typeof data.pairing_id !== "string" ||
+    typeof data.user_code !== "string" ||
+    typeof data.pairing_secret !== "string" ||
+    typeof data.expires_at !== "string" ||
+    !Number.isInteger(data.poll_interval_ms) ||
+    (data.poll_interval_ms as number) < 1_000 ||
+    (data.poll_interval_ms as number) > 10_000 ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.pairing_id) ||
+    !/^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/.test(data.user_code) ||
+    data.pairing_secret.length < 32 ||
+    data.pairing_secret.length > 128 ||
+    !Number.isFinite(Date.parse(data.expires_at))
+  ) {
+    throw new Error("The Glossa relay returned an invalid pairing response.");
+  }
+  return {
+    pairingId: data.pairing_id,
+    userCode: data.user_code,
+    pairingSecret: data.pairing_secret,
+    expiresAt: data.expires_at,
+    pollIntervalMs: data.poll_interval_ms as number,
+  };
+}
+
+export async function completeDevicePairing(
+  endpoints: RelayEndpoints,
+  pairing: DevicePairingChallenge,
+  fetchRequest: FetchLike = fetch,
+): Promise<StoredDeviceCredential | null> {
+  const response = await fetchRequest(
+    `${endpoints.relayOrigin}/v1/device-pairings/${encodeURIComponent(pairing.pairingId)}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pairing_secret: pairing.pairingSecret }),
+    },
+  );
+  let data: EnrollmentResponse = {};
+  try {
+    data = (await response.json()) as EnrollmentResponse;
+  } catch {
+    // Stable fallback errors below for non-JSON proxy responses.
+  }
+  if (response.status === 202 && data.status === "authorization_pending") {
+    return null;
+  }
+  if (
+    (response.status === 410 && data.error === "pairing_expired") ||
+    (response.status === 404 && data.error === "pairing_not_found")
+  ) {
+    throw new DevicePairingExpiredError();
+  }
+  if (response.status === 429) {
+    throw new Error("Glossa pairing is rate limited. Try again later.");
+  }
+  if (!response.ok) throw relayError(response.status, data);
+  if (
+    typeof data.device?.id !== "string" ||
+    typeof data.device.name !== "string" ||
+    typeof data.device_token !== "string"
+  ) {
+    throw new Error("The Glossa relay returned an invalid device pairing response.");
+  }
+  return {
+    relayOrigin: endpoints.relayOrigin,
+    deviceId: data.device.id,
+    deviceName: data.device.name,
+    token: data.device_token,
+  };
+}
+
 export async function enrollDevice(
   endpoints: RelayEndpoints,
   credentials: StoredCredentials,
@@ -262,6 +381,22 @@ export async function renameDevice(
   const data = await response.json().catch(() => ({})) as RelayErrorResponse & { device?: unknown };
   if (!response.ok) throw relayError(response.status, data);
   return parseDevices([data.device])[0]!;
+}
+
+export async function revokePairedDevice(
+  endpoints: RelayEndpoints,
+  device: StoredDeviceCredential,
+  fetchRequest: FetchLike = fetch,
+): Promise<void> {
+  const response = await fetchRequest(`${endpoints.relayOrigin}/device`, {
+    method: "DELETE",
+    headers: { authorization: `Device ${device.token}` },
+  });
+  if (response.ok || response.status === 401 || response.status === 404) return;
+  if (response.status === 429) {
+    throw new Error("Glossa device authentication is rate limited. Try again later.");
+  }
+  throw new Error(`The Glossa relay returned HTTP ${response.status}.`);
 }
 
 export async function revokeDevice(

@@ -40,27 +40,25 @@ The authorization server handles discovery, login, consent, and access tokens. T
 
 The managed service uses the Google social connection for regular users and can explicitly enable a dedicated Auth0 database connection for OpenAI review. The relay enforces a bounded provider-prefix allowlist plus an optional exact-subject allowlist in addition to JWT validation. Managed review keeps Google as the only provider-wide prefix and admits only the dedicated database reviewer's exact Auth0 subject, so enabling the connection does not admit every database identity. Production review credentials and the exact subject are manually provisioned, independent of operator accounts, and excluded from source control. Self-hosted relays may select provider prefixes, exact subjects, or both; the legacy singular prefix setting remains compatible.
 
-### CLI user identity
+### CLI account identity
 
-The published CLI uses OAuth Device Authorization Flow. Its embedded client ID is public. The CLI requests `openid profile offline_access glossa:device`.
+Normal workspace startup does not require the CLI process to authenticate as the user. Account-level CLI actions such as `glossa status` and device administration still use OAuth Device Authorization Flow when needed. The embedded client ID is public, and those account-level flows request `openid profile offline_access glossa:device`.
 
-The managed Auth0 Google connection requests Google's account chooser on every new authorization. This lets a user choose among multiple Google accounts instead of silently reusing a browser session.
+The managed Auth0 Google connection requests Google's account chooser on every new account authorization. This lets a user choose among multiple Google accounts instead of silently reusing a browser session. That user OAuth material is not required on a remote or headless computer merely to expose a workspace.
 
-### Worker device identity
+### Worker device identity and pairing
 
-After user login, the CLI calls the device-enrollment API. The server returns a device token once:
+An unpaired CLI creates a short-lived pairing request with the relay. The request contains a random private pairing secret known only to that CLI and a short human code shown in the terminal. Pending pairing state is process-local relay memory and expires after five minutes; the relay stores only a SHA-256 digest of the private pairing secret while the request is pending.
+
+The user explicitly provides the short code to an already authenticated Glossa MCP client. The `pair_device` tool approves that pending computer for the MCP account. The CLI polls the completion endpoint with its private pairing secret; only the combination of an approved request and the matching private secret can complete enrollment. Completion consumes the pending request and returns a device token once:
 
 ```text
 gld_<device-id>_<random-256-bit-secret>
 ```
 
-The database stores the device ID, account ID, salt, and scrypt hash. Worker registration authenticates the device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
+The database stores the device ID, account ID, salt, and scrypt hash. The raw device token is stored only on the paired computer. Worker registration authenticates that device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
 
-The CLI binds each locally stored device credential to the subject in the
-current Auth0 access token. Normal startup can therefore reject an account
-switch locally and let worker registration validate the device token without a
-separate device-list request. A legacy unbound credential receives one
-account-scoped ownership check before the CLI saves that binding.
+A stored device credential is sufficient for later workspace startups on that computer, so a headless SSH target does not need a browser session or the user's Google/Auth0 refresh token. `glossa unpair` authenticates with the device credential, revokes that device at the relay, and removes the local credential. Re-pairing is the explicit way to move a computer to another Glossa account.
 
 ## State ownership
 
@@ -77,6 +75,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
+- short-lived pending device pairings with human codes, approved account IDs, and hashed private pairing secrets; all expire in five minutes and are never written to Postgres
 - device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs after relay-side profile and recognizable-authentication-secret input checks
 - request waiters

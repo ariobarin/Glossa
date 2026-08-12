@@ -53,9 +53,25 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - require account ID in every database and in-memory ownership lookup;
 - never fetch by resource ID and check ownership afterward when an account-scoped query is possible;
 - use opaque random identifiers;
-- bind local device credentials to the authenticated subject before reuse;
+- require an authenticated MCP account to explicitly approve each new computer pairing before device enrollment;
 - bind ephemeral worker credentials to one account, device, worker ID, and generation;
 - verify account isolation with direct integration checks before deployment.
+
+### Pairing-code guessing or interception
+
+**Threat:** an attacker guesses a short human pairing code or observes one and tries to bind a computer without the user's intent.
+
+**Controls:**
+
+- create a separate 256-bit private pairing secret that is never shown to the approving MCP client;
+- store only the private secret's SHA-256 digest in process-local relay memory while pairing is pending;
+- expire pending pairings after five minutes and consume them on successful completion;
+- require explicit `pair_device` approval from an authenticated MCP account using the short code;
+- require the pairing computer to present the matching private secret before device enrollment completes;
+- rate-limit pairing creation and completion attempts by source address and cap process-local pending pairing state;
+- never persist pairing codes, private pairing secrets, or approval state to the database.
+
+Possession of the short human code alone is insufficient to retrieve the device credential because completion also requires the computer's private secret. However, an attacker who observes a live code and can authenticate to Glossa could race to approve that pending computer into the attacker's account. Treat the displayed code as a temporary secret, expose it only to the intended authenticated ChatGPT session, and approve only the code currently shown by the intended computer.
 
 ### Stolen device token
 
@@ -68,7 +84,7 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - store only a salted scrypt hash in the relay database;
 - display or return the raw secret once;
 - store it locally in the operating-system credential store, with an explicit warning before a restricted file fallback;
-- support device-specific revocation;
+- support device-specific revocation, including self-revocation through `glossa unpair`;
 - apply failed-authentication rate limiting and constant-time comparison;
 - never log Authorization headers.
 

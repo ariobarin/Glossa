@@ -139,6 +139,7 @@ assert.equal(contractVersion, "2.0.0", "MCP public contract must be 2.0.0");
 const expectedTools = [
   "list_workspaces",
   "get_logout_instructions",
+  "pair_device",
   "read_file",
   "list_files",
   "search_text",

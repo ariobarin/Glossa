@@ -15,7 +15,7 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Security policy: `https://github.com/ariobarin/glossa/blob/main/SECURITY.md`
 - Technical security model: `https://glossa.sh/docs/security`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
-- MCP tool contract: `2.0.0` (15 tools)
+- MCP tool contract: `2.0.0` (16 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 Proposed short description:
@@ -24,7 +24,7 @@ Proposed short description:
 
 Proposed full description:
 
-> Glossa connects ChatGPT to a local development workspace through an authenticated outbound worker. The user selects read-only access, guarded file edits inside the exposed root, or explicit system-command access. Glossa can list, search, and read bounded UTF-8 files; create or precisely edit files with revision guards; create, move, and delete workspace paths without command authority; run local tests, builds, Git, and other project commands when system access is enabled; inspect status, retrieve bounded retained output without rerunning, or cancel those commands; and provide account-switching instructions. Glossa does not provide another model, planner, agent loop, conversation store, repository host, or command sandbox. System commands inherit the worker operating-system account's environment, credentials, filesystem permissions, and network access and are not confined to the file root.
+> Glossa connects ChatGPT to a local development workspace through an authenticated outbound worker. The user selects read-only access, guarded file edits inside the exposed root, or explicit system-command access. Glossa can list, search, and read bounded UTF-8 files; create or precisely edit files with revision guards; create, move, and delete workspace paths without command authority; run local tests, builds, Git, and other project commands when system access is enabled; inspect status, retrieve bounded retained output without rerunning, or cancel those commands; approve explicit one-time computer pairing; and provide account-switching instructions. Glossa does not provide another model, planner, agent loop, conversation store, repository host, or command sandbox. System commands inherit the worker operating-system account's environment, credentials, filesystem permissions, and network access and are not confined to the file root.
 
 ## Distinct product purpose
 
@@ -39,6 +39,7 @@ The MCP instructions and every tool description tell the model not to invoke Glo
 - Read `src/math.js` and explain what each exported function does.
 - Replace `notes/review.txt` with a short review note, then read it back.
 - Run `npm test` in the Glossa review workspace, wait for it to finish, and summarize the result.
+- Pair the computer showing Glossa code `ABCDE-FGHJK`.
 - Sign me out of Glossa.
 
 ## Agent-routing evaluation set
@@ -84,6 +85,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | --- | --- | --- | --- | --- |
 | `list_workspaces` | Yes | No | No | Reads online workspaces, labels, versions, access profiles, permissions, and negotiated capabilities for the signed-in account. |
 | `get_logout_instructions` | Yes | No | No | Returns sign-out steps and a browser logout URL. It does not revoke credentials, navigate, or claim logout is complete. |
+| `pair_device` | No | No | No | Approves only the short one-time pairing code the user explicitly provides from a Glossa CLI. Approval binds that computer to the authenticated account so the CLI can receive a revocable device credential. |
 | `read_file` | Yes | No | No | Reads one bounded relative UTF-8 file inside the exposed root. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |
 | `search_text` | Yes | No | No | Searches bounded UTF-8 files with literal or regex matching plus extension and root-relative include/exclude glob filters, without invoking a shell. |

@@ -47,7 +47,7 @@ Create a custom MCP app in ChatGPT Developer Mode using OAuth and:
 https://mcp.glossa.sh/mcp
 ```
 
-Use the same Glossa account in ChatGPT and the CLI, then run **Scan Tools**.
+Authorize Glossa in ChatGPT and run **Scan Tools**. On first `glossa`, approve the terminal pairing code from that ChatGPT account. The worker needs no browser login.
 
 Verify discovery with:
 
@@ -70,7 +70,7 @@ Glossa does not derive labels from local paths. A duplicate process for the same
 
 ## Interactive HUD
 
-The HUD opens on **Activity**, the primary view of what connected clients are doing. `A` returns there from anywhere. `W` opens **Workspace**, which shows the exposed directory, device identity, and current access boundary. On Workspace, left arrow lowers access immediately and right arrow proposes a higher access level; increasing access requires confirmation, and Glossa restarts only the worker connection in place. `D` opens **Devices**; use up/down to select a device and Enter or `R` to revoke the selected device. `?` opens Help and Escape returns to Activity.
+The HUD opens on **Activity**. `A` returns there, `W` opens **Workspace**, and `D` opens **Devices**. Workspace arrows change access; increases require confirmation. In Devices, use up/down and Enter or `R` to revoke. `?` opens Help and Escape returns to Activity.
 
 ## Local usage history
 
@@ -95,9 +95,10 @@ Disconnect every running workspace before installing an update.
 glossa status
 glossa devices revoke <id>
 glossa logout
+glossa unpair
 ```
 
-`status` shows the account, relay, enrolled computers, and active workspaces. Revocation invalidates the selected device. Logout removes local OAuth credentials and opens browser sign-out. Disconnect Glossa in ChatGPT separately to revoke the client's authorization.
+`status` shows the account, devices, and active workspaces. Revocation invalidates a device. `logout` signs out CLI account administration but does not unpair the computer. `unpair` revokes this computer and removes its local pairing. Disconnect Glossa in ChatGPT separately to revoke the client authorization.
 
 ## Verify a setup
 
@@ -111,11 +112,11 @@ glossa logout
 
 ## Troubleshooting
 
-- **No online workspace:** keep the worker terminal open and confirm ChatGPT and the CLI use the same account.
+- **No online workspace:** keep the terminal open; approve any displayed pairing code, or confirm the stored pairing is still valid.
 - **Wrong workspace:** stop it and restart in the intended project with a unique `--label`.
 - **Permission error:** restart with broader access only if the task genuinely requires it.
 - **`restricted_data_blocked`:** remove the credential or use a non-sensitive placeholder. Do not retry with encoding, another tool, or a shell fallback.
-- **OAuth account mismatch:** stop workers, run `glossa logout`, disconnect Glossa in ChatGPT, and authorize both sides again.
+- **Wrong paired account:** stop workers, run `glossa unpair`, restart, and approve the new code from the intended ChatGPT account. Use `glossa logout` separately for CLI administration.
 - **Tool definitions changed:** run **Scan Tools** again.
 - **Service health:** confirm `https://mcp.glossa.sh/healthz` returns an object with `ok` set to `true`.
 - **Sensitive security issue:** use the private process in [`SECURITY.md`](../SECURITY.md), not a public issue.
