@@ -30,6 +30,7 @@ const COLORS = {
   muted: "#aaa4b5",
   purple: "#8054ff",
   purpleReadable: "#ad98ff",
+  success: "#65d6a6",
   coral: "#ff665f",
   line: "#5c556e",
 } as const;
@@ -46,7 +47,9 @@ function Text({ color, ...props }: HudTextProps): React.ReactNode {
 }
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
+const ACTIVITY_STATUS_COLUMN_WIDTH = 2;
 const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
+const ACTIVITY_AGE_COLUMN_WIDTH = 10;
 const ACTIVITY_PREAMBLE_LINES = 1;
 
 interface HudHint {
@@ -120,10 +123,10 @@ function activityAge(updatedAt: number | undefined, working: boolean, now: numbe
   return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
 }
 
-function activityColor(activity: HudActivity): string {
-  if (activity.state === "working") return COLORS.ink;
-  if (activity.state === "failed") return COLORS.coral;
-  return COLORS.purpleReadable;
+function activityStatus(activity: HudActivity): { symbol: string; tone: string } {
+  if (activity.state === "failed") return { symbol: "×", tone: COLORS.coral };
+  if (activity.state === "working") return { symbol: "○", tone: COLORS.purpleReadable };
+  return { symbol: "✓", tone: COLORS.success };
 }
 
 function activitySummary(activity: HudActivity): string {
@@ -152,46 +155,33 @@ function adjacentAccessProfile(
   return ACCESS_PROFILES[index + direction];
 }
 
-function AccessProfileLadder({ accessProfile, color }: {
-  accessProfile: WorkerAccessProfile;
-  color: boolean;
-}): React.ReactNode {
-  return (
-    <Text bold>
-      {ACCESS_PROFILES.map((profile, index) => (
-        <React.Fragment key={profile}>
-          {index > 0 ? <Text color={color ? COLORS.line : undefined}>  ─  </Text> : null}
-          <Text
-            color={color
-              ? profile === accessProfile
-                ? COLORS.coral
-                : COLORS.muted
-              : undefined}
-          >
-            {profile === accessProfile
-              ? `[ ${accessProfileLabel(profile)} ]`
-              : accessProfileLabel(profile)}
-          </Text>
-        </React.Fragment>
-      ))}
-    </Text>
-  );
+function accessProfileCapabilities(accessProfile: WorkerAccessProfile): {
+  summary: string;
+  detail: string;
+} {
+  if (accessProfile === "read-only") {
+    return { summary: "Read files only", detail: "No changes · no commands" };
+  }
+  if (accessProfile === "workspace") {
+    return { summary: "Read + write files", detail: "Commands disabled" };
+  }
+  return {
+    summary: "Read + write files + commands",
+    detail: "OS account permissions apply",
+  };
 }
 
-function accessProfileCapability(accessProfile: WorkerAccessProfile): string {
-  if (accessProfile === "read-only") return "Read files only · no changes · no commands";
-  if (accessProfile === "workspace") return "Read + write files · commands disabled";
-  return "Read + write files + commands · inherits this OS account's permissions";
+function primaryFooterHints(): HudHint[] {
+  return [
+    { key: "A", label: "Activity" },
+    { key: "W", label: "Workspace" },
+    { key: "D", label: "Devices" },
+    { key: "?", label: "Help" },
+    { key: "L", label: "Account sign out", tone: COLORS.coral },
+    { key: "Q", label: "Quit", tone: COLORS.coral },
+  ];
 }
 
-const PRIMARY_FOOTER_HINTS: HudHint[] = [
-  { key: "A", label: "Activity" },
-  { key: "W", label: "Workspace" },
-  { key: "D", label: "Devices" },
-  { key: "?", label: "Help" },
-  { key: "L", label: "Account sign out", tone: COLORS.coral },
-  { key: "Q", label: "Quit", tone: COLORS.coral },
-];
 
 function contextualFooterHints(state: HudState): HudHint[] {
   if (state.view === "activity") {
@@ -247,7 +237,7 @@ function splitFooterHints(hints: HudHint[], usable: number): HudHint[][] {
 }
 
 function buildFooterRows(state: HudState, usable: number): HudFooterRow[] {
-  const rows = splitFooterHints(PRIMARY_FOOTER_HINTS, usable).map((left) => ({
+  const rows = splitFooterHints(primaryFooterHints(), usable).map((left) => ({
     left,
     right: [] as HudHint[],
   }));
@@ -382,7 +372,7 @@ function Header({ state, usable, bodyBudget, color }: {
 }): React.ReactNode {
   const statusColor = state.connection === "error" ? COLORS.coral : COLORS.purpleReadable;
   const pageTitle = state.view === "activity"
-    ? "Recent Activity"
+    ? "Activity"
     : state.view === "devices"
       ? "Devices"
       : state.view === "workspace"
@@ -441,12 +431,83 @@ function Blank(): React.ReactNode {
   return <Box height={1} />;
 }
 
-function WorkspaceView({ state, bodyBudget, color }: {
-  state: HudState;
-  bodyBudget: number;
+function ActivityPreviewHeader({ usable, color }: {
+  usable: number;
   color: boolean;
 }): React.ReactNode {
+  return (
+    <Box width={usable}>
+      <Box flexGrow={1} flexShrink={1}>
+        <SectionTitle color={color}>Activity</SectionTitle>
+      </Box>
+      {usable >= 24 ? (
+        <Box marginLeft={1} flexShrink={0}>
+          <Text bold color={color ? COLORS.purpleReadable : undefined}>A</Text>
+          <Text color={color ? COLORS.muted : undefined}> View all</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+function AccessSectionTitle({ accessProfile, usable, color }: {
+  accessProfile: WorkerAccessProfile;
+  usable: number;
+  color: boolean;
+}): React.ReactNode {
+  const lower = adjacentAccessProfile(accessProfile, -1);
+  const higher = adjacentAccessProfile(accessProfile, 1);
+  const key = lower && higher ? "←/→" : lower ? "←" : "→";
+  return (
+    <Box width={usable}>
+      <SectionTitle color={color}>Access</SectionTitle>
+      {usable >= 24 ? (
+        <Box marginLeft={3} flexShrink={0}>
+          <Text bold color={color ? COLORS.purpleReadable : undefined}>{key}</Text>
+          <Text color={color ? COLORS.muted : undefined}> Switch</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+function activityLayout(usable: number): {
+  toolWidth: number;
+  showSummary: boolean;
+  showAge: boolean;
+} {
+  const toolWidth = Math.min(
+    ACTIVITY_TOOL_COLUMN_WIDTH,
+    Math.max(0, usable - ACTIVITY_STATUS_COLUMN_WIDTH),
+  );
+  return {
+    toolWidth,
+    showSummary: usable >= ACTIVITY_STATUS_COLUMN_WIDTH + toolWidth + 5,
+    showAge: usable >=
+      ACTIVITY_STATUS_COLUMN_WIDTH + toolWidth + ACTIVITY_AGE_COLUMN_WIDTH + 10,
+  };
+}
+
+function WorkspaceView({ state, usable, bodyBudget, color, now }: {
+  state: HudState;
+  usable: number;
+  bodyBudget: number;
+  color: boolean;
+  now: number;
+}): React.ReactNode {
   const displayedAccessProfile = state.pendingAccessProfile ?? state.accessProfile;
+  const showConnectionMessage = Boolean(
+    state.message && (state.connection === "retrying" || state.connection === "error"),
+  );
+  let fixedLines = 3;
+  if (displayedAccessProfile) fixedLines += 5;
+  if (state.deviceName) fixedLines += 3;
+  if (showConnectionMessage) fixedLines += 2;
+  const activityCapacity = Math.min(3, Math.max(0, bodyBudget - fixedLines - 2));
+  const activityPreview = activityCapacity > 0
+    ? state.activities.slice(-activityCapacity)
+    : [];
+
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
@@ -455,10 +516,19 @@ function WorkspaceView({ state, bodyBudget, color }: {
       {displayedAccessProfile ? (
         <>
           <Blank />
-          <SectionTitle color={color}>Access</SectionTitle>
-          <AccessProfileLadder accessProfile={displayedAccessProfile} color={color} />
+          <AccessSectionTitle
+            accessProfile={displayedAccessProfile}
+            usable={usable}
+            color={color}
+          />
+          <Text bold color={color ? COLORS.ink : undefined} wrap="truncate">
+            {accessProfileLabel(displayedAccessProfile)}
+          </Text>
           <Text color={color ? COLORS.muted : undefined} wrap="truncate">
-            {accessProfileCapability(displayedAccessProfile)}
+            {accessProfileCapabilities(displayedAccessProfile).summary}
+          </Text>
+          <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+            {accessProfileCapabilities(displayedAccessProfile).detail}
           </Text>
         </>
       ) : null}
@@ -469,7 +539,24 @@ function WorkspaceView({ state, bodyBudget, color }: {
           <Text color={color ? COLORS.ink : undefined} wrap="truncate">{state.deviceName}</Text>
         </>
       ) : null}
-      {state.message && (state.connection === "retrying" || state.connection === "error") ? (
+      {activityCapacity > 0 ? (
+        <>
+          <Blank />
+          <ActivityPreviewHeader usable={usable} color={color} />
+          {state.activities.length === 0 ? (
+            <Text color={color ? COLORS.muted : undefined}>No activity yet.</Text>
+          ) : activityPreview.map((activity) => (
+            <ActivityRow
+              key={activity.requestId}
+              activity={activity}
+              usable={usable}
+              color={color}
+              now={now}
+            />
+          ))}
+        </>
+      ) : null}
+      {showConnectionMessage ? (
         <>
           <Blank />
           <Text color={color ? COLORS.coral : undefined} wrap="truncate">{state.message}</Text>
@@ -485,16 +572,18 @@ function ActivityRow({ activity, usable, color, now }: {
   color: boolean;
   now: number;
 }): React.ReactNode {
-  const toolWidth = Math.min(ACTIVITY_TOOL_COLUMN_WIDTH, usable);
+  const { toolWidth, showSummary, showAge } = activityLayout(usable);
   const age = activityAge(activity.updatedAt, activity.state === "working", now);
-  const showAge = usable >= toolWidth + age.length + 10;
-  const showSummary = usable >= toolWidth + 5;
+  const status = activityStatus(activity);
   return (
     <Box width={usable} height={1} flexShrink={0}>
+      <Box width={ACTIVITY_STATUS_COLUMN_WIDTH} flexShrink={0}>
+        <Text bold color={color ? status.tone : undefined}>{status.symbol}</Text>
+      </Box>
       <Box width={toolWidth} flexShrink={0}>
         <Text
           bold
-          color={color ? activityColor(activity) : undefined}
+          color={color ? COLORS.ink : undefined}
           wrap="truncate"
         >
           {activity.tool}
@@ -508,7 +597,12 @@ function ActivityRow({ activity, usable, color, now }: {
         </Box>
       ) : null}
       {showAge ? (
-        <Box marginLeft={2} flexShrink={0}>
+        <Box
+          width={ACTIVITY_AGE_COLUMN_WIDTH}
+          marginLeft={2}
+          flexShrink={0}
+          justifyContent="flex-end"
+        >
           <Text color={color ? COLORS.muted : undefined}>{age}</Text>
         </Box>
       ) : null}
@@ -709,7 +803,7 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
       <HelpRow keyLabel="W" label="Workspace" color={color} />
       <HelpRow keyLabel="D" label="Devices" color={color} />
       <HelpRow keyLabel="?" label="Help" color={color} />
-      <HelpRow keyLabel="Esc" label="Activity" color={color} />
+      <HelpRow keyLabel="Esc" label="Workspace" color={color} />
       <Blank />
       <SectionTitle color={color} tone={COLORS.coral}>Manage</SectionTitle>
       <HelpRow keyLabel="←/→" label="Change workspace access" color={color} tone={COLORS.coral} />
@@ -820,7 +914,13 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
           color={color}
         />
       ) : state.view === "workspace" ? (
-        <WorkspaceView state={state} bodyBudget={metrics.bodyBudget} color={color} />
+        <WorkspaceView
+          state={state}
+          usable={metrics.usable}
+          bodyBudget={metrics.bodyBudget}
+          color={color}
+          now={now}
+        />
       ) : (
         <HelpView bodyBudget={metrics.bodyBudget} color={color} />
       )}
@@ -920,7 +1020,10 @@ function HudRuntime({ store, actions, signal, stop }: {
   const [, setClock] = useState(0);
 
   useEffect(() => {
-    if (state.view !== "activity" || state.activities.length === 0) return;
+    if (
+      (state.view !== "activity" && state.view !== "workspace") ||
+      state.activities.length === 0
+    ) return;
     const timer = setInterval(() => setClock((value) => value + 1), ACTIVITY_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [state.view, state.activities.length]);
@@ -1046,7 +1149,7 @@ function HudRuntime({ store, actions, signal, stop }: {
     }
 
     if (key.escape) {
-      store.update((state) => ({ ...state, view: "activity", notice: undefined }));
+      store.update((state) => ({ ...state, view: "workspace", notice: undefined }));
       return;
     }
     if (value === "a") {
