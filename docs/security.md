@@ -65,11 +65,11 @@ Use the default `workspace` profile when file changes, directory creation, delet
 
 - create a separate 256-bit private pairing secret that is never shown to the approving MCP client;
 - store only the private secret's SHA-256 digest in process-local relay memory while pairing is pending;
-- expire pending pairings after five minutes and consume them on successful completion;
+- expire pairing state after five minutes and make successful credential issuance idempotent so concurrent/retried completion requests receive one device credential;
 - require explicit `pair_device` approval from an authenticated MCP account using the short code;
 - require the pairing computer to present the matching private secret before device enrollment completes;
 - rate-limit pairing creation and completion attempts by source address and cap process-local pending pairing state;
-- never persist pairing codes, private pairing secrets, or approval state to the database.
+- never persist pairing codes, private pairing secrets, approval state, or retry-cached raw device credentials to the database; the issued raw credential remains only in process-local pairing memory until that five-minute request expires.
 
 Possession of the short human code alone is insufficient to retrieve the device credential because completion also requires the computer's private secret. However, an attacker who observes a live code and can authenticate to Glossa could race to approve that pending computer into the attacker's account. Treat the displayed code as a temporary secret, expose it only to the intended authenticated ChatGPT session, and approve only the code currently shown by the intended computer.
 

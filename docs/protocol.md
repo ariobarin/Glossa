@@ -16,29 +16,6 @@ No secret data. Suitable for uptime checks.
 
 OAuth bearer token required. Audience must match the Glossa API. Routes check scopes and derive account ownership from `sub`.
 
-### `POST /v1/devices/enroll`
-
-Input:
-
-```json
-{
-  "name": "Thomas MacBook",
-  "platform": "darwin-arm64"
-}
-```
-
-Output, shown once:
-
-```json
-{
-  "device": {
-    "id": "uuid",
-    "name": "Thomas MacBook"
-  },
-  "device_token": "gld_uuid_secret"
-}
-```
-
 ### `GET /v1/devices`
 
 Lists only the authenticated user's devices.
@@ -108,6 +85,7 @@ Contract `2.0.0` is one coordinated public cutover from the production 1.x surfa
 Tools:
 
 - `list_workspaces`
+- `pair_device`
 - `get_logout_instructions`
 - `read_file`
 - `list_files`
@@ -133,7 +111,7 @@ When no workers are active, `workspaces` is empty and `availability` is `"offlin
 
 `list_files` returns at most 200 regular files or directories in deterministic global relative-path order, so cursor pagination cannot skip nested or sibling entries. On POSIX, discovered names containing literal backslashes use a `./` native-path prefix so the returned value can be passed unchanged to other path-based tools. It reads directory streams incrementally, never holds more than the 20,000-entry scan ceiling, never follows symlinks or junctions, and skips entries or child directories that become missing or inaccessible plus common dependency and version-control directories during recursive traversal. `nextCursor` is a separate native ordering key; pass it back unchanged as `cursor` so reusable path encoding cannot change pagination order. Callers should narrow `path` when the scan ceiling is reached.
 
-`search_text` performs bounded line-oriented matching without invoking a shell. `matchMode` defaults to `literal` and can be set to `regex` for JavaScript regular-expression syntax; case sensitivity remains independently configurable. Optional suffix filters support values such as `.ts` and `.d.ts`, while `includeGlobs` and `excludeGlobs` filter root-relative forward-slash paths before file contents consume the scan byte budget. It returns at most 100 matching lines with bounded 400-character snippets and scans at most 5,000 UTF-8 files, 32 MiB, or 20,000 filesystem entries. Files over 1 MiB, invalid UTF-8 files, links, transiently missing files, permission-denied files, and common dependency or version-control subtrees are skipped. These controls are part of structured-read authority; callers should not need `system` access merely to express a regex or path-filtered repository search.
+`search_text` performs bounded literal line-oriented matching without invoking a shell. Case sensitivity is configurable. Optional suffix filters support values such as `.ts` and `.d.ts`, while `includeGlobs` and `excludeGlobs` filter root-relative forward-slash paths before file contents consume the scan byte budget. It returns at most 100 matching lines with bounded 400-character snippets and scans at most 5,000 UTF-8 files, 32 MiB, or 20,000 filesystem entries. Files over 1 MiB, invalid UTF-8 files, links, transiently missing files, permission-denied files, and common dependency or version-control subtrees are skipped. These controls are part of structured-read authority; callers should not need `system` access merely to express a path-filtered repository search.
 
 `read_file_range` returns at most 500 complete normalized lines and 64 KiB per call, together with the full-file SHA-256, total line count, and `nextLine` continuation metadata. The full file remains subject to the 1 MiB UTF-8 limit. Every structured repository job receives a worker-local deadline equal to at most half the hosted request window and never more than 8 seconds. After that deadline, the read lane remains occupied until the current filesystem operation settles, any late directory handle is closed, and the worker returns `scan_timeout`; this bounds stalled work instead of accumulating background I/O.
 
@@ -163,6 +141,8 @@ type WorkerJob =
       caseSensitive?: boolean;
       maxResults?: number;
       extensions?: string[];
+      includeGlobs?: string[];
+      excludeGlobs?: string[];
       timeoutMs: number;
     }
   | {

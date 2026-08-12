@@ -8,7 +8,6 @@ import {
   accessProfileSummary,
   combinedCompatibilityNotice,
   deviceForSession,
-  reenrollRejectedDevice,
   statusMessage,
   visibleWorker,
   workspaceLabelNotice,
@@ -29,6 +28,7 @@ test("aborts device pairing when the managed session stops", async () => {
     endpoints,
     {
       loadDeviceCredential: async () => null,
+      withDevicePairingLease: async <T>(action: () => Promise<T>) => await action(),
       pairDevice: async (_endpoints, signal) => {
         assert.equal(signal, controller.signal);
         pairingStarted();
@@ -66,6 +66,7 @@ function pairingDependencies() {
     loadDeviceCredential: async () => null,
     pairDevice: async () => pairingResult,
     saveDeviceCredential: async () => undefined,
+    withDevicePairingLease: async <T>(action: () => Promise<T>) => await action(),
   };
 }
 
@@ -79,6 +80,25 @@ test("pairs and saves a computer when no device credential exists", async () => 
   });
   assert.equal(result, pairingResult);
   assert.equal(saved, pairingResult);
+});
+
+test("rechecks the device store after acquiring the pairing lease", async () => {
+  let loads = 0;
+  let pairCalls = 0;
+  const result = await deviceForSession(pairingEndpoints, {
+    ...pairingDependencies(),
+    loadDeviceCredential: async () => {
+      loads += 1;
+      return loads === 1 ? null : pairingResult;
+    },
+    pairDevice: async () => {
+      pairCalls += 1;
+      return pairingResult;
+    },
+  });
+  assert.equal(loads, 2);
+  assert.equal(pairCalls, 0);
+  assert.equal(result, pairingResult);
 });
 
 test("reuses an existing paired computer without user OAuth", async () => {
@@ -116,31 +136,6 @@ test("drops a pairing from another relay before pairing again", async () => {
     }),
     deleteDeviceCredential: async () => {
       deleteCalls += 1;
-    },
-    pairDevice: async () => {
-      pairCalls += 1;
-      return pairingResult;
-    },
-  });
-
-  assert.equal(deleteCalls, 1);
-  assert.equal(pairCalls, 1);
-  assert.equal(result, pairingResult);
-});
-
-test("re-pairs after a rejected device credential is removed", async () => {
-  let stored: StoredDeviceCredential | null = {
-    ...pairingResult,
-    deviceName: "Revoked device",
-  };
-  let deleteCalls = 0;
-  let pairCalls = 0;
-  const result = await reenrollRejectedDevice(pairingEndpoints, {
-    ...pairingDependencies(),
-    loadDeviceCredential: async () => stored,
-    deleteDeviceCredential: async () => {
-      deleteCalls += 1;
-      stored = null;
     },
     pairDevice: async () => {
       pairCalls += 1;

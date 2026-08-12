@@ -30,11 +30,13 @@ const unused = async (): Promise<never> => {
 
 test("pairs and self-revokes a headless computer without user OAuth", async (context) => {
   let revoked = false;
+  let enrollCalls = 0;
   const pairings = new DevicePairingState();
   const state = new RouterState();
   const store: RelayStore = {
     accountIdForSubject: unused,
     enrollDevice: async (requestedAccountId, name, platform) => {
+      enrollCalls += 1;
       assert.equal(requestedAccountId, accountId);
       return {
         device: { ...device, name, platform },
@@ -99,6 +101,23 @@ test("pairs and self-revokes a headless computer without user OAuth", async (con
   assert.equal(paired.device.id, deviceId);
   assert.equal(paired.device.name, "gpu-box");
   assert.equal(paired.device_token, token);
+
+  const retried = await fetch(
+    `${origin}/v1/device-pairings/${challenge.pairing_id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pairing_secret: challenge.pairing_secret }),
+    },
+  );
+  assert.equal(retried.status, 201);
+  const retriedPairing = await retried.json() as {
+    device: { id: string; name: string };
+    device_token: string;
+  };
+  assert.equal(retriedPairing.device.id, deviceId);
+  assert.equal(retriedPairing.device_token, token);
+  assert.equal(enrollCalls, 1);
 
   const unpaired = await fetch(`${origin}/device`, {
     method: "DELETE",

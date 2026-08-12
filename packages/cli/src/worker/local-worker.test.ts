@@ -179,6 +179,17 @@ test("blocks recognizable authentication data before it leaves the worker", asyn
   assert.equal(searchInputResult.ok, false);
   assert.equal(searchInputResult.error?.code, "restricted_data_blocked");
 
+  const restrictedGlobResult = await worker.handle({
+    type: "search_text",
+    requestId: "00000000-0000-4000-8000-000000000043",
+    query: "safe",
+    includeGlobs: [key],
+    timeoutMs: 1_000,
+  });
+  assert.equal(restrictedGlobResult.ok, false);
+  assert.equal(restrictedGlobResult.error?.code, "restricted_data_blocked");
+  assert.doesNotMatch(JSON.stringify(restrictedGlobResult), new RegExp(key));
+
   const readResult = await worker.handle({
     type: "read_file",
     requestId: "00000000-0000-4000-8000-000000000007",

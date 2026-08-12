@@ -170,9 +170,9 @@ const pairDeviceInputSchema = z
   .strict();
 const pairDeviceOutputSchema = z
   .object({
-    paired: z
+    approved: z
       .literal(true)
-      .describe("Whether the requested computer pairing was approved."),
+      .describe("Whether the authenticated Glossa account approved this one-time pairing request."),
     device: z
       .object({
         name: z.string().describe("Computer name supplied by the pairing Glossa CLI."),
@@ -528,7 +528,7 @@ const MCP_TOOL_COPY = {
   },
   search_text: {
     title: "Search Workspace Text",
-    description: "Use this to search bounded UTF-8 files in the exposed workspace without running a shell command. It supports literal or regex matching plus extension and root-relative include/exclude glob filters, and returns matching lines, relative paths, and scan statistics. Content results that appear to contain access credentials or authentication secrets are blocked. Prefer these structured controls over run_command/ripgrep when they can express the requested repository search.",
+    description: "Use this to search bounded UTF-8 files in the exposed workspace without running a shell command. It searches literal text with optional extension and root-relative include/exclude glob filters, and returns matching lines, relative paths, and scan statistics. Content results that appear to contain access credentials or authentication secrets are blocked. Prefer these structured controls over run_command/ripgrep when they can express the requested repository search.",
   },
   read_file_range: {
     title: "Read Workspace File Range",
@@ -981,10 +981,10 @@ function registerTools(
         ? "[restricted platform blocked]"
         : approval.pairing.platform;
       return structuredResult({
-        paired: true,
+        approved: true,
         device: { name, platform },
         expiresAt: approval.pairing.expiresAt,
-        instructions: "Pairing approved. Keep the Glossa CLI running on that computer; it will connect automatically and store only its revocable device credential.",
+        instructions: "Pairing approval accepted. Keep the Glossa CLI running on that computer while it finishes credential issuance and connects automatically.",
       });
     },
   );
@@ -1096,7 +1096,7 @@ function registerTools(
         openWorldHint: false,
       },
     },
-    async ({ workspaceId, query, path, matchMode, caseSensitive, maxResults, extensions, includeGlobs, excludeGlobs }) => {
+    async ({ workspaceId, query, path, caseSensitive, maxResults, extensions, includeGlobs, excludeGlobs }) => {
       const deviceId = workspaceId;
       if (containsRestrictedAuthenticationData({ query, path, extensions, includeGlobs, excludeGlobs })) {
         return restrictedDataResult();
@@ -1110,7 +1110,6 @@ function registerTools(
           timeoutMs: structuredReadTimeoutMs(config),
           query,
           ...(path ? { path } : {}),
-          ...(matchMode === undefined ? {} : { matchMode }),
           ...(caseSensitive === undefined ? {} : { caseSensitive }),
           ...(maxResults === undefined ? {} : { maxResults }),
           ...(extensions ? { extensions } : {}),

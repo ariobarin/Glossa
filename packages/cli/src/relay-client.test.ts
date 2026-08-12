@@ -5,7 +5,6 @@ import {
   beginDevicePairing,
   completeDevicePairing,
   DevicePairingExpiredError,
-  enrollDevice,
   listDevices,
   renameDevice,
   revokeDevice,
@@ -184,45 +183,4 @@ test("accepts an older relay without inventing worker counts", async () => {
     }],
   }));
   assert.equal(devices[0]?.activeWorkers, null);
-});
-
-test("device name conflicts choose a free name automatically", async () => {
-  const requests: Array<{ method: string; name: string | undefined }> = [];
-  const result = await enrollDevice(
-    endpoints,
-    credentials,
-    "Test PC",
-    async (_input, init) => {
-      const method = init?.method ?? "GET";
-      const name = init?.body
-        ? (JSON.parse(String(init.body)) as { name: string }).name
-        : undefined;
-      requests.push({ method, name });
-      if (requests.length === 1) {
-        return Response.json(
-          { error: "device_name_conflict" },
-          { status: 409 },
-        );
-      }
-      if (requests.length === 2) {
-        return Response.json({
-          devices: [
-            { ...device, name: "Test PC" },
-            { ...device, id: "device-2", name: "Test PC-2" },
-          ],
-        });
-      }
-      return Response.json({
-        device: { id: "device-3", name },
-        device_token: "device-token-3",
-      }, { status: 201 });
-    },
-  );
-
-  assert.equal(result.deviceName, "Test PC-3");
-  assert.deepEqual(requests, [
-    { method: "POST", name: "Test PC" },
-    { method: "GET", name: undefined },
-    { method: "POST", name: "Test PC-3" },
-  ]);
 });

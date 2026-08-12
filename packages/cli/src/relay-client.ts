@@ -192,18 +192,6 @@ export async function listDevices(
   return parseDevices(data.devices);
 }
 
-export async function accountOwnsDevice(
-  endpoints: RelayEndpoints,
-  credentials: StoredCredentials,
-  deviceId: string,
-  fetchRequest: FetchLike = fetch,
-): Promise<boolean> {
-  const devices = await listDevices(endpoints, credentials, fetchRequest);
-  return devices.some(
-    (device) => device.id === deviceId && device.revokedAt === null,
-  );
-}
-
 export async function beginDevicePairing(
   endpoints: RelayEndpoints,
   deviceName: string,
@@ -297,69 +285,6 @@ export async function completeDevicePairing(
     deviceName: data.device.name,
     token: data.device_token,
   };
-}
-
-export async function enrollDevice(
-  endpoints: RelayEndpoints,
-  credentials: StoredCredentials,
-  deviceName: string,
-  fetchRequest: FetchLike = fetch,
-): Promise<StoredDeviceCredential> {
-  const baseName = deviceNameSchema.parse(deviceName);
-  let name = baseName;
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices/enroll`, {
-      method: "POST",
-      headers: {
-        authorization: `${credentials.tokenType} ${credentials.accessToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ name, platform: `${process.platform}-${process.arch}` }),
-    });
-    let data: EnrollmentResponse = {};
-    try {
-      data = (await response.json()) as EnrollmentResponse;
-    } catch {
-      // Status-specific errors below remain stable for non-JSON proxy responses.
-    }
-    if (
-      response.status === 409 &&
-      data.error === "device_name_conflict" &&
-      attempt < 2
-    ) {
-      const activeNames = new Set(
-        (await listDevices(endpoints, credentials, fetchRequest))
-          .filter((device) => device.revokedAt === null)
-          .map((device) => device.name),
-      );
-      for (let suffix = 2; ; suffix += 1) {
-        const ending = `-${suffix}`;
-        const candidate = `${baseName.slice(0, 80 - ending.length)}${ending}`;
-        if (!activeNames.has(candidate)) {
-          name = deviceNameSchema.parse(candidate);
-          break;
-        }
-      }
-      continue;
-    }
-    if (!response.ok) throw relayError(response.status, data);
-    if (
-      typeof data.device?.id !== "string" ||
-      typeof data.device.name !== "string" ||
-      typeof data.device_token !== "string"
-    ) {
-      throw new Error("The Glossa relay returned an invalid device enrollment response.");
-    }
-    return {
-      relayOrigin: endpoints.relayOrigin,
-      deviceId: data.device.id,
-      deviceName: data.device.name,
-      token: data.device_token,
-    };
-  }
-
-  throw new Error("Glossa could not enroll this computer.");
 }
 
 export async function renameDevice(

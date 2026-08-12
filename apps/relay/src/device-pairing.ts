@@ -24,6 +24,9 @@ interface PendingPairing {
   platform: string | null;
   expiresAtMs: number;
   approvedAccountId?: string;
+  completion?: unknown;
+  completionPromise?: Promise<unknown>;
+  expiryTimer?: NodeJS.Timeout;
 }
 
 export interface DevicePairingRequest {
@@ -41,16 +44,17 @@ export interface DevicePairingApproval {
   expiresAt: string;
 }
 
-export type DevicePairingCompletion =
+export interface ApprovedPairingIdentity {
+  accountId: string;
+  name: string;
+  platform: string | null;
+}
+
+export type DevicePairingCompletion<T> =
   | { status: "pending" }
   | { status: "expired" }
   | { status: "invalid" }
-  | {
-      status: "approved";
-      accountId: string;
-      name: string;
-      platform: string | null;
-    };
+  | { status: "approved"; value: T };
 
 export type DevicePairingApprovalResult =
   | { status: "approved"; pairing: DevicePairingApproval }
@@ -109,14 +113,17 @@ export class DevicePairingState {
     const pairingSecret = this.#randomBytes(32).toString("base64url");
     const userCode = this.#createUserCode();
     const expiresAtMs = this.#now() + DEVICE_PAIRING_TTL_MS;
-    this.#byId.set(pairingId, {
+    const pairing: PendingPairing = {
       pairingId,
       userCode,
       secretHash: secretHash(pairingSecret),
       name,
       platform,
       expiresAtMs,
-    });
+    };
+    pairing.expiryTimer = setTimeout(() => this.#delete(pairing), DEVICE_PAIRING_TTL_MS);
+    pairing.expiryTimer.unref();
+    this.#byId.set(pairingId, pairing);
     this.#idByCode.set(normalizedUserCode(userCode), pairingId);
     return {
       pairingId,
@@ -151,7 +158,11 @@ export class DevicePairingState {
     };
   }
 
-  complete(pairingId: string, pairingSecret: string): DevicePairingCompletion {
+  async complete<T>(
+    pairingId: string,
+    pairingSecret: string,
+    issue: (pairing: ApprovedPairingIdentity) => Promise<T>,
+  ): Promise<DevicePairingCompletion<T>> {
     const pairing = this.#byId.get(pairingId);
     if (!pairing) return { status: "invalid" };
     if (!sameHash(pairing.secretHash, secretHash(pairingSecret))) {
@@ -162,14 +173,36 @@ export class DevicePairingState {
       return { status: "expired" };
     }
     if (!pairing.approvedAccountId) return { status: "pending" };
+    if (pairing.completion !== undefined) {
+      return { status: "approved", value: pairing.completion as T };
+    }
 
-    this.#delete(pairing);
-    return {
-      status: "approved",
-      accountId: pairing.approvedAccountId,
-      name: pairing.name,
-      platform: pairing.platform,
-    };
+    if (!pairing.completionPromise) {
+      const approved: ApprovedPairingIdentity = {
+        accountId: pairing.approvedAccountId,
+        name: pairing.name,
+        platform: pairing.platform,
+      };
+      pairing.completionPromise = issue(approved);
+    }
+
+    const activePromise = pairing.completionPromise as Promise<T>;
+    try {
+      const value = await activePromise;
+      if (this.#byId.get(pairingId) === pairing) {
+        pairing.completion = value;
+        delete pairing.completionPromise;
+      }
+      return { status: "approved", value };
+    } catch (error) {
+      if (
+        this.#byId.get(pairingId) === pairing &&
+        pairing.completionPromise === activePromise
+      ) {
+        delete pairing.completionPromise;
+      }
+      throw error;
+    }
   }
 
   #createUserCode(): string {
@@ -185,6 +218,7 @@ export class DevicePairingState {
   }
 
   #delete(pairing: PendingPairing): void {
+    if (pairing.expiryTimer) clearTimeout(pairing.expiryTimer);
     this.#byId.delete(pairing.pairingId);
     this.#idByCode.delete(normalizedUserCode(pairing.userCode));
   }

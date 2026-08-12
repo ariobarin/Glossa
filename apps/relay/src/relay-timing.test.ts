@@ -15,6 +15,10 @@ test("classifies only bounded relay metadata", () => {
   } } as Request), "mcp:read_file");
   assert.equal(relayOperation({ path: "/mcp", body: {
     method: "tools/call",
+    params: { name: "pair_device", arguments: { code: "ABCDE-FGHJK" } },
+  } } as Request), "mcp:pair_device");
+  assert.equal(relayOperation({ path: "/mcp", body: {
+    method: "tools/call",
     params: { name: "user-controlled-value" },
   } } as Request), "mcp:tools/call");
   assert.equal(
@@ -22,8 +26,12 @@ test("classifies only bounded relay metadata", () => {
     "http:/v1/devices/:deviceId",
   );
   assert.equal(
-    relayOperation({ path: "/v1/devices/enroll", body: {} } as Request),
-    "http:/v1/devices/enroll",
+    relayOperation({ path: "/v1/device-pairings", body: {} } as Request),
+    "http:/v1/device-pairings",
+  );
+  assert.equal(
+    relayOperation({ path: "/v1/device-pairings/00000000-0000-4000-8000-000000000001/complete", body: {} } as Request),
+    "http:/v1/device-pairings/:pairingId/complete",
   );
   assert.equal(
     relayOperation({ path: "/v1/devices", body: {} } as Request),

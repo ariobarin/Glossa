@@ -12,6 +12,7 @@ import {
   saveDeviceCredential,
   type StoredDeviceCredential,
 } from "../device-store.js";
+import { withDevicePairingLease } from "../device-pairing-lock.js";
 import { pairDevice } from "../device-pairing.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import { LocalWorker } from "./local-worker.js";
@@ -174,6 +175,10 @@ export interface ManagedDeviceDependencies {
   deleteDeviceCredential?: typeof deleteDeviceCredential;
   saveDeviceCredential?: typeof saveDeviceCredential;
   pairDevice?: typeof pairDevice;
+  withDevicePairingLease?: <T>(
+    action: () => Promise<T>,
+    signal?: AbortSignal,
+  ) => Promise<T>;
 }
 
 export async function deviceForSession(
@@ -185,26 +190,23 @@ export async function deviceForSession(
   const removeDevice = dependencies.deleteDeviceCredential ?? deleteDeviceCredential;
   const saveDevice = dependencies.saveDeviceCredential ?? saveDeviceCredential;
   const pair = dependencies.pairDevice ?? pairDevice;
+  const withPairingLease = dependencies.withDevicePairingLease ?? withDevicePairingLease;
 
   signal?.throwIfAborted();
   const stored = await loadDevice();
   if (stored?.relayOrigin === endpoints.relayOrigin) return stored;
-  if (stored) await removeDevice();
 
-  signal?.throwIfAborted();
-  const paired = await pair(endpoints, signal);
-  await saveDevice(paired);
-  return paired;
-}
+  return await withPairingLease(async () => {
+    signal?.throwIfAborted();
+    const current = await loadDevice();
+    if (current?.relayOrigin === endpoints.relayOrigin) return current;
+    if (current) await removeDevice();
 
-export async function reenrollRejectedDevice(
-  endpoints: RelayEndpoints,
-  dependencies: ManagedDeviceDependencies = {},
-  signal?: AbortSignal,
-): Promise<StoredDeviceCredential> {
-  const remove = dependencies.deleteDeviceCredential ?? deleteDeviceCredential;
-  await remove();
-  return await deviceForSession(endpoints, dependencies, signal);
+    signal?.throwIfAborted();
+    const paired = await pair(endpoints, signal);
+    await saveDevice(paired);
+    return paired;
+  }, signal);
 }
 
 function retryMessage(retryInMs: number): string {

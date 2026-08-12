@@ -295,7 +295,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const searchTextInputSchema = byName.get("search_text")?.inputSchema as {
     properties?: Record<string, unknown>;
   };
-  assert.ok(searchTextInputSchema.properties?.matchMode);
+  assert.equal(searchTextInputSchema.properties?.matchMode, undefined);
   assert.ok(searchTextInputSchema.properties?.includeGlobs);
   assert.ok(searchTextInputSchema.properties?.excludeGlobs);
 
@@ -326,7 +326,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
   assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
-  assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
+  assert.match(byName.get("search_text")?.description ?? "", /literal text.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
   assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
   assert.match(byName.get("cancel_command")?.description ?? "", /does not undo.*effects/);
   const writeFileSchema = byName.get("write_file")?.inputSchema as {
@@ -561,17 +561,26 @@ test("approves an explicit one-time computer pairing", async (context) => {
   });
   assert.equal(result.isError, undefined);
   assert.deepEqual(result.structuredContent, {
-    paired: true,
+    approved: true,
     device: { name: "gpu-box", platform: "linux-x64" },
     expiresAt: pending.expiresAt,
-    instructions: "Pairing approved. Keep the Glossa CLI running on that computer; it will connect automatically and store only its revocable device credential.",
+    instructions: "Pairing approval accepted. Keep the Glossa CLI running on that computer while it finishes credential issuance and connects automatically.",
   });
-  assert.deepEqual(pairings.complete(pending.pairingId, pending.pairingSecret), {
-    status: "approved",
-    accountId,
-    name: "gpu-box",
-    platform: "linux-x64",
-  });
+  assert.deepEqual(
+    await pairings.complete(
+      pending.pairingId,
+      pending.pairingSecret,
+      async (approved) => approved,
+    ),
+    {
+      status: "approved",
+      value: {
+        accountId,
+        name: "gpu-box",
+        platform: "linux-x64",
+      },
+    },
+  );
 });
 
 test("returns actionable permission errors without dispatching forbidden work", async (context) => {

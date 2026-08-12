@@ -904,7 +904,6 @@ export class FileService {
   async searchText(options: {
     query: string;
     path?: string;
-    matchMode?: "literal" | "regex";
     caseSensitive?: boolean;
     maxResults?: number;
     extensions?: string[];
@@ -943,15 +942,10 @@ export class FileService {
         throw new WorkerError("invalid_search", "Search glob pattern is invalid.");
       }
     };
-    let matcher: RegExp;
-    try {
-      matcher = new RegExp(
-        options.matchMode === "regex" ? options.query : escapeRegExp(options.query),
-        options.caseSensitive === true ? "u" : "iu",
-      );
-    } catch {
-      throw new WorkerError("invalid_search", "Search regular expression is invalid.");
-    }
+    const matcher = new RegExp(
+      escapeRegExp(options.query),
+      options.caseSensitive === true ? "u" : "iu",
+    );
     const start = await this.#withinDeadline(
       this.policy.resolveExisting(options.path ?? "."),
       deadlineAt,

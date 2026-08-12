@@ -455,9 +455,15 @@ export function buildRoutes(
       ) {
         return;
       }
-      const completed = pairingState.complete(
+      const completed = await pairingState.complete(
         parsedId.data,
         parsed.data.pairing_secret,
+        async (approved) => await enrollPairedDevice(
+          store,
+          approved.accountId,
+          approved.name,
+          approved.platform,
+        ),
       );
       if (completed.status === "pending") {
         response.status(202).json({ status: "authorization_pending" });
@@ -471,58 +477,10 @@ export function buildRoutes(
         response.status(404).json({ error: "pairing_not_found" });
         return;
       }
-      try {
-        const enrolled = await enrollPairedDevice(
-          store,
-          completed.accountId,
-          completed.name,
-          completed.platform,
-        );
-        response.status(201).json({
-          device: publicDevice(enrolled.device, state),
-          device_token: enrolled.token,
-        });
-      } catch (error) {
-        if (!isUniqueViolation(error)) throw error;
-        response.status(409).json({ error: "device_name_conflict" });
-      }
-    },
-  );
-
-  router.post(
-    "/v1/devices/enroll",
-    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
-    async (request: AuthenticatedRequest, response: Response) => {
-      if (
-        rejectRateLimit(
-          response,
-          enrollmentRateLimiter,
-          request.auth!.subject,
-        )
-      ) {
-        return;
-      }
-      const parsed = enrollSchema.safeParse(request.body);
-      if (!parsed.success) {
-        rejectInvalidInput(response);
-        return;
-      }
-      const accountId = await activeAccountId(request, response, store);
-      if (!accountId) return;
-      try {
-        const enrolled = await store.enrollDevice(
-          accountId,
-          parsed.data.name,
-          parsed.data.platform ?? null,
-        );
-        response.status(201).json({
-          device: publicDevice(enrolled.device, state),
-          device_token: enrolled.token,
-        });
-      } catch (error) {
-        if (!isUniqueViolation(error)) throw error;
-        response.status(409).json({ error: "device_name_conflict" });
-      }
+      response.status(201).json({
+        device: publicDevice(completed.value.device, state),
+        device_token: completed.value.token,
+      });
     },
   );
 

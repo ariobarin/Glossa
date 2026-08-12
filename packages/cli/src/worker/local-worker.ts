@@ -34,6 +34,8 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
         query: job.query,
         path: job.path,
         extensions: job.extensions,
+        includeGlobs: job.includeGlobs,
+        excludeGlobs: job.excludeGlobs,
       });
     case "read_file_range":
       return containsRestrictedAuthenticationData(job.path);
@@ -152,7 +154,6 @@ export class LocalWorker {
           value = await this.files.searchText({
             query: job.query,
             ...(job.path ? { path: job.path } : {}),
-            ...(job.matchMode === undefined ? {} : { matchMode: job.matchMode }),
             ...(job.caseSensitive === undefined
               ? {}
               : { caseSensitive: job.caseSensitive }),

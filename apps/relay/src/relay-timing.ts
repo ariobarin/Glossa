@@ -11,6 +11,7 @@ const MCP_TOOL_NAMES = new Set([
   "list_workspaces",
   "make_directory",
   "move_path",
+  "pair_device",
   "read_command_output",
   "read_file",
   "read_file_range",
@@ -22,7 +23,7 @@ const MCP_TOOL_NAMES = new Set([
 const FIXED_PATHS = new Set([
   "/healthz",
   "/.well-known/oauth-protected-resource",
-  "/v1/devices/enroll",
+  "/v1/device-pairings",
   "/device/register",
   "/device/poll",
   "/device/result",
@@ -62,6 +63,9 @@ export function relayOperation(request: Pick<Request, "path" | "body">): string 
     return mcpOperation(request.body);
   }
   if (FIXED_PATHS.has(request.path)) return `http:${request.path}`;
+  if (request.path.startsWith("/v1/device-pairings/")) {
+    return "http:/v1/device-pairings/:pairingId/complete";
+  }
   if (request.path.startsWith("/v1/devices/")) return "http:/v1/devices/:deviceId";
   return "http:other";
 }
