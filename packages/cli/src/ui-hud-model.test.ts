@@ -25,7 +25,7 @@ test("workspace is the default view with an activity preview", () => {
   assert.match(lines[0]!, /Glossa \/ Workspace\s+Connected/);
   assert.match(output, /WORKSPACE/);
   assert.match(output, /DEVICE/);
-  assert.match(output, /ACTIVITY\s+A Expand/);
+  assert.match(output, /ACTIVITY\s+A View all/);
   assert.match(output, /No activity yet/);
   assert.match(lines.slice(-3).join("\n"), /A Activity/);
   assert.match(lines.slice(-3).join("\n"), /W Workspace/);
@@ -64,6 +64,7 @@ test("activity view keeps state and age on the activity row", () => {
   );
   assert.doesNotMatch(empty, /AGENT/);
   assert.match(empty.split("\n")[0]!, /Glossa \/ Activity\s+Connected/);
+  assert.match(empty, /ACTION\s+DETAILS\s+WHEN/);
   assert.match(empty, /No activity yet/);
 
   const job = {
@@ -147,8 +148,8 @@ test("shows the selected access boundary in the workspace screen", () => {
   );
 
   assert.match(output, /ACCESS/);
-  assert.match(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
-  assert.match(output, /Read \+ write files \+ commands · inherits this OS account's permissions/);
+  assert.match(output, /Mode\s+Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
+  assert.match(output, /Allows\s+Read \+ write files \+ commands · OS account permissions apply/);
 });
 
 test("access handoff keeps connection health stable until replacement connects", () => {
