@@ -130,7 +130,7 @@ test("workspace access handoff has no visible intermediate frame", () => {
   );
 
   assert.equal(pending, confirmed);
-  assert.match(pending, /ACCESS\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
+  assert.match(pending, /ACCESS\s+← Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
 });
 
