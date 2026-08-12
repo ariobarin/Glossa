@@ -41,7 +41,7 @@ export async function announceConnectHint(
   log: (message: string) => void,
 ): Promise<boolean> {
   if (await store.exists()) return false;
-  log(`Next: add Glossa in ChatGPT. Follow the quickstart at ${CONNECT_HINT_URL}.`);
+  log(`Next: return to ChatGPT and use Glossa. If it is not connected yet, follow ${CONNECT_HINT_URL}.`);
   await store.mark();
   return true;
 }

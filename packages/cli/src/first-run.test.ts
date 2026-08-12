@@ -30,6 +30,7 @@ test("announces the connect hint and marks the store when not seen", async () =>
   assert.equal(announced, true);
   assert.equal(marked, true);
   assert.equal(messages.length, 1);
+  assert.match(messages[0]!, /return to ChatGPT/i);
   assert.match(messages[0]!, new RegExp(CONNECT_HINT_URL));
 });
 
