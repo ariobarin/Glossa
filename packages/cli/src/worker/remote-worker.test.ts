@@ -190,6 +190,55 @@ test("preserves access profile while falling back to production 1.0 capabilities
   }
 });
 
+test("refuses and unregisters a non-system profile that the relay does not confirm", async () => {
+  const controller = new AbortController();
+  let unregisterCalls = 0;
+  let pollCalls = 0;
+  const generation = "00000000-0000-4000-8000-000000000001";
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      assert.equal(body.accessProfile, "read-only");
+      return Response.json({
+        workerId: body.workerId,
+        generation,
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/unregister") {
+      unregisterCalls += 1;
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/poll") {
+      pollCalls += 1;
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await assert.rejects(
+    new RemoteWorker({
+      origin: "https://relay.glossa.test",
+      deviceToken: "device-token",
+      workerVersion: "0.2.0-beta.3",
+      accessProfile: "read-only",
+      worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+      signal: controller.signal,
+      fetcher,
+    }).run(),
+    RelayAccessProfileUnsupportedError,
+  );
+
+  assert.equal(unregisterCalls, 1);
+  assert.equal(pollCalls, 0);
+});
+
 test("refuses a non-system profile when the relay cannot represent profiles", async () => {
   const controller = new AbortController();
   const registerBodies: Array<Record<string, unknown>> = [];
