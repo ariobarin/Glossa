@@ -130,7 +130,7 @@ test("workspace access handoff has no visible intermediate frame", () => {
   );
 
   assert.equal(pending, confirmed);
-  assert.match(pending, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
+  assert.match(pending, /ACCESS\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
 });
 
@@ -362,11 +362,11 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   await waitFor(() => changes.length === 1);
   assert.deepEqual(changes, ["system"]);
 
-  await waitFor(() => rendered.includes("[ System ]"));
+  await waitFor(() => rendered.includes("OS account permissions apply"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 2);
   assert.deepEqual(changes, ["system", "workspace"]);
-  await waitFor(() => rendered.includes("[ Workspace ]"));
+  await waitFor(() => rendered.includes("Commands disabled"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 3);
   assert.deepEqual(changes, ["system", "workspace", "read-only"]);

@@ -121,10 +121,10 @@ function activityAge(updatedAt: number | undefined, working: boolean, now: numbe
   return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
 }
 
-function activityColor(activity: HudActivity): string {
-  if (activity.state === "working") return COLORS.ink;
+function activityAgeColor(activity: HudActivity): string {
   if (activity.state === "failed") return COLORS.coral;
-  return COLORS.purpleReadable;
+  if (activity.state === "working") return COLORS.purpleReadable;
+  return COLORS.muted;
 }
 
 function activitySummary(activity: HudActivity): string {
@@ -153,40 +153,20 @@ function adjacentAccessProfile(
   return ACCESS_PROFILES[index + direction];
 }
 
-function AccessProfileLadder({ accessProfile, color }: {
-  accessProfile: WorkerAccessProfile;
-  color: boolean;
-}): React.ReactNode {
-  const activeTone = accessProfile === "system" ? COLORS.coral : COLORS.purpleReadable;
-  return (
-    <Text wrap="truncate">
-      <Text bold color={color ? COLORS.muted : undefined}>Mode  </Text>
-      <Text bold>
-        {ACCESS_PROFILES.map((profile, index) => (
-          <React.Fragment key={profile}>
-            {index > 0 ? <Text color={color ? COLORS.line : undefined}>  ─  </Text> : null}
-            <Text
-              color={color
-                ? profile === accessProfile
-                  ? activeTone
-                  : COLORS.muted
-                : undefined}
-            >
-              {profile === accessProfile
-                ? `[ ${accessProfileLabel(profile)} ]`
-                : accessProfileLabel(profile)}
-            </Text>
-          </React.Fragment>
-        ))}
-      </Text>
-    </Text>
-  );
-}
-
-function accessProfileCapability(accessProfile: WorkerAccessProfile): string {
-  if (accessProfile === "read-only") return "Read files only · no changes · no commands";
-  if (accessProfile === "workspace") return "Read + write files · commands disabled";
-  return "Read + write files + commands · OS account permissions apply";
+function accessProfileCapabilities(accessProfile: WorkerAccessProfile): {
+  summary: string;
+  detail: string;
+} {
+  if (accessProfile === "read-only") {
+    return { summary: "Read files only", detail: "No changes · no commands" };
+  }
+  if (accessProfile === "workspace") {
+    return { summary: "Read + write files", detail: "Commands disabled" };
+  }
+  return {
+    summary: "Read + write files + commands",
+    detail: "OS account permissions apply",
+  };
 }
 
 function primaryFooterHints(): HudHint[] {
@@ -452,7 +432,7 @@ function ActivityPreviewHeader({ usable, color }: {
   return (
     <Box width={usable}>
       <Box flexGrow={1} flexShrink={1}>
-        <SectionTitle color={color} tone={COLORS.muted}>Activity</SectionTitle>
+        <SectionTitle color={color}>Activity</SectionTitle>
       </Box>
       {usable >= 24 ? (
         <Box marginLeft={1} flexShrink={0}>
@@ -477,35 +457,6 @@ function activityLayout(usable: number): {
   };
 }
 
-function ActivityColumnHeading({ usable, color }: {
-  usable: number;
-  color: boolean;
-}): React.ReactNode {
-  const { toolWidth, showSummary, showAge } = activityLayout(usable);
-  return (
-    <Box width={usable} height={1} flexShrink={0}>
-      <Box width={toolWidth} flexShrink={0}>
-        <Text color={color ? COLORS.muted : undefined}>ACTION</Text>
-      </Box>
-      {showSummary ? (
-        <Box marginLeft={2} flexGrow={1} flexShrink={1}>
-          <Text color={color ? COLORS.muted : undefined}>DETAILS</Text>
-        </Box>
-      ) : null}
-      {showAge ? (
-        <Box
-          width={ACTIVITY_AGE_COLUMN_WIDTH}
-          marginLeft={2}
-          flexShrink={0}
-          justifyContent="flex-end"
-        >
-          <Text color={color ? COLORS.muted : undefined}>WHEN</Text>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
-
 function WorkspaceView({ state, usable, bodyBudget, color, now }: {
   state: HudState;
   usable: number;
@@ -518,7 +469,7 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
     state.message && (state.connection === "retrying" || state.connection === "error"),
   );
   let fixedLines = 3;
-  if (displayedAccessProfile) fixedLines += 4;
+  if (displayedAccessProfile) fixedLines += 5;
   if (state.deviceName) fixedLines += 3;
   if (showConnectionMessage) fixedLines += 2;
   const activityCapacity = Math.min(3, Math.max(0, bodyBudget - fixedLines - 2));
@@ -535,12 +486,14 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
         <>
           <Blank />
           <SectionTitle color={color}>Access</SectionTitle>
-          <AccessProfileLadder accessProfile={displayedAccessProfile} color={color} />
-          <Text wrap="truncate">
-            <Text bold color={color ? COLORS.muted : undefined}>Allows  </Text>
-            <Text color={color ? COLORS.muted : undefined}>
-              {accessProfileCapability(displayedAccessProfile)}
-            </Text>
+          <Text bold color={color ? COLORS.ink : undefined} wrap="truncate">
+            {accessProfileLabel(displayedAccessProfile)}
+          </Text>
+          <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+            {accessProfileCapabilities(displayedAccessProfile).summary}
+          </Text>
+          <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+            {accessProfileCapabilities(displayedAccessProfile).detail}
           </Text>
         </>
       ) : null}
@@ -591,7 +544,7 @@ function ActivityRow({ activity, usable, color, now }: {
       <Box width={toolWidth} flexShrink={0}>
         <Text
           bold
-          color={color ? activityColor(activity) : undefined}
+          color={color ? COLORS.ink : undefined}
           wrap="truncate"
         >
           {activity.tool}
@@ -611,7 +564,7 @@ function ActivityRow({ activity, usable, color, now }: {
           flexShrink={0}
           justifyContent="flex-end"
         >
-          <Text color={color ? COLORS.muted : undefined}>{age}</Text>
+          <Text color={color ? activityAgeColor(activity) : undefined}>{age}</Text>
         </Box>
       ) : null}
     </Box>
@@ -632,7 +585,7 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
 
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
-      <ActivityColumnHeading usable={usable} color={color} />
+      <Blank />
       {state.activities.length === 0 ? (
         <Text color={color ? COLORS.muted : undefined}>No activity yet.</Text>
       ) : visible.map((activity) => (

@@ -64,7 +64,7 @@ test("activity view keeps state and age on the activity row", () => {
   );
   assert.doesNotMatch(empty, /AGENT/);
   assert.match(empty.split("\n")[0]!, /Glossa \/ Activity\s+Connected/);
-  assert.match(empty, /ACTION\s+DETAILS\s+WHEN/);
+  assert.doesNotMatch(empty, /ACTION\s+DETAILS\s+WHEN/);
   assert.match(empty, /No activity yet/);
 
   const job = {
@@ -148,8 +148,8 @@ test("shows the selected access boundary in the workspace screen", () => {
   );
 
   assert.match(output, /ACCESS/);
-  assert.match(output, /Mode\s+Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
-  assert.match(output, /Allows\s+Read \+ write files \+ commands · OS account permissions apply/);
+  assert.match(output, /ACCESS\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
+  assert.doesNotMatch(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
 });
 
 test("access handoff keeps connection health stable until replacement connects", () => {
