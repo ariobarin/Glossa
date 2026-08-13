@@ -88,7 +88,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `pair_device` | No | No | No | Approves only the short one-time pairing code the user explicitly provides from a Glossa CLI. Approval binds that computer to the authenticated account so the CLI can receive a revocable device credential. |
 | `read_file` | Yes | No | No | Reads one bounded relative UTF-8 file inside the exposed root. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |
-| `search_text` | Yes | No | No | Searches bounded UTF-8 files for literal text with optional extension and root-relative include/exclude glob filters, without invoking a shell. |
+| `search_text` | Yes | No | No | Searches bounded UTF-8 files with literal or regex matching plus optional extension and root-relative include/exclude glob filters, without invoking a shell. |
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
 | `write_file` | No | Yes | No | Creates one new file when `expectedSha256` is omitted, or replaces exactly the supplied existing revision when it is present. Blind overwrite of an existing path is rejected. |
 | `edit_file` | No | Yes | No | Applies exact guarded replacements inside the root when `writeFiles` is true and returns a bounded unified diff. |

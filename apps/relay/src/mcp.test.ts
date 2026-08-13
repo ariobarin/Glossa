@@ -295,7 +295,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const searchTextInputSchema = byName.get("search_text")?.inputSchema as {
     properties?: Record<string, unknown>;
   };
-  assert.equal(searchTextInputSchema.properties?.matchMode, undefined);
+  assert.ok(searchTextInputSchema.properties?.matchMode);
   assert.ok(searchTextInputSchema.properties?.includeGlobs);
   assert.ok(searchTextInputSchema.properties?.excludeGlobs);
 
@@ -326,7 +326,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
   assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
-  assert.match(byName.get("search_text")?.description ?? "", /literal text.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
+  assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
   assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
   assert.match(byName.get("cancel_command")?.description ?? "", /does not undo.*effects/);
   const writeFileSchema = byName.get("write_file")?.inputSchema as {

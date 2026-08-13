@@ -396,6 +396,14 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   assert.equal(literal.matches[0]?.path, "src/types.d.ts");
   assert.equal(literal.matches[0]?.column, 17);
 
+  const regex = await files.searchText({
+    query: "\\?xT(?:OKEN|EST)",
+    matchMode: "regex",
+    extensions: [".d.ts"],
+  });
+  assert.equal(regex.matches[0]?.path, "src/types.d.ts");
+  assert.equal(regex.matches[0]?.column, 1);
+
   const filtered = await files.searchText({
     query: "hit",
     includeGlobs: ["src/**"],
@@ -426,6 +434,9 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   assert.equal(binary.skippedFiles, 1);
 
   await assert.rejects(files.searchText({ query: "bad\nquery" }), {
+    code: "invalid_search",
+  });
+  await assert.rejects(files.searchText({ query: "[", matchMode: "regex" }), {
     code: "invalid_search",
   });
   await assert.rejects(files.searchText({ query: "x", maxResults: 101 }), {

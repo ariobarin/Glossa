@@ -151,10 +151,14 @@ export const searchTextRequestSchema = z.object({
       (value) => !/[\r\n\u0000]/.test(value),
       "Search text must fit on one line",
     )
-    .describe("Single-line UTF-8 text to search for literally."),
+    .describe("Single-line UTF-8 search expression. Interpreted literally by default or as a JavaScript regular expression when matchMode is regex."),
   path: relativePathSchema
     .optional()
     .describe("File or directory relative to the exposed root. Defaults to the root."),
+  matchMode: z
+    .enum(["literal", "regex"])
+    .optional()
+    .describe("How to interpret query. Defaults to literal; regex uses JavaScript regular-expression syntax."),
   caseSensitive: z
     .boolean()
     .optional()

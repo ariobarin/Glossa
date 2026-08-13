@@ -10,8 +10,8 @@ if (!npmCli) {
   process.exit(1);
 }
 
-if (!version || !/^0\.1\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-  console.error("Usage: npm run cli:prepare -- 0.1.0");
+if (!version || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version)) {
+  console.error("Usage: npm run cli:prepare -- 0.2.0");
   process.exit(1);
 }
 

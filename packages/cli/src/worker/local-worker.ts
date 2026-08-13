@@ -154,6 +154,7 @@ export class LocalWorker {
           value = await this.files.searchText({
             query: job.query,
             ...(job.path ? { path: job.path } : {}),
+            ...(job.matchMode === undefined ? {} : { matchMode: job.matchMode }),
             ...(job.caseSensitive === undefined
               ? {}
               : { caseSensitive: job.caseSensitive }),

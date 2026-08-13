@@ -40,7 +40,7 @@ test("reclaims a stale device pairing lock", async (context) => {
   context.after(async () => await rm(directory, { recursive: true, force: true }));
   await writeFile(
     path.join(directory, "device-pairing.lock"),
-    `${JSON.stringify({ pid: 2147483647, startedAt: new Date(0).toISOString() })}\n`,
+    `${JSON.stringify({ pid: 2147483647, startedAt: new Date(0).toISOString(), token: "stale" })}\n`,
     "utf8",
   );
 
@@ -52,12 +52,37 @@ test("reclaims a stale device pairing lock", async (context) => {
   assert.equal(result, "recovered");
 });
 
-test("does not reclaim an old lock owned by a live process", async (context) => {
+test("serializes concurrent stale-lock reclaimers", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-pairing-lock-race-"));
+  context.after(async () => await rm(directory, { recursive: true, force: true }));
+  await writeFile(
+    path.join(directory, "device-pairing.lock"),
+    `${JSON.stringify({ pid: 2147483647, startedAt: new Date(0).toISOString(), token: "stale" })}\n`,
+    "utf8",
+  );
+
+  let active = 0;
+  let maximumActive = 0;
+  const contenders = Array.from({ length: 8 }, (_, index) =>
+    withDevicePairingLease(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return index;
+    }, undefined, directory)
+  );
+
+  assert.deepEqual((await Promise.all(contenders)).sort(), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(maximumActive, 1);
+});
+
+test("does not reclaim a current lock owned by a live process", async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-pairing-lock-live-"));
   context.after(async () => await rm(directory, { recursive: true, force: true }));
   await writeFile(
     path.join(directory, "device-pairing.lock"),
-    `${JSON.stringify({ pid: process.pid, startedAt: new Date(0).toISOString() })}\n`,
+    `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), token: "live" })}\n`,
     "utf8",
   );
   const controller = new AbortController();
@@ -71,4 +96,19 @@ test("does not reclaim an old lock owned by a live process", async (context) => 
 
   setTimeout(() => controller.abort(), 25);
   await assert.rejects(pending, { name: "AbortError" });
+});
+
+test("reclaims an expired lock after the pairing window", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-pairing-lock-expired-"));
+  context.after(async () => await rm(directory, { recursive: true, force: true }));
+  await writeFile(
+    path.join(directory, "device-pairing.lock"),
+    `${JSON.stringify({ pid: process.pid, startedAt: new Date(0).toISOString(), token: "expired" })}\n`,
+    "utf8",
+  );
+
+  assert.equal(
+    await withDevicePairingLease(async () => "recovered", undefined, directory),
+    "recovered",
+  );
 });
