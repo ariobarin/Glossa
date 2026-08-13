@@ -112,6 +112,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /do not use it for general questions, web research, built-in ChatGPT tasks/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /pair_device only when the user explicitly asks to pair a computer/);
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /Glossa pairing code authorizes only that pending computer.*not an account password, MFA code, login code, access credential, or device credential.*pass it only to pair_device/,
+  );
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /current Glossa pairing code is the sole exception.*only to pair_device after the user's explicit pairing request/,
+  );
   assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Never attempt a write when writeFiles is false or a command when runCommands is false/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
@@ -160,6 +168,16 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   }
 
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const pairDeviceTool = byName.get("pair_device");
+  assert.match(
+    pairDeviceTool?.description ?? "",
+    /expected as this tool's input.*not an account password, MFA code, login code, access credential, or issued device credential/,
+  );
+  const pairDeviceInput = pairDeviceTool?.inputSchema as JsonSchemaNode;
+  assert.match(
+    String(pairDeviceInput.properties?.code?.description),
+    /expected by this tool.*not an account password, MFA code, login code, access credential, or issued device credential/,
+  );
   for (const toolName of [
     "read_file",
     "list_files",
