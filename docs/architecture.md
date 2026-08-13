@@ -48,19 +48,19 @@ The managed Auth0 Google connection requests Google's account chooser on every n
 
 ### Worker device identity and pairing
 
-An unpaired CLI creates a short-lived pairing request with the relay. The request contains a random private pairing secret known only to that CLI and a short human code shown in the terminal. Pending pairing state is process-local relay memory and expires after five minutes; the relay stores only a SHA-256 digest of the private pairing secret while the request is pending.
+An unpaired CLI starts Auth0's browser device authorization flow and asks only for the account and device-enrollment scopes. A local computer opens the verification link; a headless or SSH-only computer prints the same link so the user can open it elsewhere. After approval, the CLI uses the temporary access token once with `POST /v1/devices/enroll` and does not request or store `offline_access` or a refresh token.
 
-The user explicitly provides the short code to an already authenticated Glossa MCP client. The `pair_device` tool approves that pending computer for the MCP account. The CLI polls the completion endpoint with its private pairing secret; only the combination of an approved request and the matching private secret can complete enrollment. Credential issuance is idempotent for the lifetime of the pairing request: concurrent completion attempts share one enrollment, and retries receive the same issued credential until the five-minute request expires:
+The enrollment response contains the computer's revocable device credential:
 
 ```text
 gld_<device-id>_<random-256-bit-secret>
 ```
 
-The database stores the device ID, account ID, salt, and scrypt hash. The relay keeps the newly issued raw device token only in process-local pairing memory for the remainder of the five-minute request so a dropped completion response can be retried; after delivery, the durable raw token is stored on the paired computer. Worker registration authenticates that device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
+The database stores the device ID, account ID, salt, and scrypt hash. After delivery, the raw device token is stored only on the paired computer. Worker registration authenticates that device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
 
 A machine-wide local pairing lease ensures concurrent first-run workspace processes share one computer pairing instead of racing to mint separate credentials. A stored device credential is sufficient for later workspace startups on that computer, so a headless SSH target does not need a browser session or the user's Google/Auth0 refresh token. `glossa unpair` authenticates with the device credential, revokes that device at the relay, and removes the local credential. Re-pairing is the explicit way to move a computer to another Glossa account.
 
-During the v2 deployment transition, the authenticated `POST /v1/devices/enroll` route remains available only for published 0.1.x and 0.2.x CLIs. The short-code flow is the current enrollment path and the legacy route can be removed after those clients are no longer supported.
+Published 0.2.0 clients used the earlier MCP short-code flow. Current clients use browser authorization because ChatGPT blocks authentication-like codes before an app tool can process them.
 
 ## State ownership
 
@@ -77,7 +77,6 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
-- short-lived device pairings with human codes, approved account IDs, hashed private pairing secrets, in-flight issuance promises, and retry-cached issued credentials; all expire in five minutes and are never written to Postgres
 - device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs after relay-side profile and recognizable-authentication-secret input checks
 - request waiters

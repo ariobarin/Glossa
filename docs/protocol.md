@@ -30,7 +30,7 @@ Revoke a device owned by the account.
 
 ### `POST /v1/devices/enroll`
 
-Legacy OAuth enrollment remains available temporarily so published 0.1.x and 0.2.x CLIs continue working during the v2 rollout. New v2 CLIs use the short-code pairing flow instead; remove this compatibility route only after supported published clients no longer call it.
+Current CLIs obtain a temporary access token through browser device authorization, call this endpoint once, then discard the token. Pairing does not request or retain `offline_access`; only the returned revocable device credential is stored.
 
 ## Worker API authentication
 
@@ -82,14 +82,13 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
-MCP initialization advertises public tool-contract version `2.0.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
+MCP initialization advertises public tool-contract version `3.0.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
 
-Contract `2.0.0` is one coordinated public cutover from the production 1.x surface. It intentionally batches the breaking workspace-routing vocabulary (`list_workspaces`, `workspaceId`), the explicit `run_command.command` union, required command follow-up routing, and the expanded structured workspace capabilities into one migration. Intermediate development states are not supported public contracts; validate the complete v2 integration before deploying it and rescan the ChatGPT connector after the cutover.
+Contract `3.0.0` removes the unusable `pair_device` tool after ChatGPT's safety layer proved to block its pairing-code argument before Glossa could process it. Computer enrollment now uses the CLI's browser authorization flow. The workspace routing and operation contracts otherwise remain the v2 surface.
 
 Tools:
 
 - `list_workspaces`
-- `pair_device`
 - `get_logout_instructions`
 - `read_file`
 - `list_files`
@@ -240,7 +239,7 @@ Full text-file reads and writes are limited to 1 MiB. Structured listings, searc
 
 The requested command timeout defaults to 900,000 milliseconds and must be between 1 millisecond and the 3,600,000 millisecond hard maximum.
 
-These are ordinary MCP tools so clients do not need native MCP Tasks support. Native task negotiation may be added after target client support is dependable, but it is not part of the public `2.0.0` contract.
+These are ordinary MCP tools so clients do not need native MCP Tasks support. Native task negotiation may be added after target client support is dependable, but it is not part of the public `3.0.0` contract.
 
 ## Error principles
 
