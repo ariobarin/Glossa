@@ -9,14 +9,20 @@ import {
   MCP_SERVER_VERSION,
 } from "./mcp.js";
 import { RouterState } from "./router-state.js";
+import { DevicePairingState } from "./device-pairing.js";
 
 const expectedTools = [
   "cancel_command",
+  "delete_path",
   "edit_file",
   "get_command",
-  "list_devices",
+  "get_logout_instructions",
   "list_files",
-  "logout",
+  "list_workspaces",
+  "make_directory",
+  "move_path",
+  "pair_device",
+  "read_command_output",
   "read_file",
   "read_file_range",
   "run_command",
@@ -25,11 +31,16 @@ const expectedTools = [
 ];
 const expectedToolTitles: Record<string, string> = {
   cancel_command: "Stop Workspace Command",
+  delete_path: "Delete Workspace Path",
   edit_file: "Edit Workspace File",
   get_command: "Check Workspace Command",
-  list_devices: "Find Glossa Workspaces",
+  get_logout_instructions: "Get Glossa Sign-Out Steps",
   list_files: "List Workspace Files",
-  logout: "Get Glossa Sign-Out Steps",
+  list_workspaces: "Find Glossa Workspaces",
+  make_directory: "Create Workspace Directory",
+  move_path: "Move Workspace Path",
+  pair_device: "Pair Glossa Computer",
+  read_command_output: "Read Workspace Command Output",
   read_file: "Read Workspace File",
   read_file_range: "Read Workspace File Range",
   run_command: "Run Workspace Command",
@@ -49,6 +60,9 @@ interface JsonSchemaNode {
   description?: unknown;
   properties?: Record<string, JsonSchemaNode>;
   items?: JsonSchemaNode;
+  anyOf?: JsonSchemaNode[];
+  required?: string[];
+  additionalProperties?: boolean;
 }
 
 function assertFieldDescriptions(schema: JsonSchemaNode, label: string): void {
@@ -92,11 +106,12 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "1.0.0");
+  assert.equal(MCP_SERVER_VERSION, "2.0.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /do not use it for general questions, web research, built-in ChatGPT tasks/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /pair_device only when the user explicitly asks to pair a computer/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Never attempt a write when writeFiles is false or a command when runCommands is false/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
@@ -145,6 +160,42 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   }
 
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  for (const toolName of [
+    "read_file",
+    "list_files",
+    "search_text",
+    "read_file_range",
+    "write_file",
+    "edit_file",
+    "make_directory",
+    "delete_path",
+    "move_path",
+    "run_command",
+    "get_command",
+    "read_command_output",
+    "cancel_command",
+  ]) {
+    const inputSchema = byName.get(toolName)?.inputSchema as JsonSchemaNode;
+    assert.ok(inputSchema.properties?.workspaceId, `${toolName} must route by workspaceId`);
+    assert.equal(inputSchema.properties?.deviceId, undefined, `${toolName} must not expose deviceId`);
+  }
+  const runCommandInput = byName.get("run_command")?.inputSchema as JsonSchemaNode;
+  assert.deepEqual(
+    new Set(runCommandInput.required ?? []),
+    new Set(["workspaceId", "command"]),
+  );
+  const commandSchema = runCommandInput.properties?.command;
+  assert.equal(commandSchema?.anyOf?.length, 2);
+  const commandRequired = commandSchema?.anyOf?.map((branch) =>
+    new Set(branch.required ?? [])
+  ) ?? [];
+  assert.ok(commandRequired.some((required) =>
+    required.has("argv") && !required.has("shellCommand")
+  ));
+  assert.ok(commandRequired.some((required) =>
+    required.has("shellCommand") && !required.has("argv")
+  ));
+  assert.ok(commandSchema?.anyOf?.every((branch) => branch.additionalProperties === false));
   assert.equal(byName.get("run_command")?.annotations?.readOnlyHint, false);
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
@@ -164,44 +215,73 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     byName.get("run_command")?.description ?? "",
     /waitMs 0.*1500 to 2000.*default is 750/i,
   );
-  const runCommandInputSchema = byName.get("run_command")?.inputSchema as {
-    properties?: Record<string, { description?: unknown }>;
-  };
+  const argvCommandSchema = commandSchema?.anyOf?.find((branch) =>
+    branch.properties?.argv
+  );
+  const shellCommandSchema = commandSchema?.anyOf?.find((branch) =>
+    branch.properties?.shellCommand
+  );
   assert.match(
-    String(runCommandInputSchema.properties?.argv?.description),
+    String(argvCommandSchema?.properties?.argv?.description),
     /Preferred for native executables.*without shell startup.*Windows.*npm/,
   );
   assert.match(
-    String(runCommandInputSchema.properties?.shellCommand?.description),
+    String(shellCommandSchema?.properties?.shellCommand?.description),
     /Use when shell features are required.*Windows.*npm.*PowerShell/,
   );
   assert.match(
-    String(runCommandInputSchema.properties?.waitMs?.description),
+    String(runCommandInput.properties?.waitMs?.description),
     /Use 0.*1500 to 2000.*Defaults to 750/,
   );
+  const readCommandOutputTool = byName.get("read_command_output");
+  assert.equal(readCommandOutputTool?.annotations?.readOnlyHint, true);
+  assert.equal(readCommandOutputTool?.annotations?.destructiveHint, false);
+  assert.equal(readCommandOutputTool?.annotations?.openWorldHint, false);
   assert.match(
-    byName.get("list_devices")?.description ?? "",
+    readCommandOutputTool?.description ?? "",
+    /workspaceId and commandId.*one bounded retained byte range.*without rerunning.*Follow nextOffset.*transient.*capped per stream.*deleted with the command record/,
+  );
+  const readCommandOutputInputSchema = readCommandOutputTool?.inputSchema as {
+    required?: string[];
+    properties?: Record<string, { description?: unknown }>;
+  };
+  assert.equal(readCommandOutputInputSchema.required?.includes("workspaceId"), true);
+  assert.equal(readCommandOutputInputSchema.required?.includes("commandId"), true);
+  assert.equal(readCommandOutputInputSchema.required?.includes("stream"), true);
+  assert.match(
+    String(readCommandOutputInputSchema.properties?.maxBytes?.description),
+    /4 through 65536.*Defaults to 32768/,
+  );
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /output is truncated.*read_command_output.*workspaceId and commandId.*rather than rerunning/,
+  );
+  assert.match(
+    byName.get("list_workspaces")?.description ?? "",
     /no earlier Glossa result identifies.*required permission is unknown.*worker versions, access profiles, permissions, and negotiated capabilities.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
   );
   assert.doesNotMatch(
-    JSON.stringify(byName.get("list_devices")?.outputSchema),
+    JSON.stringify(byName.get("list_workspaces")?.outputSchema),
     /\bWindows\b/,
   );
-  const listDevicesSchema = byName.get("list_devices")?.outputSchema as JsonSchemaNode;
+  const listWorkspacesSchema = byName.get("list_workspaces")?.outputSchema as JsonSchemaNode;
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.workspaceLabel,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.workspaceId,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.workerVersion,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.workspaceLabel,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.accessProfile,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.workerVersion,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.permissions,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.accessProfile,
   );
   assert.ok(
-    listDevicesSchema.properties?.devices?.items?.properties?.capabilities,
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.permissions,
+  );
+  assert.ok(
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.capabilities,
   );
 
   for (const toolName of ["get_command", "cancel_command"]) {
@@ -209,9 +289,16 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       properties?: Record<string, unknown>;
       required?: string[];
     };
-    assert.ok(inputSchema.properties?.deviceId);
-    assert.equal(inputSchema.required?.includes("deviceId") ?? false, false);
+    assert.ok(inputSchema.properties?.workspaceId);
+    assert.equal(inputSchema.required?.includes("workspaceId") ?? false, true);
   }
+  const searchTextInputSchema = byName.get("search_text")?.inputSchema as {
+    properties?: Record<string, unknown>;
+  };
+  assert.ok(searchTextInputSchema.properties?.matchMode);
+  assert.ok(searchTextInputSchema.properties?.includeGlobs);
+  assert.ok(searchTextInputSchema.properties?.excludeGlobs);
+
   const getCommandInputSchema = byName.get("get_command")?.inputSchema as {
     properties?: Record<string, unknown>;
   };
@@ -220,7 +307,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;
   };
-  assert.ok(commandOutputSchema.properties?.deviceId);
+  assert.ok(commandOutputSchema.properties?.workspaceId);
+  assert.equal(commandOutputSchema.properties?.deviceId, undefined);
   assert.ok(commandOutputSchema.properties?.commandId);
   assert.ok(commandOutputSchema.properties?.status);
   assert.ok(commandOutputSchema.properties?.sequence);
@@ -236,9 +324,9 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
   assert.match(byName.get("read_file")?.description ?? "", /access credentials or authentication secrets.*use read_file_range/);
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
-  assert.match(byName.get("write_file")?.description ?? "", /use edit_file/i);
+  assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
-  assert.match(byName.get("search_text")?.description ?? "", /does not interpret regular expressions/);
+  assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
   assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
   assert.match(byName.get("cancel_command")?.description ?? "", /does not undo.*effects/);
   const writeFileSchema = byName.get("write_file")?.inputSchema as {
@@ -249,7 +337,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   };
   assert.match(
     String(writeFileSchema.properties?.expectedSha256?.description),
-    /read_file or read_file_range.*write fails if the file changed/,
+    /read_file or read_file_range.*omit only when creating.*replaces exactly.*missing or changed/i,
   );
   assert.match(
     String(editFileSchema.properties?.expectedSha256?.description),
@@ -257,14 +345,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
 
   const result = await client.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.equal(result.isError, undefined);
   assert.deepEqual(result.structuredContent, {
     product,
     documentationUrl: managedDocumentationUrl,
-    devices: [],
+    workspaces: [],
     availability: "offline",
     message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
   });
@@ -282,7 +370,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       text: JSON.stringify({
         product,
         documentationUrl: managedDocumentationUrl,
-        devices: [],
+        workspaces: [],
         availability: "offline",
         message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
       }),
@@ -297,14 +385,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     onlineWorkerId,
   );
   const onlineResult = await client.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.deepEqual(onlineResult.structuredContent, {
     product,
     documentationUrl: managedDocumentationUrl,
-    devices: [{
-      deviceId: onlineWorkerId,
+    workspaces: [{
+      workspaceId: onlineWorkerId,
       name: "Test PC",
       path: ".",
       accessProfile: "system",
@@ -317,6 +405,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         commandProgress: false,
         concurrentJobs: false,
         structuredReads: false,
+        structuredMutations: false,
+        commandOutputRanges: false,
       },
     }],
     availability: "online",
@@ -337,7 +427,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await selfHostedServer.connect(selfHostedServerTransport);
   await selfHostedClient.connect(selfHostedClientTransport);
   const selfHostedResult = await selfHostedClient.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.equal(selfHostedResult.isError, undefined);
@@ -376,12 +466,14 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "workspace",
       workerVersion: "1.0.0",
     },
   );
   const selfHostedOnlineResult = await selfHostedClient.callTool({
-    name: "list_devices",
+    name: "list_workspaces",
     arguments: {},
   });
   assert.equal(
@@ -401,10 +493,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.deepEqual(
     (selfHostedOnlineResult.structuredContent as {
-      devices?: unknown;
-    }).devices,
+      workspaces?: unknown;
+    }).workspaces,
     [{
-      deviceId: "00000000-0000-4000-8000-000000000005",
+      workspaceId: "00000000-0000-4000-8000-000000000005",
       name: "Self-hosted PC",
       path: ".",
       workerVersion: "1.0.0",
@@ -418,33 +510,78 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         commandProgress: true,
         concurrentJobs: true,
         structuredReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
       },
     }],
   );
 
   const logout = await client.callTool({
-    name: "logout",
+    name: "get_logout_instructions",
     arguments: {},
   });
   const logoutUrl = "https://identity.glossa.test/v2/logout";
   assert.equal(logout.isError, undefined);
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
-    instructions: `Run glossa logout. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. Then disconnect and reconnect Glossa in ChatGPT. The CLI starts sign-in automatically the next time it needs an account. Choose the same intended sign-in account for both authorizations.`,
+    instructions: `Run glossa logout to sign out the CLI account used for status and device administration. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. This does not unpair a computer. To move a computer to another Glossa account, run glossa unpair on that computer, start glossa there again, and approve its new pairing code from the intended ChatGPT account. Then disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
   });
   assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
 
   const selfHostedLogout = await selfHostedClient.callTool({
-    name: "logout",
+    name: "get_logout_instructions",
     arguments: {},
   });
   assert.match(
     JSON.stringify(selfHostedLogout.structuredContent),
-    /same intended sign-in account/,
+    /run glossa unpair/,
   );
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
 
+
+test("approves an explicit one-time computer pairing", async (context) => {
+  const state = new RouterState();
+  const pairings = new DevicePairingState();
+  const pending = pairings.create("gpu-box", "linux-x64");
+  const server = createMcpServer(testConfig(), state, accountId, pairings);
+  const client = new Client({ name: "glossa-pairing-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "pair_device",
+    arguments: { code: pending.userCode.toLowerCase() },
+  });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent, {
+    approved: true,
+    device: { name: "gpu-box", platform: "linux-x64" },
+    expiresAt: pending.expiresAt,
+    instructions: "Pairing approval accepted. Keep the Glossa CLI running on that computer while it finishes credential issuance and connects automatically.",
+  });
+  assert.deepEqual(
+    await pairings.complete(
+      pending.pairingId,
+      pending.pairingSecret,
+      async (approved) => approved,
+    ),
+    {
+      status: "approved",
+      value: {
+        accountId,
+        name: "gpu-box",
+        platform: "linux-x64",
+      },
+    },
+  );
+});
 
 test("returns actionable permission errors without dispatching forbidden work", async (context) => {
   const state = new RouterState();
@@ -459,6 +596,8 @@ test("returns actionable permission errors without dispatching forbidden work", 
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "read-only",
     },
   );
@@ -471,6 +610,8 @@ test("returns actionable permission errors without dispatching forbidden work", 
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "workspace",
     },
   );
@@ -486,7 +627,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
   const writeResult = await client.callTool({
     name: "write_file",
     arguments: {
-      deviceId: readOnlyWorkerId,
+      workspaceId: readOnlyWorkerId,
       path: "README.md",
       content: "not dispatched",
     },
@@ -496,17 +637,178 @@ test("returns actionable permission errors without dispatching forbidden work", 
   assert.match(JSON.stringify(writeResult.content), /Do not retry/);
   assert.match(JSON.stringify(writeResult.content), /workspace access/);
 
+  const deleteResult = await client.callTool({
+    name: "delete_path",
+    arguments: {
+      workspaceId: readOnlyWorkerId,
+      path: "README.md",
+    },
+  });
+  assert.equal(deleteResult.isError, true);
+  assert.match(JSON.stringify(deleteResult.content), /write_access_disabled/);
+
   const commandResult = await client.callTool({
     name: "run_command",
     arguments: {
-      deviceId: workspaceWorkerId,
-      argv: ["node", "--version"],
+      workspaceId: workspaceWorkerId,
+      command: { argv: ["node", "--version"] },
     },
   });
   assert.equal(commandResult.isError, true);
   assert.match(JSON.stringify(commandResult.content), /command_access_disabled/);
   assert.match(JSON.stringify(commandResult.content), /Do not retry/);
   assert.match(JSON.stringify(commandResult.content), /system access/);
+
+  const outputResult = await client.callTool({
+    name: "read_command_output",
+    arguments: {
+      workspaceId: workspaceWorkerId,
+      commandId: "00000000-0000-4000-8000-000000000039",
+      stream: "stdout",
+    },
+  });
+  assert.equal(outputResult.isError, true);
+  assert.match(JSON.stringify(outputResult.content), /command_access_disabled/);
+});
+
+test("routes retained command output ranges and gates legacy workers", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000080";
+  const workerId = "00000000-0000-4000-8000-000000000081";
+  const legacyDeviceId = "00000000-0000-4000-8000-000000000082";
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000083";
+  const commandId = "00000000-0000-4000-8000-000000000084";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    commandOutputRanges: true,
+    accessProfile: "system",
+  });
+  const legacySession = state.register(
+    accountId,
+    legacyDeviceId,
+    "Legacy PC",
+    legacyWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      accessProfile: "system",
+    },
+  );
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-output-range-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const call = client.callTool({
+    name: "read_command_output",
+    arguments: {
+      workspaceId: workerId,
+      commandId,
+      stream: "stderr",
+      offset: 4096,
+      maxBytes: 8192,
+    },
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(job?.type, "read_command_output");
+  assert.ok(job && job.type === "read_command_output");
+  assert.equal(job.commandId, commandId);
+  assert.equal(job.stream, "stderr");
+  assert.equal(job.offset, 4096);
+  assert.equal(job.maxBytes, 8192);
+  state.complete(accountId, workerId, {
+    requestId: job.requestId,
+    ok: true,
+    value: {
+      commandId,
+      stream: "stderr",
+      status: "failed",
+      offset: 4096,
+      content: "middle diagnostics",
+      nextOffset: 4114,
+      retainedBytes: 12000,
+      totalBytes: 12000,
+      retentionTruncated: false,
+      complete: true,
+    },
+  });
+  assert.deepEqual((await call).structuredContent, {
+    workspaceId: workerId,
+    commandId,
+    stream: "stderr",
+    status: "failed",
+    offset: 4096,
+    content: "middle diagnostics",
+    nextOffset: 4114,
+    retainedBytes: 12000,
+    totalBytes: 12000,
+    retentionTruncated: false,
+    complete: true,
+  });
+
+  const errorCall = client.callTool({
+    name: "read_command_output",
+    arguments: {
+      workspaceId: workerId,
+      commandId,
+      stream: "stdout",
+      offset: 99999,
+    },
+  });
+  const errorJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.ok(errorJob);
+  state.complete(accountId, workerId, {
+    requestId: errorJob.requestId,
+    ok: false,
+    error: {
+      code: "output_offset_out_of_range",
+      message: "C:\\private\\worker details",
+    },
+  });
+  const errorResult = await errorCall;
+  const serializedError = JSON.stringify(errorResult.content);
+  assert.equal(errorResult.isError, true);
+  assert.match(serializedError, /output_offset_out_of_range/);
+  assert.match(serializedError, /exceeds the retained stream length/);
+  assert.doesNotMatch(serializedError, /private|worker details/);
+
+  const unavailable = await client.callTool({
+    name: "read_command_output",
+    arguments: {
+      workspaceId: legacyWorkerId,
+      commandId,
+      stream: "stdout",
+    },
+  });
+  assert.equal(unavailable.isError, true);
+  assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
+  assert.equal(
+    await state.poll(
+      accountId,
+      legacyDeviceId,
+      legacyWorkerId,
+      legacySession.generation,
+      1,
+    ),
+    null,
+  );
 });
 
 test("returns actionable guidance for Windows command shims", async (context) => {
@@ -531,8 +833,8 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   const call = client.callTool({
     name: "run_command",
     arguments: {
-      deviceId: workerId,
-      argv: ["npm.cmd", "--version"],
+      workspaceId: workerId,
+      command: { argv: ["npm.cmd", "--version"] },
     },
   });
   const job = await state.poll(
@@ -564,6 +866,131 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   assert.doesNotMatch(serialized, /private/);
 });
 
+test("routes structured path lifecycle jobs and gates legacy workers", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000070";
+  const workerId = "00000000-0000-4000-8000-000000000071";
+  const legacyDeviceId = "00000000-0000-4000-8000-000000000072";
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000073";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    commandProgress: true,
+    concurrentJobs: true,
+    structuredReads: true,
+    structuredMutations: true,
+    accessProfile: "workspace",
+  });
+  const legacySession = state.register(
+    accountId,
+    legacyDeviceId,
+    "Legacy PC",
+    legacyWorkerId,
+    {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      accessProfile: "workspace",
+    },
+  );
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-lifecycle-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const makeCall = client.callTool({
+    name: "make_directory",
+    arguments: { workspaceId: workerId, path: "build/cache", recursive: true },
+  });
+  const makeJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(makeJob?.type, "make_directory");
+  assert.ok(makeJob && makeJob.type === "make_directory");
+  assert.equal(makeJob.path, "build/cache");
+  assert.equal(makeJob.recursive, true);
+  state.complete(accountId, workerId, {
+    requestId: makeJob.requestId,
+    ok: true,
+    value: { created: true },
+  });
+  assert.deepEqual((await makeCall).structuredContent, { created: true });
+
+  const moveCall = client.callTool({
+    name: "move_path",
+    arguments: {
+      workspaceId: workerId,
+      source: "build/cache",
+      destination: "build/archive",
+    },
+  });
+  const moveJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(moveJob?.type, "move_path");
+  assert.ok(moveJob && moveJob.type === "move_path");
+  assert.equal(moveJob.source, "build/cache");
+  assert.equal(moveJob.destination, "build/archive");
+  state.complete(accountId, workerId, {
+    requestId: moveJob.requestId,
+    ok: true,
+    value: { movedType: "directory" },
+  });
+  assert.deepEqual((await moveCall).structuredContent, {
+    movedType: "directory",
+  });
+
+  const deleteCall = client.callTool({
+    name: "delete_path",
+    arguments: { workspaceId: workerId, path: "build/archive", recursive: true },
+  });
+  const deleteJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(deleteJob?.type, "delete_path");
+  assert.ok(deleteJob && deleteJob.type === "delete_path");
+  assert.equal(deleteJob.recursive, true);
+  state.complete(accountId, workerId, {
+    requestId: deleteJob.requestId,
+    ok: true,
+    value: { deletedType: "directory" },
+  });
+  assert.deepEqual((await deleteCall).structuredContent, {
+    deletedType: "directory",
+  });
+
+  const unavailable = await client.callTool({
+    name: "make_directory",
+    arguments: { workspaceId: legacyWorkerId, path: "unsupported" },
+  });
+  assert.equal(unavailable.isError, true);
+  assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
+  assert.equal(
+    await state.poll(
+      accountId,
+      legacyDeviceId,
+      legacyWorkerId,
+      legacySession.generation,
+      1,
+    ),
+    null,
+  );
+});
+
 test("blocks recognizable authentication data without dispatch or disclosure", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000040";
@@ -587,21 +1014,23 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
   for (const call of [
     client.callTool({
       name: "read_file",
-      arguments: { deviceId: workerId, path: key },
+      arguments: { workspaceId: workerId, path: key },
     }),
     client.callTool({
       name: "search_text",
-      arguments: { deviceId: workerId, query: key },
+      arguments: { workspaceId: workerId, query: key },
     }),
     client.callTool({
       name: "write_file",
-      arguments: { deviceId: workerId, path: "secret.txt", content: key },
+      arguments: { workspaceId: workerId, path: "secret.txt", content: key },
     }),
     client.callTool({
       name: "run_command",
       arguments: {
-        deviceId: workerId,
-        argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+        workspaceId: workerId,
+        command: {
+          argv: ["node", "-e", `process.stdout.write(${JSON.stringify(key)})`],
+        },
       },
     }),
   ]) {
@@ -625,7 +1054,7 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
 
   const readCall = client.callTool({
     name: "read_file",
-    arguments: { deviceId: workerId, path: "secret.txt" },
+    arguments: { workspaceId: workerId, path: "secret.txt" },
   });
   const readJob = await state.poll(
     accountId,
@@ -686,7 +1115,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   for (const [code, expectedMessage] of cases) {
     const call = client.callTool({
       name: "read_file",
-      arguments: { deviceId: workerId, path: "fixture.txt" },
+      arguments: { workspaceId: workerId, path: "fixture.txt" },
     });
     const job = await state.poll(
       accountId,
@@ -718,7 +1147,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
 
   const unknownCall = client.callTool({
     name: "read_file",
-    arguments: { deviceId: workerId, path: "fixture.txt" },
+    arguments: { workspaceId: workerId, path: "fixture.txt" },
   });
   const unknownJob = await state.poll(
     accountId,
@@ -737,7 +1166,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
 });
 
-test("redacts restricted legacy device metadata from list_devices", async (context) => {
+test("redacts restricted legacy device metadata from list_workspaces", async (context) => {
   const state = new RouterState();
   const key = "sk-proj-" + "A".repeat(32);
   const workerId = "00000000-0000-4000-8000-000000000042";
@@ -763,7 +1192,7 @@ test("redacts restricted legacy device metadata from list_devices", async (conte
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  const result = await client.callTool({ name: "list_devices", arguments: {} });
+  const result = await client.callTool({ name: "list_workspaces", arguments: {} });
   assert.equal(result.isError, undefined);
   const serialized = JSON.stringify(result.structuredContent);
   assert.doesNotMatch(serialized, new RegExp(key));
@@ -792,7 +1221,7 @@ test("does not mirror large structured results into text content", async (contex
   const content = "x".repeat(64 * 1024);
   const readCall = client.callTool({
     name: "read_file",
-    arguments: { deviceId: workerId, path: "large.txt" },
+    arguments: { workspaceId: workerId, path: "large.txt" },
   });
   const readJob = await state.poll(
     accountId,
@@ -851,7 +1280,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
     const call = client.callTool({
       name: "get_command",
       arguments: {
-        deviceId: workerId,
+        workspaceId: workerId,
         commandId,
         waitMs: requestedWaitMs,
         afterSequence: 0,
@@ -884,7 +1313,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
   }
 });
 
-test("routes cached command schemas without deviceId", async (context) => {
+test("routes command follow-ups only by explicit workspaceId", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000010";
   const workerId = "00000000-0000-4000-8000-000000000011";
@@ -907,7 +1336,7 @@ test("routes cached command schemas without deviceId", async (context) => {
     },
   );
   const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-legacy-command-test", version: "1.0.0" });
+  const client = new Client({ name: "glossa-explicit-command-route-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   context.after(async () => {
     await Promise.allSettled([client.close(), server.close()]);
@@ -917,7 +1346,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const runCall = client.callTool({
     name: "run_command",
-    arguments: { deviceId: workerId, argv: ["echo", "ok"] },
+    arguments: { workspaceId: workerId, command: { argv: ["echo", "ok"] } },
   });
   const runJob = await state.poll(
     accountId,
@@ -938,7 +1367,7 @@ test("routes cached command schemas without deviceId", async (context) => {
   );
   const runResult = await runCall;
   assert.deepEqual(runResult.structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId,
     status: "running",
     sequence: 1,
@@ -947,7 +1376,7 @@ test("routes cached command schemas without deviceId", async (context) => {
   for (const toolName of ["get_command", "cancel_command"]) {
     const misroutedCall = client.callTool({
       name: toolName,
-      arguments: { deviceId: otherWorkerId, commandId },
+      arguments: { workspaceId: otherWorkerId, commandId },
     });
     const misroutedJob = await state.poll(
       accountId,
@@ -979,7 +1408,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const getCall = client.callTool({
     name: "get_command",
-    arguments: { commandId },
+    arguments: { workspaceId: workerId, commandId },
   });
   const getJob = await state.poll(
     accountId,
@@ -1000,23 +1429,23 @@ test("routes cached command schemas without deviceId", async (context) => {
   );
   const getResult = await getCall;
   assert.deepEqual(getResult.structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId,
     status: "succeeded",
     sequence: 2,
     exitCode: 0,
   });
 
-  const expiredRoute = await client.callTool({
+  const missingRoute = await client.callTool({
     name: "get_command",
     arguments: { commandId },
   });
-  assert.equal(expiredRoute.isError, true);
-  assert.match(JSON.stringify(expiredRoute.content), /command_not_found/);
+  assert.equal(missingRoute.isError, true);
+  assert.match(JSON.stringify(missingRoute.content), /workspaceId/);
 
   const secondRunCall = client.callTool({
     name: "run_command",
-    arguments: { deviceId: workerId, argv: ["sleep", "10"] },
+    arguments: { workspaceId: workerId, command: { argv: ["sleep", "10"] } },
   });
   const secondRunJob = await state.poll(
     accountId,
@@ -1039,7 +1468,7 @@ test("routes cached command schemas without deviceId", async (context) => {
 
   const cancelCall = client.callTool({
     name: "cancel_command",
-    arguments: { commandId: canceledCommandId },
+    arguments: { workspaceId: workerId, commandId: canceledCommandId },
   });
   const cancelJob = await state.poll(
     accountId,
@@ -1064,7 +1493,7 @@ test("routes cached command schemas without deviceId", async (context) => {
   );
   const cancelResult = await cancelCall;
   assert.deepEqual(cancelResult.structuredContent, {
-    deviceId: workerId,
+    workspaceId: workerId,
     commandId: canceledCommandId,
     status: "canceled",
     sequence: 2,
@@ -1091,7 +1520,7 @@ test("structured repository tools require a current worker", async (context) => 
 
   const result = await client.callTool({
     name: "list_files",
-    arguments: { deviceId: workerId },
+    arguments: { workspaceId: workerId },
   });
   assert.equal(result.isError, true);
   assert.match(JSON.stringify(result.content), /worker_update_required/);

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "long-output": "node scripts/long-output.js",
     "restricted-output": "node scripts/restricted-output.js"
   }
 }

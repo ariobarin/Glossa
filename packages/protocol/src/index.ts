@@ -12,6 +12,9 @@ export const MAX_TEXT_BYTES = 1024 * 1024;
 export const MAX_EDIT_DIFF_BYTES = 128 * 1024;
 export const MAX_EDIT_OPERATIONS = 100;
 export const MAX_COMMAND_OUTPUT_BYTES = 12 * 1024;
+export const MAX_COMMAND_RETAINED_STREAM_BYTES = 1024 * 1024;
+export const DEFAULT_COMMAND_OUTPUT_RANGE_BYTES = 32 * 1024;
+export const MAX_COMMAND_OUTPUT_RANGE_BYTES = 64 * 1024;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 export const MAX_COMMAND_TIMEOUT_MS = 60 * 60 * 1000;
 export const DEFAULT_COMMAND_FAST_WAIT_MS = 750;
@@ -132,6 +135,13 @@ export const listFilesJobSchema = listFilesRequestSchema.extend({
   timeoutMs: structuredReadTimeoutSchema,
 });
 
+const searchGlobSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .refine((value) => !/[\r\n\u0000]/.test(value), "Search glob must fit on one line")
+  .describe("Root-relative glob pattern using forward slashes, for example src/**/*.ts.");
+
 export const searchTextRequestSchema = z.object({
   query: z
     .string()
@@ -141,10 +151,14 @@ export const searchTextRequestSchema = z.object({
       (value) => !/[\r\n\u0000]/.test(value),
       "Search text must fit on one line",
     )
-    .describe("Literal single-line UTF-8 text to search for."),
+    .describe("Single-line UTF-8 search expression. Interpreted literally by default or as a JavaScript regular expression when matchMode is regex."),
   path: relativePathSchema
     .optional()
     .describe("File or directory relative to the exposed root. Defaults to the root."),
+  matchMode: z
+    .enum(["literal", "regex"])
+    .optional()
+    .describe("How to interpret query. Defaults to literal; regex uses JavaScript regular-expression syntax."),
   caseSensitive: z
     .boolean()
     .optional()
@@ -166,6 +180,18 @@ export const searchTextRequestSchema = z.object({
     .max(20)
     .optional()
     .describe("Optional filename extensions to search."),
+  includeGlobs: z
+    .array(searchGlobSchema)
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Optional root-relative glob patterns. A file must match at least one include pattern before its contents are scanned."),
+  excludeGlobs: z
+    .array(searchGlobSchema)
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Optional root-relative glob patterns. Matching files are skipped before their contents are scanned."),
 }).strict();
 
 export const searchTextJobSchema = searchTextRequestSchema.extend({
@@ -200,14 +226,14 @@ export const readFileRangeJobSchema = readFileRangeRequestSchema.extend({
 export const writeFileRequestSchema = z.object({
   path: relativePathSchema,
   content: boundedTextSchema.describe(
-    "Complete UTF-8 text content that will replace the file.",
+    "Complete UTF-8 text content for the new file or replacement revision.",
   ),
   expectedSha256: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
     .optional()
     .describe(
-      "Full-file SHA-256 returned by read_file or read_file_range. When provided, the write fails if the file changed.",
+      "Full-file SHA-256 returned by read_file or read_file_range. Omit only when creating a new path; when provided, write_file replaces exactly that existing revision and fails if it is missing or changed.",
     ),
 }).strict();
 
@@ -267,6 +293,44 @@ export const editFileRequestSchema = z
 
 export const editFileJobSchema = editFileRequestSchema.safeExtend({
   type: z.literal("edit_file"),
+  requestId: z.string().uuid(),
+});
+
+export const makeDirectoryRequestSchema = z.object({
+  path: relativePathSchema,
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to create missing parent directories. Defaults to false."),
+}).strict();
+
+export const makeDirectoryJobSchema = makeDirectoryRequestSchema.extend({
+  type: z.literal("make_directory"),
+  requestId: z.string().uuid(),
+});
+
+export const deletePathRequestSchema = z.object({
+  path: relativePathSchema,
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to delete a non-empty directory tree. Defaults to false."),
+}).strict();
+
+export const deletePathJobSchema = deletePathRequestSchema.extend({
+  type: z.literal("delete_path"),
+  requestId: z.string().uuid(),
+});
+
+export const movePathRequestSchema = z.object({
+  source: relativePathSchema.describe("Existing file or directory to move."),
+  destination: relativePathSchema.describe(
+    "New path inside the exposed root. The destination must not already exist.",
+  ),
+}).strict();
+
+export const movePathJobSchema = movePathRequestSchema.extend({
+  type: z.literal("move_path"),
   requestId: z.string().uuid(),
 });
 
@@ -360,6 +424,36 @@ export const getCommandJobSchema = getCommandRequestSchema.extend({
   requestId: z.string().uuid(),
 });
 
+export const readCommandOutputRequestSchema = z.object({
+  commandId: z
+    .string()
+    .uuid()
+    .describe("Command identifier returned by run_command."),
+  stream: z
+    .enum(["stdout", "stderr"])
+    .describe("Command output stream to read independently."),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Zero-based retained byte offset. Defaults to 0."),
+  maxBytes: z
+    .number()
+    .int()
+    .min(4)
+    .max(MAX_COMMAND_OUTPUT_RANGE_BYTES)
+    .optional()
+    .describe(
+      "Maximum retained source bytes to inspect, from 4 through 65536. Defaults to 32768.",
+    ),
+}).strict();
+
+export const readCommandOutputJobSchema = readCommandOutputRequestSchema.extend({
+  type: z.literal("read_command_output"),
+  requestId: z.string().uuid(),
+});
+
 export const cancelCommandRequestSchema = z.object({
   commandId: z
     .string()
@@ -379,8 +473,12 @@ export const workerJobSchema = z.discriminatedUnion("type", [
   readFileRangeJobSchema,
   writeFileJobSchema,
   editFileJobSchema,
+  makeDirectoryJobSchema,
+  deletePathJobSchema,
+  movePathJobSchema,
   runCommandJobSchema,
   getCommandJobSchema,
+  readCommandOutputJobSchema,
   cancelCommandJobSchema,
 ]);
 

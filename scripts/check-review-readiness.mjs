@@ -134,19 +134,24 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "1.0.0", "MCP public contract must be 1.0.0");
+assert.equal(contractVersion, "2.0.0", "MCP public contract must be 2.0.0");
 
 const expectedTools = [
-  "list_devices",
-  "logout",
+  "list_workspaces",
+  "get_logout_instructions",
+  "pair_device",
   "read_file",
   "list_files",
   "search_text",
   "read_file_range",
   "write_file",
   "edit_file",
+  "make_directory",
+  "delete_path",
+  "move_path",
   "run_command",
   "get_command",
+  "read_command_output",
   "cancel_command",
 ];
 for (const tool of expectedTools) {
@@ -157,7 +162,7 @@ for (const tool of expectedTools) {
 }
 assert.ok(
   mcpSource.includes("accessProfile") && mcpSource.includes("permissions"),
-  "list_devices must expose access profiles and permissions",
+  "list_workspaces must expose access profiles and permissions",
 );
 assert.ok(
   mcpSource.includes("command_access_disabled") &&
@@ -236,8 +241,8 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `1.0.0`",
-  "Nine positive reviewer tests",
+  "MCP tool contract: `2.0.0`",
+  "Eleven positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",
   "dedicated reviewer account",
@@ -248,16 +253,22 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "actual ChatGPT confirmation test",
 ]);
 assert.ok(
-  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 9,
-  "submission packet must retain at least nine explicit positive prompt cases",
+  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 11,
+  "submission packet must retain at least eleven explicit positive prompt cases",
 );
 assert.ok(
   (submissionPacket.match(/^\| \d+ \|/gm) ?? []).length >= 8,
   "submission packet must retain at least eight explicit negative cases",
 );
 await requiredText("review/fixture-template/package.json", [
+  "long-output",
+  "node scripts/long-output.js",
   "restricted-output",
   "node scripts/restricted-output.js",
+]);
+await requiredText("review/fixture-template/scripts/long-output.js", [
+  "MIDDLE-MARKER",
+  "repeat(20_000)",
 ]);
 await requiredText("review/fixture-template/scripts/restricted-output.js", [
   "sk-proj-",

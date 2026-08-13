@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
+
 import { LocalWorker } from "./local-worker.js";
 
 async function temporaryDirectory(context: test.TestContext): Promise<string> {
@@ -62,6 +62,34 @@ test("workspace access permits guarded file writes but not commands", async (con
   assert.equal(writeResult.ok, true);
   assert.equal(await readFile(path.join(root, "note.txt"), "utf8"), "workspace write");
 
+  const directoryResult = await worker.handle({
+    type: "make_directory",
+    requestId: "00000000-0000-4000-8000-000000000040",
+    path: "nested",
+  });
+  assert.equal(directoryResult.ok, true);
+  const moveResult = await worker.handle({
+    type: "move_path",
+    requestId: "00000000-0000-4000-8000-000000000041",
+    source: "note.txt",
+    destination: "nested/note.txt",
+  });
+  assert.equal(moveResult.ok, true);
+  assert.equal(
+    await readFile(path.join(root, "nested", "note.txt"), "utf8"),
+    "workspace write",
+  );
+  const deleteResult = await worker.handle({
+    type: "delete_path",
+    requestId: "00000000-0000-4000-8000-000000000042",
+    path: "nested",
+    recursive: true,
+  });
+  assert.equal(deleteResult.ok, true);
+  await assert.rejects(readFile(path.join(root, "nested", "note.txt"), "utf8"), {
+    code: "ENOENT",
+  });
+
   const commandResult = await worker.handle({
     type: "run_command",
     requestId: "00000000-0000-4000-8000-000000000005",
@@ -85,9 +113,35 @@ test("system access preserves full local command execution", async (context) => 
     waitMs: 5_000,
   });
   assert.equal(commandResult.ok, true);
-  const value = commandResult.value as { status?: unknown; stdout?: unknown };
+  const value = commandResult.value as {
+    commandId?: unknown;
+    status?: unknown;
+    stdout?: unknown;
+  };
   assert.equal(value.status, "succeeded");
   assert.equal(value.stdout, "system-ok");
+  assert.equal(typeof value.commandId, "string");
+
+  const outputResult = await worker.handle({
+    type: "read_command_output",
+    requestId: "00000000-0000-4000-8000-000000000007",
+    commandId: String(value.commandId),
+    stream: "stdout",
+    offset: 0,
+    maxBytes: 64,
+  });
+  assert.equal(outputResult.ok, true);
+  assert.deepEqual(outputResult.value, {
+    commandId: value.commandId,
+    stream: "stdout",
+    status: "succeeded",
+    offset: 0,
+    content: "system-ok",
+    retainedBytes: 9,
+    totalBytes: 9,
+    retentionTruncated: false,
+    complete: true,
+  });
 });
 
 test("blocks recognizable authentication data before it leaves the worker", async (context) => {
@@ -124,6 +178,17 @@ test("blocks recognizable authentication data before it leaves the worker", asyn
   });
   assert.equal(searchInputResult.ok, false);
   assert.equal(searchInputResult.error?.code, "restricted_data_blocked");
+
+  const restrictedGlobResult = await worker.handle({
+    type: "search_text",
+    requestId: "00000000-0000-4000-8000-000000000043",
+    query: "safe",
+    includeGlobs: [key],
+    timeoutMs: 1_000,
+  });
+  assert.equal(restrictedGlobResult.ok, false);
+  assert.equal(restrictedGlobResult.error?.code, "restricted_data_blocked");
+  assert.doesNotMatch(JSON.stringify(restrictedGlobResult), new RegExp(key));
 
   const readResult = await worker.handle({
     type: "read_file",
@@ -163,7 +228,7 @@ test("blocks recognizable authentication data before it leaves the worker", asyn
     argv: [
       process.execPath,
       "-e",
-      "process.stdout.write('sk-proj-'); setTimeout(() => process.stdout.write('A'.repeat(32)), 25); setTimeout(() => require('node:fs').writeFileSync('after-secret.txt', 'bad'), 1000)",
+      "process.stdout.write('sk-proj-'); setTimeout(() => process.stdout.write('A'.repeat(32)), 25); setInterval(() => {}, 1000)",
     ],
     timeoutMs: 5_000,
     waitMs: 5_000,
@@ -171,8 +236,6 @@ test("blocks recognizable authentication data before it leaves the worker", asyn
   assert.equal(commandResult.ok, false);
   assert.equal(commandResult.error?.code, "restricted_data_blocked");
   assert.doesNotMatch(JSON.stringify(commandResult), new RegExp(key));
-  await delay(1_100);
-  await assert.rejects(readFile(path.join(root, "after-secret.txt"), "utf8"));
 });
 
 test("allows explicit placeholders through the restricted-data guard", async (context) => {

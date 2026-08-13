@@ -40,27 +40,27 @@ The authorization server handles discovery, login, consent, and access tokens. T
 
 The managed service uses the Google social connection for regular users and can explicitly enable a dedicated Auth0 database connection for OpenAI review. The relay enforces a bounded provider-prefix allowlist plus an optional exact-subject allowlist in addition to JWT validation. Managed review keeps Google as the only provider-wide prefix and admits only the dedicated database reviewer's exact Auth0 subject, so enabling the connection does not admit every database identity. Production review credentials and the exact subject are manually provisioned, independent of operator accounts, and excluded from source control. Self-hosted relays may select provider prefixes, exact subjects, or both; the legacy singular prefix setting remains compatible.
 
-### CLI user identity
+### CLI account identity
 
-The published CLI uses OAuth Device Authorization Flow. Its embedded client ID is public. The CLI requests `openid profile offline_access glossa:device`.
+Normal workspace startup does not require the CLI process to authenticate as the user. Account-level CLI actions such as `glossa status` and device administration still use OAuth Device Authorization Flow when needed. The embedded client ID is public, and those account-level flows request `openid profile offline_access glossa:device`.
 
-The managed Auth0 Google connection requests Google's account chooser on every new authorization. This lets a user choose among multiple Google accounts instead of silently reusing a browser session.
+The managed Auth0 Google connection requests Google's account chooser on every new account authorization. This lets a user choose among multiple Google accounts instead of silently reusing a browser session. That user OAuth material is not required on a remote or headless computer merely to expose a workspace.
 
-### Worker device identity
+### Worker device identity and pairing
 
-After user login, the CLI calls the device-enrollment API. The server returns a device token once:
+An unpaired CLI creates a short-lived pairing request with the relay. The request contains a random private pairing secret known only to that CLI and a short human code shown in the terminal. Pending pairing state is process-local relay memory and expires after five minutes; the relay stores only a SHA-256 digest of the private pairing secret while the request is pending.
+
+The user explicitly provides the short code to an already authenticated Glossa MCP client. The `pair_device` tool approves that pending computer for the MCP account. The CLI polls the completion endpoint with its private pairing secret; only the combination of an approved request and the matching private secret can complete enrollment. Credential issuance is idempotent for the lifetime of the pairing request: concurrent completion attempts share one enrollment, and retries receive the same issued credential until the five-minute request expires:
 
 ```text
 gld_<device-id>_<random-256-bit-secret>
 ```
 
-The database stores the device ID, account ID, salt, and scrypt hash. Worker registration authenticates the device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
+The database stores the device ID, account ID, salt, and scrypt hash. The relay keeps the newly issued raw device token only in process-local pairing memory for the remainder of the five-minute request so a dropped completion response can be retried; after delivery, the durable raw token is stored on the paired computer. Worker registration authenticates that device token over HTTPS, then returns an opaque worker credential bound to that worker ID and connection generation. Poll, result, heartbeat, and unregister requests use the in-memory worker credential, avoiding repeated database and scrypt work. The relay coalesces durable `last_seen_at` updates to at most once per minute per enrolled device while keeping second-scale liveness in memory. One device can be revoked without affecting the user's other devices or MCP authorizations; revocation removes every active worker credential for that device.
 
-The CLI binds each locally stored device credential to the subject in the
-current Auth0 access token. Normal startup can therefore reject an account
-switch locally and let worker registration validate the device token without a
-separate device-list request. A legacy unbound credential receives one
-account-scoped ownership check before the CLI saves that binding.
+A machine-wide local pairing lease ensures concurrent first-run workspace processes share one computer pairing instead of racing to mint separate credentials. A stored device credential is sufficient for later workspace startups on that computer, so a headless SSH target does not need a browser session or the user's Google/Auth0 refresh token. `glossa unpair` authenticates with the device credential, revokes that device at the relay, and removes the local credential. Re-pairing is the explicit way to move a computer to another Glossa account.
+
+During the v2 deployment transition, the authenticated `POST /v1/devices/enroll` route remains available only for published 0.1.x and 0.2.x CLIs. The short-code flow is the current enrollment path and the legacy route can be removed after those clients are no longer supported.
 
 ## State ownership
 
@@ -77,10 +77,10 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 ### Relay memory
 
 - active worker connections
+- short-lived device pairings with human codes, approved account IDs, hashed private pairing secrets, in-flight issuance promises, and retry-cached issued credentials; all expire in five minutes and are never written to Postgres
 - device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
 - pending jobs after relay-side profile and recognizable-authentication-secret input checks
 - request waiters
-- one account-scoped latest-running-command compatibility route per worker, cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect
 - recent nonces and bounded rate-limit counters
 
 ### Worker
@@ -88,17 +88,17 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - exposed canonical root
 - selected `read-only`, `workspace`, or `system` profile
 - local permission enforcement independent of the relay
-- path enforcement and atomic structured file operations
+- path enforcement and atomic structured file operations, including guarded directory creation, deletion, and moves without command authority
 - local process execution only under `system`
 - complete inherited local environment, credentials, operating-system permissions, and network access only when a system command is started
-- high-confidence authentication-secret input and result checks, including bounded per-stream command scan tails
-- temporary active command state
+- high-confidence authentication-secret input and result checks, including bounded per-stream command scan tails and every retained output window
+- temporary command state, including at most 1 MiB of independently retained stdout and stderr per record for bounded range retrieval, with terminal records limited to five minutes and eight recent records
 
 One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path.
 
 Current workers report their CLI package version, selected access profile, and bounded capability flags. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false, command lifecycle operations when `runCommands` is false, and recognizable authentication-secret material in mutation or command inputs. The worker repeats the permission and restricted-input checks locally and suppresses recognizable credential material in content-bearing results. A profile-less legacy worker is conservatively classified as `system`, matching its historical command authority rather than presenting it as safer than it is.
 
-Current workers also negotiate bounded concurrent job delivery and structured repository reads. Command status, cancellation, reads, and mutations use separate local capacity lanes; file listing, literal text search, and ranged reads share the bounded read lane. Literal search uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, then still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read jobs they did not advertise.
+Current workers also negotiate bounded concurrent job delivery, structured repository reads, structured path mutations, and retained command-output ranges. Command status, retained output reads, cancellation, repository reads, and mutations use separate local capacity lanes; file listing, bounded text search, and ranged reads share the bounded read lane, while file writes, edits, directory creation, deletion, moves, and command starts share the serialized mutation lane. Text search supports literal or regex matching plus root-relative include/exclude globs, uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, and still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Older workers remain sequential and are never sent structured-read, structured-mutation, or command-output-range jobs they did not advertise.
 
 ## Request profiling
 
@@ -113,14 +113,15 @@ The hosting layer imposes a bounded request window. Therefore:
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
-- current command follow-ups carry both IDs, so relay restarts do not lose routing; clients with a cached earlier schema may temporarily omit the worker ID and use the relay's bounded in-memory compatibility route;
+- command follow-ups always carry both the worker ID and command ID, so routing is explicit and remains valid across relay restarts;
 - `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;
+- `read_command_output` returns at most 64 KiB of one retained stream per request, reports a continuation offset, and never reruns the command;
 - `cancel_command` uses a separate bounded request;
 - structured repository reads use a worker-local deadline of at most half the relay request window and 8 seconds; after expiry, the read lane stays occupied until the active filesystem operation settles and any late directory handle is closed;
 - a result arriving after caller timeout receives a successful `accepted: false` acknowledgement and is discarded without forcing old or current workers to reconnect;
 - no hosted request remains open for the lifetime of a command.
 
-The core protocol uses ordinary MCP tools for command start, status, result, and cancellation. Native MCP Tasks support is deferred until target clients support it dependably.
+The core protocol uses ordinary MCP tools for command start, status, retained output retrieval, result, and cancellation. Native MCP Tasks support is deferred until target clients support it dependably.
 
 ## Deployment scale
 

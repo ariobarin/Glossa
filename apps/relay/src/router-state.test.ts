@@ -20,6 +20,8 @@ test("routes multiple workers enrolled on one computer independently", async () 
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
       accessProfile: "workspace",
       workspaceLabel: "frontend",
       workerVersion: "1.0.0",
@@ -31,12 +33,16 @@ test("routes multiple workers enrolled on one computer independently", async () 
   assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, firstWorkerId), true);
   assert.equal(state.supportsStructuredReads(accountId, firstWorkerId), true);
+  assert.equal(state.supportsStructuredMutations(accountId, firstWorkerId), true);
+  assert.equal(state.supportsCommandOutputRanges(accountId, firstWorkerId), true);
   assert.equal(state.workerAccessProfile(accountId, firstWorkerId), "workspace");
   assert.equal(state.supportsFileWrites(accountId, firstWorkerId), true);
   assert.equal(state.supportsCommands(accountId, firstWorkerId), false);
   assert.equal(state.supportsCommandProgress(accountId, secondWorkerId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, secondWorkerId), false);
   assert.equal(state.supportsStructuredReads(accountId, secondWorkerId), false);
+  assert.equal(state.supportsStructuredMutations(accountId, secondWorkerId), false);
+  assert.equal(state.supportsCommandOutputRanges(accountId, secondWorkerId), false);
   assert.equal(state.workerAccessProfile(accountId, secondWorkerId), "system");
   assert.equal(state.supportsFileWrites(accountId, secondWorkerId), true);
   assert.equal(state.supportsCommands(accountId, secondWorkerId), true);
@@ -57,6 +63,8 @@ test("routes multiple workers enrolled on one computer independently", async () 
         commandProgress: true,
         concurrentJobs: true,
         structuredReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
       },
     },
     {
@@ -73,6 +81,8 @@ test("routes multiple workers enrolled on one computer independently", async () 
         commandProgress: false,
         concurrentJobs: false,
         structuredReads: false,
+        structuredMutations: false,
+        commandOutputRanges: false,
       },
     },
   ]);
@@ -117,6 +127,8 @@ test("routes multiple workers enrolled on one computer independently", async () 
         commandProgress: false,
         concurrentJobs: false,
         structuredReads: false,
+        structuredMutations: false,
+        commandOutputRanges: false,
       },
     },
   ]);
@@ -444,42 +456,4 @@ test("does not deliver a queued job after its request times out", async () => {
     ),
     null,
   );
-});
-
-
-test("keeps one bounded legacy command route per worker", () => {
-  const state = new RouterState();
-  state.register(accountId, deviceId, "Test PC", firstWorkerId);
-  const firstCommandId = "00000000-0000-4000-8000-000000000020";
-  const secondCommandId = "00000000-0000-4000-8000-000000000021";
-
-  state.rememberCommand(accountId, firstWorkerId, firstCommandId);
-  assert.equal(
-    state.workerForCommand(accountId, firstCommandId),
-    firstWorkerId,
-  );
-  assert.equal(
-    state.workerForCommand("00000000-0000-4000-8000-000000000099", firstCommandId),
-    null,
-  );
-
-  state.rememberCommand(accountId, firstWorkerId, secondCommandId);
-  assert.equal(state.workerForCommand(accountId, firstCommandId), null);
-  assert.equal(
-    state.workerForCommand(accountId, secondCommandId),
-    firstWorkerId,
-  );
-
-  state.forgetCommandForWorker(accountId, secondWorkerId, secondCommandId);
-  assert.equal(
-    state.workerForCommand(accountId, secondCommandId),
-    firstWorkerId,
-  );
-
-  state.forgetCommand(accountId, secondCommandId);
-  assert.equal(state.workerForCommand(accountId, secondCommandId), null);
-
-  state.rememberCommand(accountId, firstWorkerId, secondCommandId);
-  state.register(accountId, deviceId, "Test PC", firstWorkerId);
-  assert.equal(state.workerForCommand(accountId, secondCommandId), null);
 });

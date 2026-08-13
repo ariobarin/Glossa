@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { StoredCredentials } from "./config-store.js";
 import {
-  enrollDevice,
+  beginDevicePairing,
+  completeDevicePairing,
+  DevicePairingExpiredError,
   listDevices,
   renameDevice,
   revokeDevice,
+  revokePairedDevice,
 } from "./relay-client.js";
 
 const endpoints = {
@@ -28,6 +31,104 @@ const device = {
   revokedAt: null,
   activeWorkers: 2,
 };
+
+test("starts and completes a headless device pairing without user OAuth", async () => {
+  const requests: Array<{ url: string; authorization: string | undefined }> = [];
+  const challenge = await beginDevicePairing(endpoints, "gpu-box", async (input, init) => {
+    requests.push({
+      url: String(input),
+      authorization: (init?.headers as Record<string, string> | undefined)?.authorization,
+    });
+    assert.equal(init?.method, "POST");
+    return Response.json({
+      pairing_id: "00000000-0000-4000-8000-000000000010",
+      user_code: "ABCDE-FGHJK",
+      pairing_secret: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+      expires_at: "2026-08-12T12:05:00.000Z",
+      poll_interval_ms: 2_000,
+    }, { status: 201 });
+  });
+
+  let completionCalls = 0;
+  const first = await completeDevicePairing(endpoints, challenge, async (input, init) => {
+    requests.push({
+      url: String(input),
+      authorization: (init?.headers as Record<string, string> | undefined)?.authorization,
+    });
+    completionCalls += 1;
+    assert.equal(init?.method, "POST");
+    if (completionCalls === 1) {
+      return Response.json({ status: "authorization_pending" }, { status: 202 });
+    }
+    return Response.json({
+      device: {
+        id: "00000000-0000-4000-8000-000000000011",
+        name: "gpu-box",
+      },
+      device_token: "paired-device-token",
+    }, { status: 201 });
+  });
+  const second = await completeDevicePairing(endpoints, challenge, async (input, init) => {
+    requests.push({
+      url: String(input),
+      authorization: (init?.headers as Record<string, string> | undefined)?.authorization,
+    });
+    completionCalls += 1;
+    assert.equal(init?.method, "POST");
+    return Response.json({
+      device: {
+        id: "00000000-0000-4000-8000-000000000011",
+        name: "gpu-box",
+      },
+      device_token: "paired-device-token",
+    }, { status: 201 });
+  });
+
+  assert.equal(first, null);
+  assert.deepEqual(second, {
+    relayOrigin: endpoints.relayOrigin,
+    deviceId: "00000000-0000-4000-8000-000000000011",
+    deviceName: "gpu-box",
+    token: "paired-device-token",
+  });
+  assert.equal(requests.every((request) => request.authorization === undefined), true);
+});
+
+test("reports expired pairings with an actionable error", async () => {
+  const challenge = {
+    pairingId: "00000000-0000-4000-8000-000000000010",
+    userCode: "ABCDE-FGHJK",
+    pairingSecret: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+    expiresAt: "2026-08-12T12:05:00.000Z",
+    pollIntervalMs: 2_000,
+  };
+  await assert.rejects(
+    completeDevicePairing(endpoints, challenge, async () =>
+      Response.json({ error: "pairing_expired" }, { status: 410 })),
+    DevicePairingExpiredError,
+  );
+});
+
+test("revokes a paired computer with its device credential", async () => {
+  await revokePairedDevice(
+    endpoints,
+    {
+      relayOrigin: endpoints.relayOrigin,
+      deviceId: device.id,
+      deviceName: device.name,
+      token: "paired-device-token",
+    },
+    async (input, init) => {
+      assert.equal(input, "https://mcp.glossa.test/device");
+      assert.equal(init?.method, "DELETE");
+      assert.equal(
+        (init?.headers as Record<string, string>).authorization,
+        "Device paired-device-token",
+      );
+      return new Response(null, { status: 204 });
+    },
+  );
+});
 
 test("lists devices with truthful active worker counts", async () => {
   const devices = await listDevices(endpoints, credentials, async (input, init) => {
@@ -82,45 +183,4 @@ test("accepts an older relay without inventing worker counts", async () => {
     }],
   }));
   assert.equal(devices[0]?.activeWorkers, null);
-});
-
-test("device name conflicts choose a free name automatically", async () => {
-  const requests: Array<{ method: string; name: string | undefined }> = [];
-  const result = await enrollDevice(
-    endpoints,
-    credentials,
-    "Test PC",
-    async (_input, init) => {
-      const method = init?.method ?? "GET";
-      const name = init?.body
-        ? (JSON.parse(String(init.body)) as { name: string }).name
-        : undefined;
-      requests.push({ method, name });
-      if (requests.length === 1) {
-        return Response.json(
-          { error: "device_name_conflict" },
-          { status: 409 },
-        );
-      }
-      if (requests.length === 2) {
-        return Response.json({
-          devices: [
-            { ...device, name: "Test PC" },
-            { ...device, id: "device-2", name: "Test PC-2" },
-          ],
-        });
-      }
-      return Response.json({
-        device: { id: "device-3", name },
-        device_token: "device-token-3",
-      }, { status: 201 });
-    },
-  );
-
-  assert.equal(result.deviceName, "Test PC-3");
-  assert.deepEqual(requests, [
-    { method: "POST", name: "Test PC" },
-    { method: "GET", name: undefined },
-    { method: "POST", name: "Test PC-3" },
-  ]);
 });

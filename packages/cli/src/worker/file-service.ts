@@ -2,12 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Dir, Dirent, Stats } from "node:fs";
 import {
   chmod,
+  link,
   lstat,
+  mkdir,
   opendir,
   open,
   readFile,
   rename,
   rm,
+  rmdir,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -25,10 +28,18 @@ import {
   MAX_TEXT_BYTES,
 } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
-import type { PathPolicy } from "./path-policy.js";
+import { samePath, type PathPolicy } from "./path-policy.js";
 
 function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function isPathWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative));
 }
 
 const fileWriteTails = new Map<string, Promise<void>>();
@@ -52,6 +63,22 @@ async function withFileWriteLock<T>(
     release();
     if (fileWriteTails.get(key) === tail) fileWriteTails.delete(key);
   }
+}
+
+async function withFileWriteLocks<T>(
+  targets: string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  const unique = [...new Set(targets.map((target) => path.normalize(target)))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  const run = async (index: number): Promise<T> => {
+    const target = unique[index];
+    return target === undefined
+      ? await operation()
+      : await withFileWriteLock(target, async () => await run(index + 1));
+  };
+  return await run(0);
 }
 
 async function requireRevision(target: string, expectedSha256: string): Promise<void> {
@@ -128,6 +155,18 @@ export interface EditTextResult extends WriteTextResult {
   replacements: number;
   diff: string;
   diffTruncated: boolean;
+}
+
+export interface MakeDirectoryResult {
+  created: boolean;
+}
+
+export interface DeletePathResult {
+  deletedType: "file" | "directory";
+}
+
+export interface MovePathResult {
+  movedType: "file" | "directory";
 }
 
 interface LocatedEdit extends EditTextOperation {
@@ -865,9 +904,12 @@ export class FileService {
   async searchText(options: {
     query: string;
     path?: string;
+    matchMode?: "literal" | "regex";
     caseSensitive?: boolean;
     maxResults?: number;
     extensions?: string[];
+    includeGlobs?: string[];
+    excludeGlobs?: string[];
     timeoutMs?: number;
   }): Promise<SearchTextResult> {
     const deadlineAt = this.#scanDeadline(options.timeoutMs);
@@ -890,10 +932,26 @@ export class FileService {
     const matchLimit = maxResults + 1;
     const extensions = options.extensions
       ?.map((extension) => extension.toLowerCase());
-    const matcher = new RegExp(
-      escapeRegExp(options.query),
-      options.caseSensitive === true ? "u" : "iu",
-    );
+    const includeGlobs = options.includeGlobs;
+    const excludeGlobs = options.excludeGlobs;
+    const globMatches = (relativePath: string, patterns: string[] | undefined): boolean => {
+      if (!patterns) return false;
+      const normalized = relativePath.replaceAll("\\", "/");
+      try {
+        return patterns.some((pattern) => path.posix.matchesGlob(normalized, pattern));
+      } catch {
+        throw new WorkerError("invalid_search", "Search glob pattern is invalid.");
+      }
+    };
+    let matcher: RegExp;
+    try {
+      matcher = new RegExp(
+        options.matchMode === "regex" ? options.query : escapeRegExp(options.query),
+        options.caseSensitive === true ? "u" : "iu",
+      );
+    } catch {
+      throw new WorkerError("invalid_search", "Search regular expression is invalid.");
+    }
     const start = await this.#withinDeadline(
       this.policy.resolveExisting(options.path ?? "."),
       deadlineAt,
@@ -917,6 +975,8 @@ export class FileService {
       ) {
         return false;
       }
+      if (includeGlobs && !globMatches(relative, includeGlobs)) return false;
+      if (globMatches(relative, excludeGlobs)) return false;
       if (scannedFiles >= MAX_SEARCH_FILES) {
         scanTruncated = true;
         return true;
@@ -1156,6 +1216,134 @@ export class FileService {
     };
   }
 
+  async makeDirectory(
+    relativePath: string,
+    recursive = false,
+  ): Promise<MakeDirectoryResult> {
+    const initial = await this.policy.resolveWritableDirectory(
+      relativePath,
+      recursive,
+    );
+    if (initial.exists) return { created: false };
+    return await withFileWriteLock(initial.target, async () => {
+      const current = await this.policy.resolveWritableDirectory(
+        relativePath,
+        recursive,
+      );
+      if (current.exists) return { created: false };
+      try {
+        await mkdir(current.target, { recursive });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      const resolved = await this.policy.resolveExisting(relativePath);
+      if (!(await stat(resolved)).isDirectory()) {
+        throw new WorkerError("not_directory", "The destination is not a directory.");
+      }
+      return { created: true };
+    });
+  }
+
+  async deletePath(
+    relativePath: string,
+    recursive = false,
+  ): Promise<DeletePathResult> {
+    const initial = await this.policy.resolveExisting(relativePath);
+    if (samePath(initial, this.policy.root)) {
+      throw new WorkerError(
+        "root_operation_refused",
+        "The exposed workspace root cannot be deleted.",
+      );
+    }
+    return await withFileWriteLock(initial, async () => {
+      const target = await this.policy.resolveExisting(relativePath);
+      if (samePath(target, this.policy.root)) {
+        throw new WorkerError(
+          "root_operation_refused",
+          "The exposed workspace root cannot be deleted.",
+        );
+      }
+      const targetStat = await lstat(target);
+      if (!targetStat.isFile() && !targetStat.isDirectory()) {
+        throw new WorkerError(
+          "unsupported_path_type",
+          "Only regular files and directories can be deleted.",
+        );
+      }
+      try {
+        if (targetStat.isDirectory()) {
+          if (recursive) {
+            await rm(target, { recursive: true, force: false });
+          } else {
+            await rmdir(target);
+          }
+        } else {
+          await rm(target, { force: false });
+        }
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          targetStat.isDirectory() &&
+          !recursive &&
+          (code === "ENOTEMPTY" || code === "EEXIST" || code === "EPERM")
+        ) {
+          throw new WorkerError(
+            "directory_not_empty",
+            "The directory is not empty. Set recursive to true to delete its contents.",
+          );
+        }
+        throw error;
+      }
+      return {
+        deletedType: targetStat.isDirectory() ? "directory" : "file",
+      };
+    });
+  }
+
+  async movePath(
+    sourcePath: string,
+    destinationPath: string,
+  ): Promise<MovePathResult> {
+    const initialSource = await this.policy.resolveExisting(sourcePath);
+    if (samePath(initialSource, this.policy.root)) {
+      throw new WorkerError(
+        "root_operation_refused",
+        "The exposed workspace root cannot be moved.",
+      );
+    }
+    const initialDestination = await this.policy.resolveVacantPath(destinationPath);
+    return await withFileWriteLocks(
+      [initialSource, initialDestination],
+      async () => {
+        const source = await this.policy.resolveExisting(sourcePath);
+        if (samePath(source, this.policy.root)) {
+          throw new WorkerError(
+            "root_operation_refused",
+            "The exposed workspace root cannot be moved.",
+          );
+        }
+        const destination = await this.policy.resolveVacantPath(destinationPath);
+        const sourceStat = await lstat(source);
+        if (!sourceStat.isFile() && !sourceStat.isDirectory()) {
+          throw new WorkerError(
+            "unsupported_path_type",
+            "Only regular files and directories can be moved.",
+          );
+        }
+        if (sourceStat.isDirectory() && isPathWithin(source, destination)) {
+          throw new WorkerError(
+            "invalid_destination",
+            "A directory cannot be moved inside itself.",
+          );
+        }
+        await rename(source, destination);
+        return {
+          movedType: sourceStat.isDirectory() ? "directory" : "file",
+        };
+      },
+    );
+  }
+
   async editText(
     relativePath: string,
     edits: EditTextOperation[],
@@ -1228,6 +1416,12 @@ export class FileService {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+      if (existingMode !== undefined && expectedSha256 === undefined) {
+        throw new WorkerError(
+          "path_exists",
+          "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
+        );
+      }
       if (expectedSha256) await requireRevision(target, expectedSha256);
 
       const temporary = path.join(path.dirname(target), `.glossa-${randomUUID()}.tmp`);
@@ -1241,8 +1435,22 @@ export class FileService {
         if (existingMode !== undefined && process.platform !== "win32") {
           await chmod(temporary, existingMode);
         }
-        if (expectedSha256) await requireRevision(target, expectedSha256);
-        await rename(temporary, target);
+        if (expectedSha256) {
+          await requireRevision(target, expectedSha256);
+          await rename(temporary, target);
+        } else {
+          try {
+            await link(temporary, target);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+              throw new WorkerError(
+                "path_exists",
+                "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
+              );
+            }
+            throw error;
+          }
+        }
       } finally {
         await rm(temporary, { force: true });
       }

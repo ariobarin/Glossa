@@ -20,10 +20,6 @@ function deviceKey(accountId: string, deviceId: string): string {
   return `${accountId}:${deviceId}`;
 }
 
-function workerKey(accountId: string, workerId: string): string {
-  return `${accountId}:${workerId}`;
-}
-
 interface PollWaiter {
   acceptedTypes?: ReadonlySet<WorkerJob["type"]>;
   resolve: (job: WorkerJob | null) => void;
@@ -38,6 +34,8 @@ interface ConnectedWorker {
   commandProgress: boolean;
   concurrentJobs: boolean;
   structuredReads: boolean;
+  structuredMutations: boolean;
+  commandOutputRanges: boolean;
   accessProfile: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
@@ -63,11 +61,6 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
-interface CommandRoute {
-  accountId: string;
-  workerId: string;
-}
-
 function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
   if (
     job.type !== "get_command" ||
@@ -87,7 +80,11 @@ function jobPermissionError(
 ): "write_access_disabled" | "command_access_disabled" | null {
   const permissions = workerPermissions(worker.accessProfile);
   if (
-    (job.type === "write_file" || job.type === "edit_file") &&
+    (job.type === "write_file" ||
+      job.type === "edit_file" ||
+      job.type === "make_directory" ||
+      job.type === "delete_path" ||
+      job.type === "move_path") &&
     !permissions.writeFiles
   ) {
     return "write_access_disabled";
@@ -95,6 +92,7 @@ function jobPermissionError(
   if (
     (job.type === "run_command" ||
       job.type === "get_command" ||
+      job.type === "read_command_output" ||
       job.type === "cancel_command") &&
     !permissions.runCommands
   ) {
@@ -110,8 +108,6 @@ export class RouterState {
   readonly #workerCountsByDevice = new Map<string, number>();
   readonly #deviceSeenPersistedAt = new Map<string, number>();
   readonly #results = new Map<string, ResultWaiter>();
-  readonly #commandRoutes = new Map<string, CommandRoute>();
-  readonly #latestCommandByWorker = new Map<string, string>();
   #lastPrunedAt = 0;
 
   register(
@@ -123,6 +119,8 @@ export class RouterState {
       commandProgress: boolean;
       concurrentJobs?: boolean;
       structuredReads?: boolean;
+      structuredMutations?: boolean;
+      commandOutputRanges?: boolean;
       accessProfile?: WorkerAccessProfile;
       workspaceLabel?: string;
       workerVersion?: string;
@@ -142,7 +140,6 @@ export class RouterState {
     previous?.pollWaiter?.resolve(null);
     if (previous) {
       this.#workerSessions.delete(previous.sessionDigest);
-      this.#forgetWorkerCommand(previous.accountId, previous.workerId);
     }
     this.#rejectWorkerWaiters(workerId);
     if (!previous) {
@@ -161,6 +158,8 @@ export class RouterState {
       commandProgress: options.commandProgress === true,
       concurrentJobs: options.concurrentJobs === true,
       structuredReads: options.structuredReads === true,
+      structuredMutations: options.structuredMutations === true,
+      commandOutputRanges: options.commandOutputRanges === true,
       // A missing profile identifies a legacy worker, whose historical behavior
       // included full command authority. New workers always declare a profile.
       accessProfile: options.accessProfile ?? "system",
@@ -378,54 +377,6 @@ export class RouterState {
   }
 
 
-  rememberCommand(
-    accountId: string,
-    workerId: string,
-    commandId: string,
-  ): void {
-    const key = workerKey(accountId, workerId);
-    const previousCommandId = this.#latestCommandByWorker.get(key);
-    if (previousCommandId && previousCommandId !== commandId) {
-      this.#commandRoutes.delete(previousCommandId);
-    }
-    this.#latestCommandByWorker.set(key, commandId);
-    this.#commandRoutes.set(commandId, { accountId, workerId });
-  }
-
-  workerForCommand(accountId: string, commandId: string): string | null {
-    this.#pruneStaleWorkers();
-    const route = this.#commandRoutes.get(commandId);
-    if (!route || route.accountId !== accountId) return null;
-    const worker = this.#workers.get(route.workerId);
-    return worker?.accountId === accountId ? route.workerId : null;
-  }
-
-  forgetCommand(accountId: string, commandId: string): void {
-    const route = this.#commandRoutes.get(commandId);
-    if (!route || route.accountId !== accountId) return;
-    this.#commandRoutes.delete(commandId);
-    const key = workerKey(accountId, route.workerId);
-    if (this.#latestCommandByWorker.get(key) === commandId) {
-      this.#latestCommandByWorker.delete(key);
-    }
-  }
-
-  forgetCommandForWorker(
-    accountId: string,
-    workerId: string,
-    commandId: string,
-  ): void {
-    const route = this.#commandRoutes.get(commandId);
-    if (
-      !route ||
-      route.accountId !== accountId ||
-      route.workerId !== workerId
-    ) {
-      return;
-    }
-    this.forgetCommand(accountId, commandId);
-  }
-
   listDevices(accountId: string): Array<{
     deviceId: string;
     name: string;
@@ -438,6 +389,8 @@ export class RouterState {
       commandProgress: boolean;
       concurrentJobs: boolean;
       structuredReads: boolean;
+      structuredMutations: boolean;
+      commandOutputRanges: boolean;
     };
   }> {
     this.#pruneStaleWorkers();
@@ -454,6 +407,8 @@ export class RouterState {
           commandProgress: worker.commandProgress,
           concurrentJobs: worker.concurrentJobs,
           structuredReads: worker.structuredReads,
+          structuredMutations: worker.structuredMutations,
+          commandOutputRanges: worker.commandOutputRanges,
         },
         ...(worker.workspaceLabel
           ? { workspaceLabel: worker.workspaceLabel }
@@ -503,6 +458,18 @@ export class RouterState {
     return worker?.accountId === accountId && worker.structuredReads;
   }
 
+  supportsStructuredMutations(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.structuredMutations;
+  }
+
+  supportsCommandOutputRanges(accountId: string, workerId: string): boolean {
+    this.#pruneStaleWorkers();
+    const worker = this.#workers.get(workerId);
+    return worker?.accountId === accountId && worker.commandOutputRanges;
+  }
+
   #pruneStaleWorkers(): void {
     const now = Date.now();
     const elapsed = now - this.#lastPrunedAt;
@@ -518,7 +485,6 @@ export class RouterState {
 
   #removeWorker(worker: ConnectedWorker): void {
     worker.pollWaiter?.resolve(null);
-    this.#forgetWorkerCommand(worker.accountId, worker.workerId);
     this.#workers.delete(worker.workerId);
     this.#workerSessions.delete(worker.sessionDigest);
     const key = deviceKey(worker.accountId, worker.deviceId);
@@ -530,14 +496,6 @@ export class RouterState {
       this.#deviceSeenPersistedAt.delete(key);
     }
     this.#rejectWorkerWaiters(worker.workerId);
-  }
-
-  #forgetWorkerCommand(accountId: string, workerId: string): void {
-    const key = workerKey(accountId, workerId);
-    const commandId = this.#latestCommandByWorker.get(key);
-    if (!commandId) return;
-    this.#latestCommandByWorker.delete(key);
-    this.#commandRoutes.delete(commandId);
   }
 
   #rejectWorkerWaiters(workerId: string): void {

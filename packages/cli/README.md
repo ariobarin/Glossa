@@ -28,7 +28,9 @@ Expose only a narrow project you trust. Keep credentials and regulated or sensit
 
 Pass a directory to expose another project, and add `--label <name>` when several online workspaces need a non-sensitive identifier. The terminal shows the selected project, access profile, connection state, and recent activity. Press `q` or Ctrl+C to disconnect.
 
-Glossa opens sign-in when needed. Use the same Glossa account in ChatGPT and the CLI.
+The first time a computer runs Glossa, the CLI prints a short pairing code. Approve that code from the Glossa app in an already authenticated ChatGPT conversation; the computer receives only its own revocable device credential, so a headless or SSH-only machine does not need a browser or your Google/Auth0 refresh token. Later workspace sessions reuse that pairing without user sign-in.
+
+Account-level CLI actions such as `glossa status` still open sign-in when needed. Run `glossa unpair` to revoke this computer and remove its local pairing before moving it to another Glossa account.
 
 Useful controls:
 
@@ -36,6 +38,7 @@ Useful controls:
 glossa status
 glossa devices revoke <id>
 glossa logout
+glossa unpair
 glossa update --check
 ```
 

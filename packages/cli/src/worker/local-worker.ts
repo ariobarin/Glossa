@@ -34,6 +34,8 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
         query: job.query,
         path: job.path,
         extensions: job.extensions,
+        includeGlobs: job.includeGlobs,
+        excludeGlobs: job.excludeGlobs,
       });
     case "read_file_range":
       return containsRestrictedAuthenticationData(job.path);
@@ -47,6 +49,14 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
         path: job.path,
         edits: job.edits,
       });
+    case "make_directory":
+    case "delete_path":
+      return containsRestrictedAuthenticationData(job.path);
+    case "move_path":
+      return containsRestrictedAuthenticationData({
+        source: job.source,
+        destination: job.destination,
+      });
     case "run_command":
       return containsRestrictedAuthenticationData({
         argv: job.argv,
@@ -54,6 +64,7 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
         stdin: job.stdin,
       });
     case "get_command":
+    case "read_command_output":
     case "cancel_command":
       return false;
   }
@@ -68,6 +79,7 @@ function resultMayContainRestrictedData(job: WorkerJob): boolean {
     job.type === "edit_file" ||
     job.type === "run_command" ||
     job.type === "get_command" ||
+    job.type === "read_command_output" ||
     job.type === "cancel_command"
   );
 }
@@ -97,7 +109,11 @@ export class LocalWorker {
     try {
       const permissions = workerPermissions(this.accessProfile);
       if (
-        (job.type === "write_file" || job.type === "edit_file") &&
+        (job.type === "write_file" ||
+          job.type === "edit_file" ||
+          job.type === "make_directory" ||
+          job.type === "delete_path" ||
+          job.type === "move_path") &&
         !permissions.writeFiles
       ) {
         throw new WorkerError(
@@ -108,6 +124,7 @@ export class LocalWorker {
       if (
         (job.type === "run_command" ||
           job.type === "get_command" ||
+          job.type === "read_command_output" ||
           job.type === "cancel_command") &&
         !permissions.runCommands
       ) {
@@ -137,11 +154,14 @@ export class LocalWorker {
           value = await this.files.searchText({
             query: job.query,
             ...(job.path ? { path: job.path } : {}),
+            ...(job.matchMode === undefined ? {} : { matchMode: job.matchMode }),
             ...(job.caseSensitive === undefined
               ? {}
               : { caseSensitive: job.caseSensitive }),
             ...(job.maxResults === undefined ? {} : { maxResults: job.maxResults }),
             ...(job.extensions ? { extensions: job.extensions } : {}),
+            ...(job.includeGlobs ? { includeGlobs: job.includeGlobs } : {}),
+            ...(job.excludeGlobs ? { excludeGlobs: job.excludeGlobs } : {}),
             timeoutMs: job.timeoutMs,
           });
           break;
@@ -172,6 +192,15 @@ export class LocalWorker {
           );
           break;
         }
+        case "make_directory":
+          value = await this.files.makeDirectory(job.path, job.recursive);
+          break;
+        case "delete_path":
+          value = await this.files.deletePath(job.path, job.recursive);
+          break;
+        case "move_path":
+          value = await this.files.movePath(job.source, job.destination);
+          break;
         case "run_command":
           value = await this.commands.start({
             ...(job.argv ? { argv: job.argv } : {}),
@@ -186,6 +215,14 @@ export class LocalWorker {
             job.commandId,
             job.waitMs,
             job.afterSequence,
+          );
+          break;
+        case "read_command_output":
+          value = await this.commands.readOutput(
+            job.commandId,
+            job.stream,
+            job.offset,
+            job.maxBytes,
           );
           break;
         case "cancel_command":

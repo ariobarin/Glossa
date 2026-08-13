@@ -4,7 +4,9 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import express from "express";
 import { MAX_TEXT_BYTES, type WorkerJob } from "@glossa/protocol";
+import type { AuthenticatedRequest } from "./auth.js";
 import { loadConfig } from "./config.js";
+import { DevicePairingState } from "./device-pairing.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { RouterState } from "./router-state.js";
 import { buildRoutes, MAX_RELAY_JSON_BYTES } from "./routes.js";
@@ -26,6 +28,176 @@ const device: DeviceRecord = {
 const unused = async (): Promise<never> => {
   throw new Error("Unexpected store call.");
 };
+
+test("pairs and self-revokes a headless computer without user OAuth", async (context) => {
+  let revoked = false;
+  let enrollCalls = 0;
+  const pairings = new DevicePairingState();
+  const state = new RouterState();
+  const store: RelayStore = {
+    accountIdForSubject: unused,
+    enrollDevice: async (requestedAccountId, name, platform) => {
+      enrollCalls += 1;
+      assert.equal(requestedAccountId, accountId);
+      return {
+        device: { ...device, name, platform },
+        token,
+      };
+    },
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: async (requestedAccountId, requestedDeviceId) => {
+      assert.equal(requestedAccountId, accountId);
+      assert.equal(requestedDeviceId, deviceId);
+      revoked = true;
+      return true;
+    },
+    touchDevice: unused,
+    authenticateDevice: async (requestedDeviceId) =>
+      requestedDeviceId === deviceId ? device : null,
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, state, { pairingState: pairings }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  const started = await fetch(`${origin}/v1/device-pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "gpu-box", platform: "linux-x64" }),
+  });
+  assert.equal(started.status, 201);
+  const challenge = await started.json() as {
+    pairing_id: string;
+    user_code: string;
+    pairing_secret: string;
+  };
+  assert.match(challenge.user_code, /^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/);
+
+  assert.equal(pairings.approve(accountId, challenge.user_code).status, "approved");
+  const completed = await fetch(
+    `${origin}/v1/device-pairings/${challenge.pairing_id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pairing_secret: challenge.pairing_secret }),
+    },
+  );
+  assert.equal(completed.status, 201);
+  const paired = await completed.json() as {
+    device: { id: string; name: string };
+    device_token: string;
+  };
+  assert.equal(paired.device.id, deviceId);
+  assert.equal(paired.device.name, "gpu-box");
+  assert.equal(paired.device_token, token);
+
+  const retried = await fetch(
+    `${origin}/v1/device-pairings/${challenge.pairing_id}/complete`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pairing_secret: challenge.pairing_secret }),
+    },
+  );
+  assert.equal(retried.status, 201);
+  const retriedPairing = await retried.json() as {
+    device: { id: string; name: string };
+    device_token: string;
+  };
+  assert.equal(retriedPairing.device.id, deviceId);
+  assert.equal(retriedPairing.device_token, token);
+  assert.equal(enrollCalls, 1);
+
+  const unpaired = await fetch(`${origin}/device`, {
+    method: "DELETE",
+    headers: { authorization: `Device ${token}` },
+  });
+  assert.equal(unpaired.status, 204);
+  assert.equal(revoked, true);
+});
+
+test("keeps legacy OAuth enrollment compatible during v2 rollout", async (context) => {
+  const subject = "google-oauth2|published-cli";
+  let invokedScope: string | undefined;
+  const store: RelayStore = {
+    accountIdForSubject: async (received) => {
+      assert.equal(received, subject);
+      return accountId;
+    },
+    enrollDevice: async (receivedAccountId, name, platform) => {
+      assert.equal(receivedAccountId, accountId);
+      assert.equal(name, "Published CLI");
+      assert.equal(platform, "win32-x64");
+      return { device: { ...device, name, platform }, token };
+    },
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: unused,
+    touchDevice: unused,
+    authenticateDevice: unused,
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: (_config, scope) => {
+      return (request, _response, next) => {
+        invokedScope = scope;
+        (request as AuthenticatedRequest).auth = {
+          subject,
+          scopes: new Set(scope ? [scope] : []),
+          claims: {},
+        };
+        next();
+      };
+    },
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/v1/devices/enroll`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Published CLI", platform: "win32-x64" }),
+    },
+  );
+
+  assert.equal(invokedScope, config.GLOSSA_DEVICE_ENROLL_SCOPE);
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), {
+    device: {
+      id: deviceId,
+      name: "Published CLI",
+      platform: "win32-x64",
+      lastSeenAt: null,
+      revokedAt: null,
+      activeWorkers: 0,
+    },
+    device_token: token,
+  });
+});
 
 test("bounds coalesced presence writes by the relay deadline", async (context) => {
   let now = 1_000_000;
@@ -192,6 +364,8 @@ test("uses worker credentials without repeating device authentication", async (c
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
     },
   });
   assert.equal(legacy.workerId, deviceId);
@@ -200,12 +374,16 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
   assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
   assert.equal(state.supportsStructuredReads(accountId, deviceId), false);
+  assert.equal(state.supportsStructuredMutations(accountId, deviceId), false);
+  assert.equal(state.supportsCommandOutputRanges(accountId, deviceId), false);
   assert.equal(state.workerAccessProfile(accountId, deviceId), "system");
   assert.equal(state.supportsFileWrites(accountId, deviceId), true);
   assert.equal(state.supportsCommands(accountId, deviceId), true);
   assert.equal(state.supportsCommandProgress(accountId, workerId), true);
   assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
   assert.equal(state.supportsStructuredReads(accountId, workerId), true);
+  assert.equal(state.supportsStructuredMutations(accountId, workerId), true);
+  assert.equal(state.supportsCommandOutputRanges(accountId, workerId), true);
   assert.equal(state.workerAccessProfile(accountId, workerId), "workspace");
   assert.equal(state.supportsFileWrites(accountId, workerId), true);
   assert.equal(state.supportsCommands(accountId, workerId), false);
@@ -223,6 +401,8 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
+    commandOutputRanges: true,
   });
   assert.equal(deviceAuthentications, 2);
   assert.equal(typeof current.workerToken, "string");
@@ -234,6 +414,8 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    structuredMutations: true,
+    commandOutputRanges: true,
   });
   const workerAuthorization = `Worker ${String(current.workerToken)}`;
 

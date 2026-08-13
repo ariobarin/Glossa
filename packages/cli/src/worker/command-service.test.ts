@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { MAX_COMMAND_OUTPUT_BYTES } from "@glossa/protocol";
+import {
+  MAX_COMMAND_OUTPUT_BYTES,
+  MAX_COMMAND_RETAINED_STREAM_BYTES,
+} from "@glossa/protocol";
 import { CommandService } from "./command-service.js";
 import { WorkerError } from "./errors.js";
 import { PathPolicy } from "./path-policy.js";
@@ -67,7 +71,7 @@ test(
   "covers Windows shim variants and the documented recovery path",
   { skip: process.platform !== "win32" },
   async (context) => {
-    const { commands } = await commandFixture(context);
+    const { root, commands } = await commandFixture(context);
     for (const shim of [
       "NPM.CMD",
       "tool.bat",
@@ -87,11 +91,15 @@ test(
       );
     }
 
-    const shimmed = await commands.start({
-      shellCommand: "npm.cmd --version",
+    await writeFile(path.join(root, "version.cmd"), "@echo 1.2.3\r\n", "utf8");
+    let shimmed = await commands.start({
+      shellCommand: ".\\version.cmd",
       timeoutMs: 10_000,
       waitMs: 5_000,
     });
+    if (shimmed.status === "running") {
+      shimmed = await commands.get(shimmed.commandId, 15_000);
+    }
     assert.equal(shimmed.status, "succeeded");
     assert.equal(shimmed.exitCode, 0);
     assert.match(shimmed.stdout ?? "", /^\d+\.\d+\.\d+/);
@@ -300,6 +308,165 @@ test("preserves the beginning and end of long command output", async (context) =
   assert.equal(completed.stdout?.endsWith("-TAIL"), true);
   assert.equal(completed.stdoutTruncated, true);
   assert.ok(Buffer.byteLength(completed.stdout ?? "") <= MAX_COMMAND_OUTPUT_BYTES);
+});
+
+test("retrieves bounded stdout and stderr ranges omitted from snapshots", async (context) => {
+  const { commands } = await commandFixture(context);
+  const stdout =
+    "OUT-HEAD-" +
+    "a".repeat(MAX_COMMAND_OUTPUT_BYTES) +
+    "OUT-MIDDLE-MARKER" +
+    "b".repeat(MAX_COMMAND_OUTPUT_BYTES) +
+    "-OUT-TAIL";
+  const stderr =
+    "ERR-HEAD-" +
+    "c".repeat(MAX_COMMAND_OUTPUT_BYTES) +
+    "ERR-MIDDLE-MARKER" +
+    "d".repeat(MAX_COMMAND_OUTPUT_BYTES) +
+    "-ERR-TAIL";
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      `process.stdout.write("OUT-HEAD-" + "a".repeat(${MAX_COMMAND_OUTPUT_BYTES}) + "OUT-MIDDLE-MARKER" + "b".repeat(${MAX_COMMAND_OUTPUT_BYTES}) + "-OUT-TAIL"); process.stderr.write("ERR-HEAD-" + "c".repeat(${MAX_COMMAND_OUTPUT_BYTES}) + "ERR-MIDDLE-MARKER" + "d".repeat(${MAX_COMMAND_OUTPUT_BYTES}) + "-ERR-TAIL")`,
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stdoutTruncated, true);
+  assert.equal(completed.stderrTruncated, true);
+  assert.equal(completed.stdout?.includes("OUT-MIDDLE-MARKER"), false);
+  assert.equal(completed.stderr?.includes("ERR-MIDDLE-MARKER"), false);
+
+  for (const [stream, expected] of [
+    ["stdout", stdout],
+    ["stderr", stderr],
+  ] as const) {
+    let offset = 0;
+    let reconstructed = "";
+    while (true) {
+      const range = await commands.readOutput(
+        started.commandId,
+        stream,
+        offset,
+        4_096,
+      );
+      assert.equal(range.status, "succeeded");
+      assert.equal(range.complete, true);
+      assert.equal(range.retentionTruncated, false);
+      reconstructed += range.content;
+      if (range.nextOffset === undefined) break;
+      assert.ok(range.nextOffset > offset);
+      offset = range.nextOffset;
+    }
+    assert.equal(reconstructed, expected);
+  }
+});
+
+test("bounds retained command output and validates range cursors", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      `process.stdout.write("x".repeat(${MAX_COMMAND_RETAINED_STREAM_BYTES + 257}))`,
+    ],
+    timeoutMs: 10_000,
+  });
+  const completed = await commands.get(started.commandId, 15_000);
+  assert.equal(completed.status, "succeeded");
+
+  const finalWindow = await commands.readOutput(
+    started.commandId,
+    "stdout",
+    MAX_COMMAND_RETAINED_STREAM_BYTES - 32,
+    32,
+  );
+  assert.equal(finalWindow.content, "x".repeat(32));
+  assert.equal(finalWindow.nextOffset, undefined);
+  assert.equal(finalWindow.retainedBytes, MAX_COMMAND_RETAINED_STREAM_BYTES);
+  assert.equal(
+    finalWindow.totalBytes,
+    MAX_COMMAND_RETAINED_STREAM_BYTES + 257,
+  );
+  assert.equal(finalWindow.retentionTruncated, true);
+
+  await assert.rejects(
+    commands.readOutput(
+      started.commandId,
+      "stdout",
+      MAX_COMMAND_RETAINED_STREAM_BYTES + 1,
+      32,
+    ),
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "output_offset_out_of_range",
+  );
+  await assert.rejects(
+    commands.readOutput(started.commandId, "stdout", 0, 3),
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "invalid_output_range",
+  );
+});
+
+test("bounds the number of transient retained command records", async (context) => {
+  const { commands } = await commandFixture(context);
+  const commandIds: string[] = [];
+  for (let index = 0; index < 9; index += 1) {
+    const completed = await commands.start({
+      argv: [
+        process.execPath,
+        "-e",
+        `process.stdout.write(${JSON.stringify(`command-${index}`)})`,
+      ],
+      timeoutMs: 10_000,
+      waitMs: 5_000,
+    });
+    assert.equal(completed.status, "succeeded");
+    commandIds.push(completed.commandId);
+  }
+
+  await assert.rejects(
+    commands.readOutput(commandIds[0]!, "stdout"),
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "command_not_found",
+  );
+  const latest = await commands.readOutput(commandIds.at(-1)!, "stdout");
+  assert.equal(latest.content, "command-8");
+});
+
+test("blocks retained output ranges after restricted data detection", async (context) => {
+  const { commands } = await commandFixture(context);
+  const started = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      "setTimeout(() => process.stdout.write('sk-proj-' + 'A'.repeat(32)), 25)",
+    ],
+    timeoutMs: 10_000,
+    waitMs: 0,
+  });
+  assert.equal(started.status, "running");
+  await delay(150);
+
+  await assert.rejects(
+    commands.readOutput(started.commandId, "stdout"),
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "restricted_data_blocked",
+  );
 });
 
 test("reserves diagnostic output when both streams are noisy", async (context) => {

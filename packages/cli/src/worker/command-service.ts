@@ -5,8 +5,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   containsRestrictedAuthenticationData,
   DEFAULT_COMMAND_FAST_WAIT_MS,
+  DEFAULT_COMMAND_OUTPUT_RANGE_BYTES,
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_COMMAND_OUTPUT_BYTES,
+  MAX_COMMAND_OUTPUT_RANGE_BYTES,
+  MAX_COMMAND_RETAINED_STREAM_BYTES,
   MAX_COMMAND_FAST_WAIT_MS,
   MAX_COMMAND_STATUS_WAIT_MS,
   MAX_COMMAND_TIMEOUT_MS,
@@ -31,6 +34,8 @@ export interface StartCommandOptions {
   waitMs?: number;
 }
 
+export type CommandOutputStream = "stdout" | "stderr";
+
 export interface CommandSnapshot {
   commandId: string;
   status: CommandStatus;
@@ -45,11 +50,27 @@ export interface CommandSnapshot {
   stderrTruncated?: boolean;
 }
 
+export interface CommandOutputRange {
+  commandId: string;
+  stream: CommandOutputStream;
+  status: CommandStatus;
+  offset: number;
+  content: string;
+  nextOffset?: number;
+  retainedBytes: number;
+  totalBytes: number;
+  retentionTruncated: boolean;
+  complete: boolean;
+}
+
 interface CapturedStream {
   head: Buffer[];
   headBytes: number;
   tail: Buffer;
+  retained: Buffer[];
+  retainedBytes: number;
   totalBytes: number;
+  retentionTruncated: boolean;
 }
 
 interface RenderedStream {
@@ -60,6 +81,8 @@ interface RenderedStream {
 const STREAM_HEAD_BYTES = Math.floor(MAX_COMMAND_OUTPUT_BYTES / 3);
 const STREAM_TAIL_BYTES = MAX_COMMAND_OUTPUT_BYTES - STREAM_HEAD_BYTES;
 const RESTRICTED_SCAN_TAIL_BYTES = 1024;
+const COMMAND_RECORD_RETENTION_MS = 5 * 60 * 1000;
+const MAX_RETAINED_COMMAND_RECORDS = 8;
 
 interface CommandRecord {
   id: string;
@@ -107,9 +130,23 @@ function scanOutputChunk(
   };
 }
 
+function markRestrictedData(record: CommandRecord): void {
+  if (record.restrictedDataDetected) return;
+  record.restrictedDataDetected = true;
+  record.stdout = emptyCapture();
+  record.stderr = emptyCapture();
+  record.stdoutScanTail = Buffer.alloc(0);
+  record.stderrScanTail = Buffer.alloc(0);
+  if (record.status === "running") {
+    record.requestedTerminal = "canceled";
+    void terminateProcessTree(record.child).catch(() => undefined);
+  }
+  markChanged(record);
+}
+
 function recordCommandOutput(
   record: CommandRecord,
-  streamName: "stdout" | "stderr",
+  streamName: CommandOutputStream,
   chunk: Buffer,
 ): void {
   if (record.restrictedDataDetected || chunk.byteLength === 0) return;
@@ -117,14 +154,7 @@ function recordCommandOutput(
   const scan = scanOutputChunk(record[tailName], chunk);
   record[tailName] = scan.tail;
   if (scan.detected) {
-    record.restrictedDataDetected = true;
-    record.stdout = emptyCapture();
-    record.stderr = emptyCapture();
-    if (record.status === "running") {
-      record.requestedTerminal = "canceled";
-      void terminateProcessTree(record.child).catch(() => undefined);
-    }
-    markChanged(record);
+    markRestrictedData(record);
     return;
   }
   if (capture(record, record[streamName], chunk)) markChanged(record);
@@ -145,6 +175,17 @@ function appendTail(existing: Buffer, chunk: Buffer): Buffer {
 function capture(_record: CommandRecord, stream: CapturedStream, chunk: Buffer): boolean {
   if (chunk.byteLength === 0) return false;
   stream.totalBytes += chunk.byteLength;
+  const retentionBudget = MAX_COMMAND_RETAINED_STREAM_BYTES - stream.retainedBytes;
+  if (retentionBudget > 0) {
+    const retained = chunk.subarray(0, Math.min(chunk.byteLength, retentionBudget));
+    if (retained.byteLength > 0) {
+      stream.retained.push(Buffer.from(retained));
+      stream.retainedBytes += retained.byteLength;
+    }
+  }
+  if (chunk.byteLength > Math.max(0, retentionBudget)) {
+    stream.retentionTruncated = true;
+  }
   let offset = 0;
   if (stream.headBytes < STREAM_HEAD_BYTES) {
     const accepted = chunk.subarray(
@@ -200,7 +241,10 @@ function emptyCapture(): CapturedStream {
     head: [],
     headBytes: 0,
     tail: Buffer.alloc(0),
+    retained: [],
+    retainedBytes: 0,
     totalBytes: 0,
+    retentionTruncated: false,
   };
 }
 
@@ -255,6 +299,52 @@ function utf8SuffixWithinBudget(value: string, budget: number): string {
     start -= 1;
   }
   return characters.slice(start).join("");
+}
+
+function isUtf8Continuation(byte: number | undefined): boolean {
+  return byte !== undefined && (byte & 0b1100_0000) === 0b1000_0000;
+}
+
+function utf8SequenceBytes(byte: number): number {
+  if ((byte & 0b1000_0000) === 0) return 1;
+  if ((byte & 0b1110_0000) === 0b1100_0000) return 2;
+  if ((byte & 0b1111_0000) === 0b1110_0000) return 3;
+  if ((byte & 0b1111_1000) === 0b1111_0000) return 4;
+  return 1;
+}
+
+function retainedRange(
+  stream: CapturedStream,
+  requestedOffset: number,
+  maxBytes: number,
+): { offset: number; content: string; nextOffset?: number } {
+  const retained = Buffer.concat(stream.retained, stream.retainedBytes);
+  let offset = requestedOffset;
+  while (offset < retained.byteLength && isUtf8Continuation(retained[offset])) {
+    offset += 1;
+  }
+  if (offset >= retained.byteLength) {
+    return { offset, content: "" };
+  }
+
+  let end = Math.min(retained.byteLength, offset + maxBytes);
+  if (end < retained.byteLength) {
+    while (end > offset && isUtf8Continuation(retained[end])) end -= 1;
+  }
+  if (end > offset) {
+    let lead = end - 1;
+    while (lead > offset && isUtf8Continuation(retained[lead])) lead -= 1;
+    const expected = utf8SequenceBytes(retained[lead]!);
+    if (expected > 1 && end - lead < expected) end = lead;
+  }
+  if (end <= offset) {
+    end = Math.min(retained.byteLength, offset + maxBytes);
+  }
+  return {
+    offset,
+    content: retained.subarray(offset, end).toString("utf8"),
+    ...(end < retained.byteLength ? { nextOffset: end } : {}),
+  };
 }
 
 function renderStream(
@@ -371,6 +461,23 @@ export class CommandService {
 
   constructor(readonly policy: PathPolicy) {}
 
+  #pruneRetainedCommands(): void {
+    while (this.#commands.size >= MAX_RETAINED_COMMAND_RECORDS) {
+      const oldestTerminal = [...this.#commands].find(
+        ([, record]) => record.status !== "running",
+      );
+      if (!oldestTerminal) return;
+      this.#commands.delete(oldestTerminal[0]);
+    }
+  }
+
+  #scheduleDeletion(commandId: string): void {
+    setTimeout(
+      () => this.#commands.delete(commandId),
+      COMMAND_RECORD_RETENTION_MS,
+    ).unref();
+  }
+
   async start(options: StartCommandOptions): Promise<CommandSnapshot> {
     if (this.#activeCommandId) {
       const active = this.#commands.get(this.#activeCommandId);
@@ -464,6 +571,7 @@ export class CommandService {
       void terminateProcessTree(child);
     }, timeoutMs);
     record.timeout.unref();
+    this.#pruneRetainedCommands();
     this.#commands.set(id, record);
     this.#activeCommandId = id;
 
@@ -482,6 +590,7 @@ export class CommandService {
       this.#activeCommandId = null;
       markChanged(record);
       record.complete();
+      this.#scheduleDeletion(id);
     });
     child.once("close", (exitCode, signal) => {
       if (record.status !== "running") return;
@@ -493,7 +602,7 @@ export class CommandService {
       this.#activeCommandId = null;
       markChanged(record);
       record.complete();
-      setTimeout(() => this.#commands.delete(id), 5 * 60 * 1000).unref();
+      this.#scheduleDeletion(id);
     });
     if (options.stdin !== undefined) child.stdin.end(options.stdin);
     else child.stdin.end();
@@ -560,6 +669,63 @@ export class CommandService {
       }
     }
     return this.snapshot(record);
+  }
+
+  async readOutput(
+    commandId: string,
+    streamName: CommandOutputStream,
+    offset = 0,
+    maxBytes = DEFAULT_COMMAND_OUTPUT_RANGE_BYTES,
+  ): Promise<CommandOutputRange> {
+    const record = this.#commands.get(commandId);
+    if (!record) throw new WorkerError("command_not_found", "The command was not found.");
+    if (streamName !== "stdout" && streamName !== "stderr") {
+      throw new WorkerError(
+        "invalid_output_stream",
+        "Command output stream must be stdout or stderr.",
+      );
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new WorkerError(
+        "invalid_output_offset",
+        "Command output offset must be a non-negative integer.",
+      );
+    }
+    if (
+      !Number.isInteger(maxBytes) ||
+      maxBytes < 4 ||
+      maxBytes > MAX_COMMAND_OUTPUT_RANGE_BYTES
+    ) {
+      throw new WorkerError(
+        "invalid_output_range",
+        "Command output range must be between 4 and 65536 source bytes.",
+      );
+    }
+    if (record.restrictedDataDetected) throw restrictedDataError();
+    const stream = record[streamName];
+    if (offset > stream.retainedBytes) {
+      throw new WorkerError(
+        "output_offset_out_of_range",
+        "The command output offset exceeds the retained stream length.",
+      );
+    }
+    const range = retainedRange(stream, offset, maxBytes);
+    if (containsRestrictedAuthenticationData(range.content)) {
+      markRestrictedData(record);
+      throw restrictedDataError();
+    }
+    return {
+      commandId,
+      stream: streamName,
+      status: record.status,
+      offset: range.offset,
+      content: range.content,
+      ...(range.nextOffset === undefined ? {} : { nextOffset: range.nextOffset }),
+      retainedBytes: stream.retainedBytes,
+      totalBytes: stream.totalBytes,
+      retentionTruncated: stream.retentionTruncated,
+      complete: record.status !== "running",
+    };
   }
 
   async cancel(commandId: string): Promise<CommandSnapshot> {

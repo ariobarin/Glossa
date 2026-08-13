@@ -6,11 +6,11 @@ Start with the [quickstart](/docs/quickstart). For reproducible bugs, setup prob
 
 ## Common fixes
 
-- **No online workspace:** keep the worker terminal open and confirm ChatGPT and the CLI use the same Glossa account.
+- **No online workspace:** keep the worker terminal open. If it shows a pairing code, approve that code from the intended authenticated ChatGPT account; otherwise confirm the stored pairing has not been revoked.
 - **Wrong workspace:** stop the worker and restart it in the intended project, optionally with a unique `--label`.
 - **Permission error:** restart with broader access only when the task genuinely requires it. Do not try to bypass the selected profile.
 - **`restricted_data_blocked`:** remove the credential from the request or reproduce the problem with a non-sensitive placeholder such as `<redacted>`. Do not retry with encoding, another tool, or a shell workaround.
-- **Account mismatch:** stop workers, run `glossa logout`, disconnect Glossa in ChatGPT, and authorize both sides again with the intended account.
+- **Wrong paired account:** stop workers, run `glossa unpair`, start `glossa` again, and approve the new pairing code from the intended ChatGPT account. Use `glossa logout` separately to switch the CLI account used for status or device administration.
 - **Tools changed:** run **Scan Tools** again after a Glossa update.
 
 Before posting diagnostics, remove source code, local paths, account identifiers, tokens, credentials, and command output.
@@ -27,4 +27,4 @@ Open a minimal public issue titled `Account deletion request` without private id
 
 ## Disconnect immediately
 
-Press Ctrl+C or `q` in the worker terminal to end workspace access. Run `glossa logout` to remove local credentials and open browser sign-out. Disconnect Glossa in ChatGPT to revoke the client's authorization.
+Press Ctrl+C or `q` in the worker terminal to end workspace access. Run `glossa unpair` to revoke this computer's device credential. Run `glossa logout` to remove local OAuth credentials used for CLI account administration and open browser sign-out. Disconnect Glossa in ChatGPT to revoke the client's authorization.

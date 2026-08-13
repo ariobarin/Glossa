@@ -18,6 +18,7 @@ export type CliInvocation =
   | { command: "status" }
   | { command: "devices"; action: "revoke"; deviceId: string }
   | { command: "logout" }
+  | { command: "unpair" }
   | { command: "update"; action: "install" | "check" }
   | {
       command: "update";
@@ -171,6 +172,10 @@ export function parseInvocation(args: string[]): CliInvocation {
   if (command === "devices") return parseDevices(options);
   if (command === "logout") {
     noOptions("Logout", options);
+    return { command };
+  }
+  if (command === "unpair") {
+    noOptions("Unpair", options);
     return { command };
   }
   if (command === "update") return parseUpdate(options);

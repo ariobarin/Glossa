@@ -46,6 +46,75 @@ test("blocks linked directory traversal", async (context) => {
   });
 });
 
+test("creates, moves, and deletes workspace paths without commands", async (context) => {
+  const root = await temporaryDirectory(context);
+  const files = new FileService(await PathPolicy.create(root));
+
+  assert.deepEqual(await files.makeDirectory("nested/deep", true), {
+    created: true,
+  });
+  assert.deepEqual(await files.makeDirectory("nested/deep", true), {
+    created: false,
+  });
+  await files.writeText("nested/deep/note.txt", "hello");
+  assert.deepEqual(
+    await files.movePath("nested/deep/note.txt", "nested/note.txt"),
+    { movedType: "file" },
+  );
+  await assert.rejects(files.readText("nested/deep/note.txt"), {
+    code: "path_not_found",
+  });
+  assert.equal((await files.readText("nested/note.txt")).content, "hello");
+
+  assert.deepEqual(await files.deletePath("nested/deep"), {
+    deletedType: "directory",
+  });
+  await files.makeDirectory("tree/child", true);
+  await files.writeText("tree/child/file.txt", "content");
+  await assert.rejects(files.deletePath("tree"), {
+    code: "directory_not_empty",
+  });
+  assert.deepEqual(await files.deletePath("tree", true), {
+    deletedType: "directory",
+  });
+  await assert.rejects(files.readText("tree/child/file.txt"), {
+    code: "path_not_found",
+  });
+});
+
+test("guards structured path lifecycle boundaries", async (context) => {
+  const root = await temporaryDirectory(context);
+  const files = new FileService(await PathPolicy.create(root));
+
+  await files.makeDirectory("source/child", true);
+  await files.writeText("source/child/file.txt", "content");
+  await assert.rejects(files.movePath("source", "source/child/moved"), {
+    code: "invalid_destination",
+  });
+  assert.deepEqual(await files.movePath("source", "renamed"), {
+    movedType: "directory",
+  });
+  assert.equal(
+    (await files.readText("renamed/child/file.txt")).content,
+    "content",
+  );
+
+  await files.writeText("occupied.txt", "occupied");
+  await files.writeText("source.txt", "source");
+  await assert.rejects(files.movePath("source.txt", "occupied.txt"), {
+    code: "destination_exists",
+  });
+  await assert.rejects(files.deletePath("."), {
+    code: "root_operation_refused",
+  });
+  await assert.rejects(files.movePath(".", "moved-root"), {
+    code: "root_operation_refused",
+  });
+  await assert.rejects(files.makeDirectory("missing/child"), {
+    code: "parent_not_found",
+  });
+});
+
 test("applies exact guarded edits and returns a unified diff", async (context) => {
   const root = await temporaryDirectory(context);
   const files = new FileService(await PathPolicy.create(root));
@@ -158,6 +227,10 @@ test("writes atomically and rejects stale revisions", async (context) => {
   });
 
   await assert.rejects(
+    files.writeText("note.txt", "blind overwrite"),
+    { code: "path_exists" },
+  );
+  await assert.rejects(
     files.writeText("note.txt", "second", "0".repeat(64)),
     { code: "stale_revision" },
   );
@@ -174,18 +247,19 @@ test("serializes guarded writes across file service instances", async (context) 
   const right = new FileService(await PathPolicy.create(root));
 
   for (let trial = 0; trial < 10; trial += 1) {
-    const original = await left.writeText("note.txt", `original-${trial}`);
+    const relativePath = `note-${trial}.txt`;
+    const original = await left.writeText(relativePath, `original-${trial}`);
     const contents = [`left-${trial}`, `right-${trial}`] as const;
     const results = await Promise.allSettled([
-      left.writeText("note.txt", contents[0], original.sha256),
-      right.writeText("note.txt", contents[1], original.sha256),
+      left.writeText(relativePath, contents[0], original.sha256),
+      right.writeText(relativePath, contents[1], original.sha256),
     ]);
 
     assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
     const rejected = results.find((result) => result.status === "rejected");
     assert.ok(rejected && rejected.status === "rejected");
     assert.equal((rejected.reason as WorkerError).code, "stale_revision");
-    const finalContent = await readFile(path.join(root, "note.txt"), "utf8");
+    const finalContent = await readFile(path.join(root, relativePath), "utf8");
     assert.ok(finalContent === contents[0] || finalContent === contents[1]);
     assert.deepEqual(
       (await readdir(root)).filter((name) => name.startsWith(".glossa-")),
@@ -294,6 +368,8 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   );
   await writeFile(path.join(root, "one.ts"), "hit", "utf8");
   await writeFile(path.join(root, "two.ts"), "hit", "utf8");
+  await writeFile(path.join(root, "src", "keep.ts"), "const alpha123 = 'hit';", "utf8");
+  await writeFile(path.join(root, "src", "skip.ts"), "hit", "utf8");
   await writeFile(path.join(root, "binary.bin"), Buffer.from([0xff, 0xfe]));
   await writeFile(path.join(root, "node_modules", "hidden.ts"), "hit", "utf8");
 
@@ -320,6 +396,22 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   assert.equal(literal.matches[0]?.path, "src/types.d.ts");
   assert.equal(literal.matches[0]?.column, 17);
 
+  const regex = await files.searchText({
+    query: "\\?xT(?:OKEN|EST)",
+    matchMode: "regex",
+    extensions: [".d.ts"],
+  });
+  assert.equal(regex.matches[0]?.path, "src/types.d.ts");
+  assert.equal(regex.matches[0]?.column, 1);
+
+  const filtered = await files.searchText({
+    query: "hit",
+    includeGlobs: ["src/**"],
+    excludeGlobs: ["src/skip.ts"],
+  });
+  assert.deepEqual(filtered.matches.map((match) => match.path), ["src/keep.ts"]);
+  assert.equal(filtered.matches.some((match) => match.path === "one.ts"), false);
+
   const bounded = await files.searchText({
     query: "needle",
     extensions: [".ts"],
@@ -342,6 +434,9 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   assert.equal(binary.skippedFiles, 1);
 
   await assert.rejects(files.searchText({ query: "bad\nquery" }), {
+    code: "invalid_search",
+  });
+  await assert.rejects(files.searchText({ query: "[", matchMode: "regex" }), {
     code: "invalid_search",
   });
   await assert.rejects(files.searchText({ query: "x", maxResults: 101 }), {

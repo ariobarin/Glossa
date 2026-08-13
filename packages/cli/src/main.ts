@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import type { WorkerAccessProfile } from "@glossa/protocol";
 import { loadAuthConfig } from "./auth-config.js";
-import { validCredentials } from "./auth-session.js";
 import {
   signedInSession,
   type SignedInSession,
@@ -43,8 +42,12 @@ import {
   recordUpdateCheck,
 } from "./update-state.js";
 import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
+import { unpairComputer } from "./unpair.js";
 import { recordSessionUsage, recordToolUsage } from "./usage-store.js";
-import { runManagedSession } from "./worker/managed-session.js";
+import {
+  deviceForSession,
+  runManagedSession,
+} from "./worker/managed-session.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
 import { acquireWorkspaceLease } from "./worker/workspace-lease.js";
 
@@ -61,6 +64,7 @@ Usage:
   glossa status
   glossa devices revoke <id>
   glossa logout
+  glossa unpair
   glossa update [--check]
   glossa update --policy <notify|auto|off>
   glossa update --channel <beta|stable>
@@ -80,8 +84,8 @@ Keys:
   ↑↓ select or browse
   ←→ change workspace access
   Enter/r  revoke selected device
-  Esc  activity
-  l  sign out
+  Esc  workspace
+  l  account sign out
   ?  help
   q  disconnect and quit`;
 
@@ -154,8 +158,7 @@ async function runWorkspaceSession(
   };
   try {
     const endpoints = loadRelayEndpoints();
-    let credentials = (await authenticatedSession()).credentials;
-    const statusService = new WorkspaceStatusService(credentials, endpoints);
+    const device = await deviceForSession(endpoints);
     let postExitNotice: string | undefined;
     let requestedAccessProfile = accessProfile;
     let activeSessionController: AbortController | undefined;
@@ -173,7 +176,7 @@ async function runWorkspaceSession(
           else signal.addEventListener("abort", stopSession, { once: true });
           try {
             await runManagedSession(root, endpoints, {
-              credentials,
+              device,
               workerVersion: VERSION,
               accessProfile: sessionAccessProfile,
               ...(label ? { workspaceLabel: label } : {}),
@@ -207,10 +210,13 @@ async function runWorkspaceSession(
         }
       },
       loadStatus: async (signal) => {
-        return hudStatus(await statusService.refresh(signal));
+        const credentials = await authenticatedCredentials(signal);
+        return hudStatus(
+          await new WorkspaceStatusService(credentials, endpoints).refresh(signal),
+        );
       },
       revokeDevice: async (deviceId, signal) => {
-        credentials = await validCredentials(credentials, { signal });
+        const credentials = await authenticatedCredentials(signal);
         await revokeDevice(
           endpoints,
           credentials,
@@ -353,6 +359,8 @@ async function main(): Promise<void> {
     await showStatus();
   } else if (invocation.command === "logout") {
     await logoutFromGlossa();
+  } else if (invocation.command === "unpair") {
+    await unpairComputer();
   } else if (invocation.command === "update") {
     await runUpdateCommand(invocation);
   } else {

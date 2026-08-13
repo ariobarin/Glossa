@@ -24,7 +24,7 @@ jobs:
         shell: bash
         run: |
           version=$(node -p "require('./packages/cli/package.json').version")
-          [[ "$version" == 0.1.* ]]
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
           test "cli-v${version}" = "${GITHUB_REF_NAME}"
       - run: npm run check
 

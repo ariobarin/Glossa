@@ -6,13 +6,13 @@ How Glossa protects local workspaces, accounts, credentials, and data.
 
 Each worker exposes one canonical local directory and one access profile:
 
-| Profile | Structured reads | Guarded writes inside root | Commands |
+| Profile | Structured reads | Guarded mutations inside root | Commands |
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
 | `system` | Yes | Yes | Yes |
 
-The selected profile is visible in the local terminal and returned by `list_devices` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
+The selected profile is visible in the local terminal and returned by `list_workspaces` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
 
 A worker from an older release that did not declare a profile is reported as `system`, because that release historically accepted commands. Compatibility never understates legacy authority.
 
@@ -20,7 +20,7 @@ A worker from an older release that did not declare a profile is reported as `sy
 
 `system` access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.
 
-Use the default `workspace` profile when file changes are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
+Use the default `workspace` profile when file changes, directory creation, deletion, or moves inside the exposed root are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
 
 ## Trust assumptions
 
@@ -53,9 +53,25 @@ Use the default `workspace` profile when file changes are sufficient. Enable `sy
 - require account ID in every database and in-memory ownership lookup;
 - never fetch by resource ID and check ownership afterward when an account-scoped query is possible;
 - use opaque random identifiers;
-- bind local device credentials to the authenticated subject before reuse;
+- require an authenticated MCP account to explicitly approve each new computer pairing before device enrollment;
 - bind ephemeral worker credentials to one account, device, worker ID, and generation;
 - verify account isolation with direct integration checks before deployment.
+
+### Pairing-code guessing or interception
+
+**Threat:** an attacker guesses a short human pairing code or observes one and tries to bind a computer without the user's intent.
+
+**Controls:**
+
+- create a separate 256-bit private pairing secret that is never shown to the approving MCP client;
+- store only the private secret's SHA-256 digest in process-local relay memory while pairing is pending;
+- expire pairing state after five minutes and make successful credential issuance idempotent so concurrent/retried completion requests receive one device credential;
+- require explicit `pair_device` approval from an authenticated MCP account using the short code;
+- require the pairing computer to present the matching private secret before device enrollment completes;
+- rate-limit pairing creation and completion attempts by source address and cap process-local pending pairing state;
+- never persist pairing codes, private pairing secrets, approval state, or retry-cached raw device credentials to the database; the issued raw credential remains only in process-local pairing memory until that five-minute request expires.
+
+Possession of the short human code alone is insufficient to retrieve the device credential because completion also requires the computer's private secret. However, an attacker who observes a live code and can authenticate to Glossa could race to approve that pending computer into the attacker's account. Treat the displayed code as a temporary secret, expose it only to the intended authenticated ChatGPT session, and approve only the code currently shown by the intended computer.
 
 ### Stolen device token
 
@@ -68,7 +84,7 @@ Use the default `workspace` profile when file changes are sufficient. Enable `sy
 - store only a salted scrypt hash in the relay database;
 - display or return the raw secret once;
 - store it locally in the operating-system credential store, with an explicit warning before a restricted file fallback;
-- support device-specific revocation;
+- support device-specific revocation, including self-revocation through `glossa unpair`;
 - apply failed-authentication rate limiting and constant-time comparison;
 - never log Authorization headers.
 
@@ -114,7 +130,7 @@ A device token does not silently broaden a worker's selected access profile. The
 
 - use one protocol enum and one permission-mapping function across the CLI and relay;
 - include the profile in current worker registration and echo it in the registration response;
-- expose the profile and derived booleans through `list_devices`;
+- expose the profile and derived booleans through `list_workspaces`;
 - reject writes and commands before relay dispatch when permission is absent;
 - reject the same operations again inside `LocalWorker`;
 - return stable, actionable `write_access_disabled` and `command_access_disabled` errors that tell the model not to retry or bypass the boundary;
@@ -130,7 +146,8 @@ A device token does not silently broaden a worker's selected access profile. The
 - enforce canonicalization, realpath, symlink, junction, and reparse-point checks for the host operating system;
 - validate existing paths and nearest writable ancestors locally;
 - reject absolute paths and lexical parent escapes;
-- revalidate root-relative paths for every structured file operation;
+- revalidate root-relative paths for every structured file operation, including directory creation, deletion, and moves;
+- reject deleting or moving the exposed root, reject existing move destinations and self-nesting directory moves, and require an explicit recursive flag before deleting non-empty directories;
 - stream directory entries into bounded traversal state, skip links and unavailable files during listing and search, and cap entries, files, bytes, matches, lines, returned content, and elapsed local scan time;
 - preserve discovered native filenames; prefix POSIX names containing literal backslashes with `./` so they remain safely reusable, and normalize returned separators only on Windows;
 - preserve correct case-sensitive or case-insensitive comparison for the host;
@@ -149,9 +166,9 @@ A device token does not silently broaden a worker's selected access profile. The
 - disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
 - tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
 - reject recognizable authentication-secret inputs at the relay and worker;
-- scan file results, edit diffs, and command output locally; retain bounded overlap across command-output chunks, clear captured output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
+- scan file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
 - never enumerate, persist, or log environment variables automatically;
-- bound command duration, captured output, concurrency, and status waits;
+- keep default command snapshots bounded; cap each retained range at 64 KiB, each retained stream at 1 MiB, terminal records at five minutes, and recent command records at eight; also bound command duration, concurrency, and status waits;
 - terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;
 - make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;
 - recommend a dedicated OS account, container, or VM for unattended or sensitive use.
@@ -166,12 +183,12 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 
 **Controls:**
 
-- reject recognizable secret-bearing `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
+- reject recognizable secret-bearing structured mutation paths plus `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
 - repeat input checks locally so older or compromised relay behavior cannot bypass the worker boundary;
 - preflight an edited file before mutation and bind the edit to the scanned SHA-256 when the caller did not already provide one;
-- inspect content-bearing file and command results before they leave the worker;
+- inspect content-bearing file results, command snapshots, and every retained command-output range before they leave the worker;
 - inspect command output incrementally with overlap across chunks so a token split across writes is still detected;
-- clear captured output, stop the command process tree, and return a fixed safe error without the matched value;
+- clear captured and retained output, stop the command process tree, and return a fixed safe error without the matched value;
 - redact restricted command inputs from local activity events;
 - permit explicit placeholders such as `<redacted>` and `replace-me` so documentation and fixtures remain usable;
 - test the detector against the repository corpus to prevent ordinary source code from becoming unreadable.

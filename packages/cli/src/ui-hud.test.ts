@@ -44,15 +44,20 @@ test("HUD breadcrumbs identify every top-level view", () => {
   const devices = renderHud({ ...connectedState(), view: "devices" }, 80, false, 20);
   const help = renderHud({ ...connectedState(), view: "help" }, 80, false, 20);
 
-  assert.match(activity.split("\n")[0] ?? "", /Glossa \/ Recent Activity\s+Connected/);
+  assert.match(activity.split("\n")[0] ?? "", /Glossa \/ Activity\s+Connected/);
   assert.match(workspace.split("\n")[0] ?? "", /Glossa \/ Workspace\s+Connected/);
   assert.match(devices.split("\n")[0] ?? "", /Glossa \/ Devices\s+Connected/);
   assert.match(help.split("\n")[0] ?? "", /Glossa \/ Help\s+Connected/);
 });
 
-test("footer keeps stable navigation left and contextual controls right", () => {
+test("footer keeps navigation left and contextual controls right", () => {
   const width = 110;
-  const activity = renderHud(connectedState(), width, false, 20).split("\n").at(-1)!;
+  const activity = renderHud(
+    { ...connectedState(), view: "activity" },
+    width,
+    false,
+    20,
+  ).split("\n").at(-1)!;
   const workspace = renderHud(
     { ...connectedState(), view: "workspace", accessProfile: "workspace" },
     width,
@@ -87,10 +92,9 @@ test("footer keeps stable navigation left and contextual controls right", () => 
     20,
   ).split("\n").at(-1)!;
 
-  const stableNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+L Sign out\s+Q Quit/;
+  const regularNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+L Account sign out\s+Q Quit/;
   for (const footer of [activity, workspace, devices, help]) {
-    assert.match(footer, stableNav);
-    assert.equal(footer.indexOf("A Activity"), activity.indexOf("A Activity"));
+    assert.match(footer, regularNav);
   }
   assert.match(activity, /↑ Older\s+↓ Newer$/);
   assert.match(workspace, /← Read only\s+→ System$/);
@@ -122,7 +126,7 @@ test("workspace access handoff has no visible intermediate frame", () => {
   );
 
   assert.equal(pending, confirmed);
-  assert.match(pending, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
+  assert.match(pending, /ACCESS\s+← Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
 });
 
@@ -165,7 +169,9 @@ test("activity layout aligns tool arguments and timestamps", () => {
   assert.match(rows[0]!, /15s ago$/);
   assert.match(rows[1]!, /1m ago$/);
   assert.match(rows[2]!, /now$/);
-  assert.doesNotMatch(output, /[●◌×]/);
+  assert.match(rows[0]!, /✓\s+read_file/);
+  assert.match(rows[1]!, /×\s+search_text/);
+  assert.match(rows[2]!, /○\s+run_command/);
 });
 
 test("activity view paginates newest-first without an agent block", () => {
@@ -186,7 +192,7 @@ test("activity view paginates newest-first without an agent block", () => {
     false,
     20,
   );
-  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Recent Activity \(1-14\/30\)/);
+  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(1-14\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
   assert.match(output, /file-30\.txt/);
   assert.doesNotMatch(output, /file-1\.txt/);
@@ -260,7 +266,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
     output as unknown as WriteStream,
   );
 
-  await waitFor(() => rendered.includes("Recent Activity"));
+  await waitFor(() => rendered.includes("Glossa / Workspace"));
   input.write("d");
   await waitFor(() => rendered.includes("Glossa / Devices"));
   input.write("\u001b[B");
@@ -346,8 +352,6 @@ test("workspace access controls deescalate directly and confirm escalation", asy
     output as unknown as WriteStream,
   );
 
-  await waitFor(() => rendered.includes("Recent Activity"));
-  input.write("w");
   await waitFor(() => rendered.includes("Glossa / Workspace"));
   input.write("\u001b[C");
   await waitFor(() => rendered.includes("Increase access to System?"));
@@ -356,11 +360,11 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   await waitFor(() => changes.length === 1);
   assert.deepEqual(changes, ["system"]);
 
-  await waitFor(() => rendered.includes("[ System ]"));
+  await waitFor(() => rendered.includes("OS account permissions apply"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 2);
   assert.deepEqual(changes, ["system", "workspace"]);
-  await waitFor(() => rendered.includes("[ Workspace ]"));
+  await waitFor(() => rendered.includes("Commands disabled"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 3);
   assert.deepEqual(changes, ["system", "workspace", "read-only"]);

@@ -102,7 +102,7 @@ export function initialHudState(workspace: string): HudState {
     message: undefined,
     activities: [],
     activityPage: 0,
-    view: "activity",
+    view: "workspace",
     status: undefined,
     deviceSelection: 0,
     pendingAccessProfile: undefined,
@@ -270,6 +270,16 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
         `${job.edits.length} ${job.edits.length === 1 ? "edit" : "edits"}`,
         ...(job.expectedSha256 ? ["guarded"] : []),
       ]);
+    case "make_directory":
+      return pathSummary(job.path, job.recursive ? ["recursive"] : []);
+    case "delete_path":
+      return pathSummary(job.path, job.recursive ? ["recursive"] : []);
+    case "move_path":
+      return {
+        target: `${quoteActivityInput(job.source)} → ${quoteActivityInput(job.destination)}`,
+        details: [],
+        truncation: "middle",
+      };
     case "run_command":
       return {
         target: job.argv
@@ -297,6 +307,15 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
           ...(job.afterSequence === undefined
             ? []
             : [`after sequence ${job.afterSequence}`]),
+        ],
+        truncation: "middle",
+      };
+    case "read_command_output":
+      return {
+        target: `command ${job.commandId} ${job.stream}`,
+        details: [
+          ...(job.offset === undefined ? [] : [`offset ${job.offset}`]),
+          ...(job.maxBytes === undefined ? [] : [`max ${job.maxBytes} bytes`]),
         ],
         truncation: "middle",
       };

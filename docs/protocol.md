@@ -16,29 +16,6 @@ No secret data. Suitable for uptime checks.
 
 OAuth bearer token required. Audience must match the Glossa API. Routes check scopes and derive account ownership from `sub`.
 
-### `POST /v1/devices/enroll`
-
-Input:
-
-```json
-{
-  "name": "Thomas MacBook",
-  "platform": "darwin-arm64"
-}
-```
-
-Output, shown once:
-
-```json
-{
-  "device": {
-    "id": "uuid",
-    "name": "Thomas MacBook"
-  },
-  "device_token": "gld_uuid_secret"
-}
-```
-
 ### `GET /v1/devices`
 
 Lists only the authenticated user's devices.
@@ -50,6 +27,10 @@ Rename a device owned by the account.
 ### `DELETE /v1/devices/:id`
 
 Revoke a device owned by the account.
+
+### `POST /v1/devices/enroll`
+
+Legacy OAuth enrollment remains available temporarily so published 0.1.x and 0.2.x CLIs continue working during the v2 rollout. New v2 CLIs use the short-code pairing flow instead; remove this compatibility route only after supported published clients no longer call it.
 
 ## Worker API authentication
 
@@ -73,9 +54,9 @@ Registers an active worker generation using an ephemeral worker UUID created by 
 
 A current worker always advertises one `accessProfile`: `read-only`, `workspace`, or `system`. The relay echoes the accepted profile, derives `readFiles`, `writeFiles`, and `runCommands`, and rejects a forbidden operation before it enters the worker queue. The local worker independently enforces the same mapping. A registration from an older worker without a profile is classified as `system`, matching that worker's historical command authority.
 
-Current workers also advertise their CLI package version plus `commandProgress`, `concurrentJobs`, and `structuredReads` support. `list_devices` returns the reported version, selected profile, derived permissions, and accepted capability booleans, so clients can choose a worker whose authority matches the requested operation, avoid legacy command fallbacks, and ask the user to update a stale worker. The relay returns the accepted profile and capabilities, sends sequence-aware status jobs only to workers that accept them, enables capacity-aware concurrent delivery only after both sides negotiate it, and routes structured repository jobs only to workers that advertised them.
+Current workers also advertise their CLI package version plus `commandProgress`, `concurrentJobs`, and `structuredReads` support. `list_workspaces` returns the reported version, selected profile, derived permissions, and accepted capability booleans, so clients can choose a workspace whose authority matches the requested operation and ask the user to update a stale worker. The relay returns the accepted profile and capabilities, sends sequence-aware status jobs only to workers that accept them, enables capacity-aware concurrent delivery only after both sides negotiate it, and routes structured repository jobs only to workers that advertised them.
 
-For version compatibility, a current relay accepts structured-read, concurrent-capability, command-progress-only, worker-aware, and earlier single-worker request shapes. A current CLI retries those shapes in that order when it reaches an older relay. Local access-profile enforcement remains active even when an older relay cannot echo or expose the profile. Concurrency remains disabled unless the registration response explicitly accepts `concurrentJobs`, and the MCP structured repository tools return `worker_update_required` unless the active worker advertised `structuredReads`. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
+For version compatibility, a current relay accepts structured-read, concurrent-capability, command-progress-only, worker-aware, and earlier single-worker request shapes. A current CLI degrades capability shapes before optional registration metadata, so a supported relay can keep the selected access profile, worker version, and workspace label while ignoring newer capabilities. Authority never silently downgrades: `read-only` and `workspace` workers require the relay to explicitly confirm the requested profile and unregister/fail closed if it cannot; only `system` or unspecified authority may use a profileless legacy shape because the relay's conservative legacy classification is already `system`. Concurrency remains disabled unless the registration response explicitly accepts `concurrentJobs`, and the MCP structured repository tools return `worker_update_required` unless the active worker advertised `structuredReads`. The single-worker compatibility mode supports one active workspace per enrolled device and reports worker counts as unavailable until the relay is updated.
 
 ### `POST /device/poll`
 
@@ -101,37 +82,44 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
-MCP initialization advertises public tool-contract version `1.0.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
+MCP initialization advertises public tool-contract version `2.0.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
+
+Contract `2.0.0` is one coordinated public cutover from the production 1.x surface. It intentionally batches the breaking workspace-routing vocabulary (`list_workspaces`, `workspaceId`), the explicit `run_command.command` union, required command follow-up routing, and the expanded structured workspace capabilities into one migration. Intermediate development states are not supported public contracts; validate the complete v2 integration before deploying it and rescan the ChatGPT connector after the cutover.
 
 Tools:
 
-- `list_devices`
-- `logout`
+- `list_workspaces`
+- `pair_device`
+- `get_logout_instructions`
 - `read_file`
 - `list_files`
 - `search_text`
 - `read_file_range`
 - `write_file`
 - `edit_file`
+- `make_directory`
+- `delete_path`
+- `move_path`
 - `run_command`
 - `get_command`
+- `read_command_output`
 - `cancel_command`
 
-`list_devices` returns an object with `product`, `documentationUrl`, `devices`, `availability`, and `message`. `product` gives the agent a stable, capability-oriented Glossa identity in both online and offline states. `documentationUrl` always links to the official setup and reconnect guide for the current deployment: the managed relay uses `https://glossa.sh/docs/quickstart`, while a custom relay uses `https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md`.
+`list_workspaces` returns an object with `product`, `documentationUrl`, `workspaces`, `availability`, and `message`. `product` gives the agent a stable, capability-oriented Glossa identity in both online and offline states. `documentationUrl` always links to the official setup and reconnect guide for the current deployment: the managed relay uses `https://glossa.sh/docs/quickstart`, while a custom relay uses `https://github.com/ariobarin/glossa/blob/main/docs/self-hosting.md`.
 
-The result includes stable product metadata with the same `contractVersion` advertised during MCP initialization, plus one device entry for every active worker. Its `deviceId` is the ephemeral worker identifier accepted by file and command tools, `name` is the enrolled computer name, and `workspaceLabel` is present only when the user explicitly supplied one. Each entry reports `accessProfile`, a `permissions` object containing `readFiles`, `writeFiles`, and `runCommands`, the worker version when available, and negotiated capability booleans. Each entry reports `path: "."`; local absolute paths and derived repository names are never returned.
+The result includes stable product metadata with the same `contractVersion` advertised during MCP initialization, plus one workspace entry for every active worker. Its `workspaceId` is the ephemeral worker-routing identifier accepted by file and command tools, `name` is the enrolled computer name, and `workspaceLabel` is present only when the user explicitly supplied one. Each entry reports `accessProfile`, a `permissions` object containing `readFiles`, `writeFiles`, and `runCommands`, the worker version when available, and negotiated capability booleans. Each entry reports `path: "."`; local absolute paths and derived repository names are never returned.
 
-When no workers are active, `devices` is empty and `availability` is `"offline"`. The managed-relay `message` asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, and retry only after the user confirms the workspace is running. A custom relay instead points the agent to the platform-specific worker command in the self-hosting guide and uses the same confirmation boundary. When one or more workers are active, `availability` is `"online"` and `message` tells the agent to choose a workspace whose permissions match the requested operation. The offline result is a successful, user-safe response rather than a tool error. This preserves the existing MCP input name while allowing several independently routed workspaces on one enrolled computer. Local absolute paths are never transmitted to or returned by the hosted relay.
+When no workers are active, `workspaces` is empty and `availability` is `"offline"`. The managed-relay `message` asks the agent to have the user open a terminal in the workspace they want to expose, run `glossa`, keep that terminal open, and retry only after the user confirms the workspace is running. A custom relay instead points the agent to the platform-specific worker command in the self-hosting guide and uses the same confirmation boundary. When one or more workers are active, `availability` is `"online"` and `message` tells the agent to choose a workspace whose permissions match the requested operation. The offline result is a successful, user-safe response rather than a tool error. One enrolled computer may expose several independently routed workspaces; the public MCP contract names those routes as workspaces while internal device enrollment remains a separate concept. Local absolute paths are never transmitted to or returned by the hosted relay.
 
-`logout` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
+`get_logout_instructions` requires no worker. It returns the Auth0 browser logout URL and instructions that the model must present to the user. It does not navigate the browser, revoke credentials, or claim the user completed logout.
 
 `list_files` returns at most 200 regular files or directories in deterministic global relative-path order, so cursor pagination cannot skip nested or sibling entries. On POSIX, discovered names containing literal backslashes use a `./` native-path prefix so the returned value can be passed unchanged to other path-based tools. It reads directory streams incrementally, never holds more than the 20,000-entry scan ceiling, never follows symlinks or junctions, and skips entries or child directories that become missing or inaccessible plus common dependency and version-control directories during recursive traversal. `nextCursor` is a separate native ordering key; pass it back unchanged as `cursor` so reusable path encoding cannot change pagination order. Callers should narrow `path` when the scan ceiling is reached.
 
-`search_text` performs literal line-oriented matching without invoking a shell. It returns at most 100 matching lines with bounded 400-character snippets and scans at most 5,000 UTF-8 files, 32 MiB, or 20,000 filesystem entries. Files over 1 MiB, invalid UTF-8 files, links, transiently missing files, permission-denied files, and common dependency or version-control subtrees are skipped. Optional suffix filters support values such as `.ts` and `.d.ts`.
+`search_text` performs bounded literal or JavaScript regular-expression line matching without invoking a shell. Literal matching remains the default, and case sensitivity is configurable. Optional suffix filters support values such as `.ts` and `.d.ts`, while `includeGlobs` and `excludeGlobs` filter root-relative forward-slash paths before file contents consume the scan byte budget. It returns at most 100 matching lines with bounded 400-character snippets and scans at most 5,000 UTF-8 files, 32 MiB, or 20,000 filesystem entries. Files over 1 MiB, invalid UTF-8 files, links, transiently missing files, permission-denied files, and common dependency or version-control subtrees are skipped. Invalid regular expressions and glob patterns return `invalid_search`. These controls are part of structured-read authority; callers should not need `system` access merely to express a path-filtered repository search.
 
 `read_file_range` returns at most 500 complete normalized lines and 64 KiB per call, together with the full-file SHA-256, total line count, and `nextLine` continuation metadata. The full file remains subject to the 1 MiB UTF-8 limit. Every structured repository job receives a worker-local deadline equal to at most half the hosted request window and never more than 8 seconds. After that deadline, the read lane remains occupied until the current filesystem operation settles, any late directory handle is closed, and the worker returns `scan_timeout`; this bounds stalled work instead of accumulating background I/O.
 
-Tool annotations must describe actual behavior. `write_file`, `edit_file`, and `run_command` are non-read-only and destructive-capable. `cancel_command` is also non-read-only and destructive because it terminates a process tree, although it does not undo effects already caused. Discovery, logout instructions, file reads, and command status are read-only.
+Tool annotations must describe actual behavior. `write_file`, `edit_file`, `make_directory`, `delete_path`, `move_path`, and `run_command` are non-read-only and destructive-capable. `cancel_command` is also non-read-only and destructive because it terminates a process tree, although it does not undo effects already caused. Discovery, logout instructions, file reads, command status, and retained command-output ranges are read-only.
 Every tool advertises the `glossa:access` OAuth scheme in descriptor metadata and is visible to the model. `run_command` declares `openWorldHint: true` because a command can use the worker account's inherited network access and affect external systems. All other tools declare `openWorldHint: false`.
 Every tool description begins with when to use it, includes disallowed cases when materially relevant, and states important behavior the schema cannot express, including Restricted Data handling. The server instruction contains shared product scope, profile semantics, untrusted-data rules, and the authentication-secret prohibition. Every public input and output field includes a description. Successful results always provide the complete typed value in `structuredContent`. Results through 16 KiB also mirror the equivalent JSON in text content for compatibility; larger results use a short text notice instead of transmitting the same payload twice.
 
@@ -157,6 +145,8 @@ type WorkerJob =
       caseSensitive?: boolean;
       maxResults?: number;
       extensions?: string[];
+      includeGlobs?: string[];
+      excludeGlobs?: string[];
       timeoutMs: number;
     }
   | {
@@ -182,6 +172,24 @@ type WorkerJob =
       expectedSha256?: string;
     }
   | {
+      type: "make_directory";
+      requestId: string;
+      path: string;
+      recursive?: boolean;
+    }
+  | {
+      type: "delete_path";
+      requestId: string;
+      path: string;
+      recursive?: boolean;
+    }
+  | {
+      type: "move_path";
+      requestId: string;
+      source: string;
+      destination: string;
+    }
+  | {
       type: "run_command";
       requestId: string;
       argv?: string[];
@@ -197,28 +205,42 @@ type WorkerJob =
       afterSequence?: number;
       waitMs?: number;
     }
+  | {
+      type: "read_command_output";
+      requestId: string;
+      commandId: string;
+      stream: "stdout" | "stderr";
+      offset?: number;
+      maxBytes?: number;
+    }
   | { type: "cancel_command"; requestId: string; commandId: string };
 ```
 
-`argv` and `shellCommand` are mutually exclusive. Clients should use `argv` for native executables such as Git and Node.js. Direct execution avoids shell startup and parsing. Use `shellCommand` when the operation requires shell syntax such as pipes, redirection, variable expansion, or multiple statements. On Windows, also use `shellCommand` for command shims and name the `.cmd` or `.bat` file explicitly, for example `npm.cmd test`, because direct process spawning does not resolve those scripts and PowerShell may otherwise select a blocked `.ps1` shim.
+The public MCP `run_command` input makes the command choice explicit as `command: { argv: string[] } | { shellCommand: string }`, so clients cannot provide both forms or omit both in a schema-valid call. The relay maps that nested choice to the flat worker job shown above. Clients should use `command.argv` for native executables such as Git and Node.js because direct execution avoids shell startup and parsing. Use `command.shellCommand` when the operation requires shell syntax such as pipes, redirection, variable expansion, or multiple statements. On Windows, also use `command.shellCommand` for command shims and name the `.cmd` or `.bat` file explicitly, for example `npm.cmd test`, because direct process spawning does not resolve those scripts and PowerShell may otherwise select a blocked `.ps1` shim.
 
-An active worker executes a job without a separate local confirmation round trip only when the selected startup profile permits it. `read-only` accepts structured reads only. `workspace` accepts structured reads plus `write_file` and `edit_file` inside the root. `system` accepts those operations plus the command lifecycle. Session startup is the local authorization boundary for that selected profile, not for broader authority. Both the relay and worker return `write_access_disabled` or `command_access_disabled` before performing a forbidden operation. Structured file tools remain confined to the exposed root. System commands retain the full operating-system authority of the local worker account.
+An active worker executes a job without a separate local confirmation round trip only when the selected startup profile permits it. `read-only` accepts structured reads only. `workspace` accepts structured reads plus `write_file`, `edit_file`, `make_directory`, `delete_path`, and `move_path` inside the root. `system` accepts those operations plus the command lifecycle and retained command-output reads. Session startup is the local authorization boundary for that selected profile, not for broader authority. Both the relay and worker return `write_access_disabled` or `command_access_disabled` before performing a forbidden operation. Structured file tools remain confined to the exposed root. System commands retain the full operating-system authority of the local worker account.
 
-The relay rejects recognizable authentication-secret material in `write_file`, `edit_file`, and `run_command` inputs before it creates a worker job. The worker independently repeats those checks and scans content-bearing file and command results. A match returns `restricted_data_blocked` with a fixed message and never returns the matched value. Explicit placeholders remain allowed. This is a high-confidence egress guard rather than a complete data-loss-prevention guarantee.
+The relay rejects recognizable authentication-secret material in structured mutation paths, `write_file`, `edit_file`, and `run_command` inputs before it creates a worker job. The worker independently repeats those checks and scans content-bearing file and command results. A match returns `restricted_data_blocked` with a fixed message and never returns the matched value. Explicit placeholders remain allowed. This is a high-confidence egress guard rather than a complete data-loss-prevention guarantee.
+
+`write_file` encodes create-vs-replace intent through `expectedSha256`. Omitting it is create-only and returns `path_exists` if the target already exists. Providing the SHA from `read_file` or `read_file_range` is replace-only: the target must still exist at that exact revision or the write fails. The worker serializes writes, writes replacement data through a temporary file, and uses an exclusive filesystem link for creation so a concurrent external creator cannot turn a create into a silent overwrite.
+
+`make_directory` creates one relative directory and optionally its missing parents. `delete_path` removes a regular file or directory; non-empty directories require `recursive: true`, and the exposed root can never be deleted. `move_path` renames or relocates a regular file or directory inside the root, refuses existing destinations, and prevents moving a directory inside itself. All three operations reject symlinks and junctions, are serialized with other structured mutations, require a worker that negotiated `structuredMutations`, and remain available in the default `workspace` profile without command authority.
 
 `edit_file` applies one or more exact old-text/new-text replacements against the same original file. Every old-text value must be non-empty and occur exactly once, replacements may not overlap, and the worker always guards the final atomic write with the hash of the file it read. Before mutation, the worker scans the current file for recognizable authentication-secret material and uses the scanned SHA-256 as the write guard when the caller did not supply one. The optional caller-provided SHA-256 adds an earlier stale-revision check. A successful result returns the new hash, replacement count, and a bounded unified diff of the affected lines.
 
 Only a `system` worker may start a command. That process inherits the complete environment, credentials, filesystem permissions, and network access of the Glossa worker process. Glossa does not enumerate that environment automatically, and the MCP instructions tell the model not to inspect credentials or environment data. Recognizable authentication-secret inputs are rejected, and recognizable credential material in stdout or stderr is suppressed locally. Unknown or transformed values and direct network transmission remain possible under `system`.
 
-`run_command` waits up to 750 milliseconds by default for fast completion, configurable from 0 through 5,000 milliseconds. Clients should pass `waitMs: 0` for commands expected to run longer than a few seconds so the running handle returns immediately. For short checks expected to finish near one second, `waitMs: 1500` to `2000` can avoid a second hosted tool round trip. A command that finishes within that budget returns its terminal status and bounded output in the same tool call; a longer command returns the worker `deviceId`, a running `commandId`, captured output so far, and a monotonic `sequence` when the worker supports incremental progress. Current clients pass both IDs to `get_command` and `cancel_command`, so command control remains directly routable across relay restarts. For compatibility with clients that cached the earlier command schema, the relay also remembers the latest running command for each worker and accepts command-ID-only follow-ups while that relay process and worker generation remain live. This bounded fallback is transient. It is cleared after a terminal result is observed, when a newer command replaces it, on reconnect, or on disconnect, and it does not replace explicit routing. `get_command` accepts waits up to 15 seconds. The relay may shorten the worker-side wait to reserve five seconds for queueing, delivery, result processing, and the hosted HTTP response within its configured request deadline. Passing the latest `sequence` as `afterSequence` makes that wait end when new output arrives or lifecycle state changes; omitting it preserves completion-oriented waiting for compatibility. Results report `running`, `succeeded`, `failed`, `canceled`, or `timed_out` and include bounded output captured so far.
+`run_command` waits up to 750 milliseconds by default for fast completion, configurable from 0 through 5,000 milliseconds. Clients should pass `waitMs: 0` for commands expected to run longer than a few seconds so the running handle returns immediately. For short checks expected to finish near one second, `waitMs: 1500` to `2000` can avoid a second hosted tool round trip. A command that finishes within that budget returns its terminal status and bounded output in the same tool call; a longer command returns the public `workspaceId`, a running `commandId`, captured output so far, and a monotonic `sequence` when the worker supports incremental progress. `get_command`, `read_command_output`, and `cancel_command` use that explicit `workspaceId` together with `commandId`, so command control and retained diagnostics remain directly routable across relay restarts without a relay-side command-ID routing cache. `get_command` accepts waits up to 15 seconds. The relay may shorten the worker-side wait to reserve five seconds for queueing, delivery, result processing, and the hosted HTTP response within its configured request deadline. Passing the latest `sequence` as `afterSequence` makes that wait end when new output arrives or lifecycle state changes; omitting it preserves completion-oriented waiting. Results report `running`, `succeeded`, `failed`, `canceled`, or `timed_out` and include bounded output captured so far.
 
-The worker scans stdout and stderr incrementally while retaining bounded overlap across chunks. On a recognizable authentication-secret match it clears both captured streams, requests process-tree termination, wakes status waiters, and makes start, status, or cancellation return only `restricted_data_blocked`. Termination does not undo effects that occurred before detection, and the scanner cannot prevent direct network exfiltration. Public MCP results omit worker-local lifecycle timestamps because clients do not need them to manage a command. `cancel_command` terminates the process tree. Disconnecting the worker rejects new jobs and terminates an active command. Command state, worker IDs, sequences, compatibility routes, scan tails, and output remain transient and are never persisted by the relay.
+When `stdoutTruncated` or `stderrTruncated` is true, `read_command_output` retrieves another bounded retained window without rerunning the command. The caller selects one stream, a zero-based retained byte offset, and up to 64 KiB of source bytes; the default window is 32 KiB. Results include `nextOffset`, current command status, retained and total byte counts, a completion flag, and `retentionTruncated`. The worker retains at most 1 MiB independently for stdout and stderr. Bytes beyond that cap are not recoverable. A terminal command record is retained for at most five minutes, no more than eight recent records are kept, and all retained output disappears when its record is deleted. Workers negotiate this behavior as `commandOutputRanges`; older workers receive no such jobs and return `worker_update_required` at the relay boundary.
 
-Full text-file reads and writes are limited to 1 MiB. Structured listings, searches, and ranged reads have the smaller per-call and scan ceilings described above. Returned standard output and standard error share a 12 KiB command-result budget. Each local stream retains a bounded beginning and rolling tail, then the worker allocates the response budget across both streams so noisy standard output cannot erase all diagnostic standard error. A truncated stream therefore preserves useful context from both ends and sets its truncation flag; clients can still use a narrower follow-up command when more detail is needed. One command may run at a time per worker; another `run_command` request returns `command_busy` until the active command finishes or is canceled.
+The worker scans stdout and stderr incrementally while retaining bounded overlap across chunks. On a recognizable authentication-secret match it clears both captured streams, requests process-tree termination, wakes status waiters, and makes start, status, retained-output reads, or cancellation return only `restricted_data_blocked`. Termination does not undo effects that occurred before detection, and the scanner cannot prevent direct network exfiltration. Public MCP results omit worker-local lifecycle timestamps because clients do not need them to manage a command. `cancel_command` terminates the process tree. Disconnecting the worker rejects new jobs and terminates an active command. Command state, worker IDs, sequences, scan tails, default snapshots, and retained output ranges remain transient and are never persisted by the relay.
+
+Full text-file reads and writes are limited to 1 MiB. Structured listings, searches, and ranged reads have the smaller per-call and scan ceilings described above. Returned standard output and standard error share a 12 KiB command-result budget. Each local stream retains a bounded beginning and rolling tail, then the worker allocates the response budget across both streams so noisy standard output cannot erase all diagnostic standard error. A truncated stream therefore preserves useful context from both ends and sets its truncation flag; clients should use `read_command_output` to inspect retained omitted bytes without rerunning the command. One command may run at a time per worker; another `run_command` request returns `command_busy` until the active command finishes or is canceled.
 
 The requested command timeout defaults to 900,000 milliseconds and must be between 1 millisecond and the 3,600,000 millisecond hard maximum.
 
-These are ordinary MCP tools so clients do not need native MCP Tasks support. Native task negotiation may be added after target client support is dependable, but it is not part of the public `1.0.0` contract.
+These are ordinary MCP tools so clients do not need native MCP Tasks support. Native task negotiation may be added after target client support is dependable, but it is not part of the public `2.0.0` contract.
 
 ## Error principles
 

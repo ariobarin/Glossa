@@ -19,6 +19,8 @@ interface RegisteredSession {
   legacyRelay: boolean;
   concurrentJobs: boolean;
   structuredReads: boolean;
+  structuredMutations: boolean;
+  commandOutputRanges: boolean;
   accessProfileAccepted: boolean;
   workspaceLabelAccepted: boolean;
   workerToken?: string;
@@ -71,6 +73,15 @@ export class DeviceRejectedError extends Error {
   }
 }
 
+export class RelayAccessProfileUnsupportedError extends Error {
+  constructor(profile: WorkerAccessProfile) {
+    super(
+      `The relay needs an update before it can represent ${profile} access. Update the relay before reconnecting this workspace.`,
+    );
+    this.name = "RelayAccessProfileUnsupportedError";
+  }
+}
+
 class RelayResponseError extends Error {
   constructor(readonly status: number) {
     super(`The relay returned HTTP ${status}.`);
@@ -88,7 +99,11 @@ function optionalWorkerToken(value: unknown): string | undefined {
 
 function supportsCapability(
   value: unknown,
-  capability: "concurrentJobs" | "structuredReads",
+  capability:
+    | "concurrentJobs"
+    | "structuredReads"
+    | "structuredMutations"
+    | "commandOutputRanges",
 ): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
@@ -100,6 +115,7 @@ function supportsCapability(
 function jobLane(job: WorkerJob): JobLane {
   switch (job.type) {
     case "get_command":
+    case "read_command_output":
       return "status";
     case "cancel_command":
       return "cancel";
@@ -110,6 +126,9 @@ function jobLane(job: WorkerJob): JobLane {
       return "read";
     case "write_file":
     case "edit_file":
+    case "make_directory":
+    case "delete_path":
+    case "move_path":
     case "run_command":
       return "mutation";
   }
@@ -119,10 +138,15 @@ function acceptedJobTypes(
   counts: LaneCounts,
   total: number,
   structuredReads: boolean,
+  structuredMutations: boolean,
+  commandOutputRanges: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
-  if (counts.status < 1) accepted.push("get_command");
+  if (counts.status < 1) {
+    accepted.push("get_command");
+    if (commandOutputRanges) accepted.push("read_command_output");
+  }
   if (counts.cancel < 1) accepted.push("cancel_command");
   if (counts.read < 2) {
     accepted.push("read_file");
@@ -132,6 +156,9 @@ function acceptedJobTypes(
   }
   if (counts.mutation < 1) {
     accepted.push("write_file", "edit_file", "run_command");
+    if (structuredMutations) {
+      accepted.push("make_directory", "delete_path", "move_path");
+    }
   }
   return accepted;
 }
@@ -219,7 +246,12 @@ export class RemoteWorker {
           await this.#pollGeneration(session);
         } catch (error) {
           if (this.#signal.aborted) return;
-          if (error instanceof DeviceRejectedError) throw error;
+          if (
+            error instanceof DeviceRejectedError ||
+            error instanceof RelayAccessProfileUnsupportedError
+          ) {
+            throw error;
+          }
           const delay = reconnectDelayMs(
             failures,
             this.#random,
@@ -247,6 +279,25 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
+    const currentBody = {
+      workerId: this.#workerId,
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
+      },
+    };
+    const mutationBody = {
+      workerId: this.#workerId,
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
+      },
+    };
     const structuredBody = {
       workerId: this.#workerId,
       capabilities: {
@@ -259,81 +310,96 @@ export class RemoteWorker {
       workerId: this.#workerId,
       capabilities: { commandProgress: true, concurrentJobs: true },
     };
-    const versionedStructuredBody = this.#workerVersion
-      ? { ...structuredBody, workerVersion: this.#workerVersion }
-      : undefined;
-    const preferredProfileBody = this.#accessProfile
-      ? {
-          ...(versionedStructuredBody ?? structuredBody),
-          accessProfile: this.#accessProfile,
-          ...(this.#workspaceLabel
-            ? { workspaceLabel: this.#workspaceLabel }
-            : {}),
-        }
-      : undefined;
-    const attempts: Array<{ body: object; legacyRelay: boolean }> = [
-      ...(preferredProfileBody
-        ? [{ body: preferredProfileBody, legacyRelay: false }]
-        : []),
-      ...(versionedStructuredBody && this.#workspaceLabel
-        ? [{
-            body: {
-              ...versionedStructuredBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(this.#workspaceLabel
-        ? [{
-            body: {
-              ...structuredBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      ...(versionedStructuredBody
-        ? [{ body: versionedStructuredBody, legacyRelay: false }]
-        : []),
+    const capabilityBodies: Array<Record<string, unknown>> = [
+      currentBody,
+      mutationBody,
+      structuredBody,
+      concurrentBody,
       {
-        body: structuredBody,
-        legacyRelay: false,
+        workerId: this.#workerId,
+        capabilities: { commandProgress: true },
       },
-      ...(this.#workspaceLabel
-        ? [{
-            body: {
-              ...concurrentBody,
-              workspaceLabel: this.#workspaceLabel,
-            },
-            legacyRelay: false,
-          }]
-        : []),
-      {
-        body: concurrentBody,
-        legacyRelay: false,
-      },
-      {
-        body: {
-          workerId: this.#workerId,
-          capabilities: { commandProgress: true },
-        },
-        legacyRelay: false,
-      },
-      { body: { workerId: this.#workerId }, legacyRelay: false },
-      { body: {}, legacyRelay: true },
+      { workerId: this.#workerId },
     ];
+    const metadataPhases = [
+      {
+        includeVersion: Boolean(this.#workerVersion),
+        includeLabel: Boolean(this.#workspaceLabel),
+      },
+      ...(this.#workspaceLabel
+        ? [{
+            includeVersion: Boolean(this.#workerVersion),
+            includeLabel: false,
+          }]
+        : []),
+      ...(this.#workerVersion && this.#workspaceLabel
+        ? [{ includeVersion: false, includeLabel: true }]
+        : []),
+      { includeVersion: false, includeLabel: false },
+    ];
+    const attempts: Array<{
+      body: Record<string, unknown>;
+      legacyRelay: boolean;
+    }> = [];
+    const seenAttempts = new Set<string>();
+    const pushAttempt = (
+      base: Record<string, unknown>,
+      includeProfile: boolean,
+      includeVersion: boolean,
+      includeLabel: boolean,
+      legacyRelay = false,
+    ): void => {
+      const body = {
+        ...base,
+        ...(includeProfile && this.#accessProfile
+          ? { accessProfile: this.#accessProfile }
+          : {}),
+        ...(includeVersion && this.#workerVersion
+          ? { workerVersion: this.#workerVersion }
+          : {}),
+        ...(includeLabel && this.#workspaceLabel
+          ? { workspaceLabel: this.#workspaceLabel }
+          : {}),
+      };
+      const key = JSON.stringify(body);
+      if (seenAttempts.has(key)) return;
+      seenAttempts.add(key);
+      attempts.push({ body, legacyRelay });
+    };
 
-    for (const [index, attempt] of attempts.entries()) {
+    if (this.#accessProfile) {
+      for (const metadata of metadataPhases) {
+        for (const body of capabilityBodies) {
+          pushAttempt(
+            body,
+            true,
+            metadata.includeVersion,
+            metadata.includeLabel,
+          );
+        }
+      }
+    }
+
+    if (this.#accessProfile === undefined || this.#accessProfile === "system") {
+      for (const metadata of metadataPhases) {
+        for (const body of capabilityBodies) {
+          pushAttempt(
+            body,
+            false,
+            metadata.includeVersion,
+            metadata.includeLabel,
+          );
+        }
+      }
+      attempts.push({ body: {}, legacyRelay: true });
+    }
+
+    for (const attempt of attempts) {
       let response: Response;
       try {
         response = await this.#post("/device/register", attempt.body);
       } catch (error) {
-        if (
-          error instanceof RelayResponseError &&
-          error.status === 400 &&
-          index < attempts.length - 1
-        ) {
+        if (error instanceof RelayResponseError && error.status === 400) {
           continue;
         }
         throw error;
@@ -357,25 +423,38 @@ export class RemoteWorker {
       const workerToken = "workerToken" in value
         ? optionalWorkerToken(value.workerToken)
         : undefined;
-      return {
+      const accessProfileAccepted =
+        this.#accessProfile === undefined ||
+        this.#accessProfile === "system" ||
+        ("accessProfile" in value &&
+          value.accessProfile === this.#accessProfile);
+      const session: RegisteredSession = {
         generation: value.generation,
         legacyRelay: attempt.legacyRelay,
         concurrentJobs:
           !attempt.legacyRelay && supportsCapability(value, "concurrentJobs"),
         structuredReads:
           !attempt.legacyRelay && supportsCapability(value, "structuredReads"),
-        accessProfileAccepted:
-          this.#accessProfile === undefined ||
-          ("accessProfile" in value &&
-            value.accessProfile === this.#accessProfile),
+        structuredMutations:
+          !attempt.legacyRelay && supportsCapability(value, "structuredMutations"),
+        commandOutputRanges:
+          !attempt.legacyRelay && supportsCapability(value, "commandOutputRanges"),
+        accessProfileAccepted,
         workspaceLabelAccepted:
           this.#workspaceLabel === undefined ||
           ("workspaceLabel" in value &&
             value.workspaceLabel === this.#workspaceLabel),
         ...(workerToken ? { workerToken } : {}),
       };
+      if (!accessProfileAccepted && this.#accessProfile) {
+        throw new RelayAccessProfileUnsupportedError(this.#accessProfile);
+      }
+      return session;
     }
 
+    if (this.#accessProfile && this.#accessProfile !== "system") {
+      throw new RelayAccessProfileUnsupportedError(this.#accessProfile);
+    }
     throw new Error("The relay rejected every supported registration shape.");
   }
 
@@ -473,6 +552,8 @@ export class RemoteWorker {
           counts,
           inFlight.size,
           session.structuredReads,
+          session.structuredMutations,
+          session.commandOutputRanges,
         );
         if (acceptedTypes.length === 0) {
           await Promise.race(inFlight);
@@ -504,6 +585,8 @@ export class RemoteWorker {
             counts,
             inFlight.size,
             session.structuredReads,
+            session.structuredMutations,
+            session.commandOutputRanges,
           );
           const newlyAcceptedTypes = refreshedTypes.filter(
             (type) => !acceptedTypes.includes(type),
