@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { processIsAlive, updateRuntimeDirectory } from "./update-lock.js";
@@ -60,8 +60,8 @@ async function lockIsStale(file: string, maxAgeMs: number): Promise<boolean> {
   const owner = await readOwner(file);
   if (!owner) {
     try {
-      await readFile(file);
-      return true;
+      const metadata = await stat(file);
+      return Date.now() - metadata.mtimeMs > maxAgeMs;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
       return true;

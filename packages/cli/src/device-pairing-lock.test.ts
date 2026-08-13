@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -50,6 +50,35 @@ test("reclaims a stale device pairing lock", async (context) => {
     directory,
   );
   assert.equal(result, "recovered");
+});
+
+test("does not reclaim a fresh partially written lock", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-pairing-lock-partial-"));
+  context.after(async () => await rm(directory, { recursive: true, force: true }));
+  await writeFile(path.join(directory, "device-pairing.lock"), "", "utf8");
+  const controller = new AbortController();
+
+  const pending = withDevicePairingLease(
+    async () => assert.fail("fresh partial lock should not be reclaimed"),
+    controller.signal,
+    directory,
+  );
+
+  setTimeout(() => controller.abort(), 25);
+  await assert.rejects(pending, { name: "AbortError" });
+});
+
+test("reclaims an old malformed device pairing lock", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-pairing-lock-malformed-"));
+  context.after(async () => await rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "device-pairing.lock");
+  await writeFile(file, "not-json", "utf8");
+  await utimes(file, new Date(0), new Date(0));
+
+  assert.equal(
+    await withDevicePairingLease(async () => "recovered", undefined, directory),
+    "recovered",
+  );
 });
 
 test("serializes concurrent stale-lock reclaimers", async (context) => {
