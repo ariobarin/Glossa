@@ -53,25 +53,23 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - require account ID in every database and in-memory ownership lookup;
 - never fetch by resource ID and check ownership afterward when an account-scoped query is possible;
 - use opaque random identifiers;
-- require an authenticated MCP account to explicitly approve each new computer pairing before device enrollment;
+- require explicit browser authorization with the device-enrollment scope before enrolling each new computer;
 - bind ephemeral worker credentials to one account, device, worker ID, and generation;
 - verify account isolation with direct integration checks before deployment.
 
-### Pairing-code guessing or interception
+### Pairing authorization interception
 
-**Threat:** an attacker guesses a short human pairing code or observes one and tries to bind a computer without the user's intent.
+**Threat:** an attacker tricks a user into approving enrollment for an unintended computer or captures temporary authorization material.
 
 **Controls:**
 
-- create a separate 256-bit private pairing secret that is never shown to the approving MCP client;
-- store only the private secret's SHA-256 digest in process-local relay memory while pairing is pending;
-- expire pairing state after five minutes and make successful credential issuance idempotent so concurrent/retried completion requests receive one device credential;
-- require explicit `pair_device` approval from an authenticated MCP account using the short code;
-- require the pairing computer to present the matching private secret before device enrollment completes;
-- rate-limit pairing creation and completion attempts by source address and cap process-local pending pairing state;
-- never persist pairing codes, private pairing secrets, approval state, or retry-cached raw device credentials to the database; the issued raw credential remains only in process-local pairing memory until that five-minute request expires.
+- use Auth0's browser device authorization flow so the user signs in and explicitly approves the requesting CLI;
+- request only `openid`, `profile`, and `glossa:device` for pairing, without `offline_access`;
+- use the temporary access token only for the authenticated enrollment request and never save it as CLI account credentials;
+- validate token signature, issuer, audience, provider allowlist, and the device-enrollment scope at the relay;
+- rate-limit enrollment and store only the issued revocable device credential on the paired computer.
 
-Possession of the short human code alone is insufficient to retrieve the device credential because completion also requires the computer's private secret. However, an attacker who observes a live code and can authenticate to Glossa could race to approve that pending computer into the attacker's account. Treat the displayed code as a temporary secret, expose it only to the intended authenticated ChatGPT session, and approve only the code currently shown by the intended computer.
+Before approving, verify that the browser page was opened from the intended Glossa CLI session and select the intended account. Revoke an unfamiliar device from `glossa devices` immediately.
 
 ### Stolen device token
 

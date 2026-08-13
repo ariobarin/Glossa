@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { StoredCredentials } from "./config-store.js";
 import {
-  beginDevicePairing,
-  completeDevicePairing,
-  DevicePairingExpiredError,
+  enrollDevice,
   listDevices,
   renameDevice,
   revokeDevice,
@@ -32,83 +30,6 @@ const device = {
   activeWorkers: 2,
 };
 
-test("starts and completes a headless device pairing without user OAuth", async () => {
-  const requests: Array<{ url: string; authorization: string | undefined }> = [];
-  const challenge = await beginDevicePairing(endpoints, "gpu-box", async (input, init) => {
-    requests.push({
-      url: String(input),
-      authorization: (init?.headers as Record<string, string> | undefined)?.authorization,
-    });
-    assert.equal(init?.method, "POST");
-    return Response.json({
-      pairing_id: "00000000-0000-4000-8000-000000000010",
-      user_code: "ABCDE-FGHJK",
-      pairing_secret: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-      expires_at: "2026-08-12T12:05:00.000Z",
-      poll_interval_ms: 2_000,
-    }, { status: 201 });
-  });
-
-  let completionCalls = 0;
-  const first = await completeDevicePairing(endpoints, challenge, async (input, init) => {
-    requests.push({
-      url: String(input),
-      authorization: (init?.headers as Record<string, string> | undefined)?.authorization,
-    });
-    completionCalls += 1;
-    assert.equal(init?.method, "POST");
-    if (completionCalls === 1) {
-      return Response.json({ status: "authorization_pending" }, { status: 202 });
-    }
-    return Response.json({
-      device: {
-        id: "00000000-0000-4000-8000-000000000011",
-        name: "gpu-box",
-      },
-      device_token: "paired-device-token",
-    }, { status: 201 });
-  });
-  const second = await completeDevicePairing(endpoints, challenge, async (input, init) => {
-    requests.push({
-      url: String(input),
-      authorization: (init?.headers as Record<string, string> | undefined)?.authorization,
-    });
-    completionCalls += 1;
-    assert.equal(init?.method, "POST");
-    return Response.json({
-      device: {
-        id: "00000000-0000-4000-8000-000000000011",
-        name: "gpu-box",
-      },
-      device_token: "paired-device-token",
-    }, { status: 201 });
-  });
-
-  assert.equal(first, null);
-  assert.deepEqual(second, {
-    relayOrigin: endpoints.relayOrigin,
-    deviceId: "00000000-0000-4000-8000-000000000011",
-    deviceName: "gpu-box",
-    token: "paired-device-token",
-  });
-  assert.equal(requests.every((request) => request.authorization === undefined), true);
-});
-
-test("reports expired pairings with an actionable error", async () => {
-  const challenge = {
-    pairingId: "00000000-0000-4000-8000-000000000010",
-    userCode: "ABCDE-FGHJK",
-    pairingSecret: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-    expiresAt: "2026-08-12T12:05:00.000Z",
-    pollIntervalMs: 2_000,
-  };
-  await assert.rejects(
-    completeDevicePairing(endpoints, challenge, async () =>
-      Response.json({ error: "pairing_expired" }, { status: 410 })),
-    DevicePairingExpiredError,
-  );
-});
-
 test("revokes a paired computer with its device credential", async () => {
   await revokePairedDevice(
     endpoints,
@@ -128,6 +49,28 @@ test("revokes a paired computer with its device credential", async () => {
       return new Response(null, { status: 204 });
     },
   );
+});
+
+test("enrolls a device with temporary browser authorization", async () => {
+  const enrolled = await enrollDevice(endpoints, credentials, "Test PC", async (input, init) => {
+    assert.equal(input, "https://mcp.glossa.test/v1/devices/enroll");
+    assert.equal(init?.method, "POST");
+    assert.equal(
+      (init?.headers as Record<string, string>).authorization,
+      "Bearer access",
+    );
+    return Response.json({
+      device: { id: device.id, name: device.name },
+      device_token: "paired-device-token",
+    }, { status: 201 });
+  });
+
+  assert.deepEqual(enrolled, {
+    relayOrigin: endpoints.relayOrigin,
+    deviceId: device.id,
+    deviceName: device.name,
+    token: "paired-device-token",
+  });
 });
 
 test("lists devices with truthful active worker counts", async () => {

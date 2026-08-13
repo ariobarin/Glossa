@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { grantedScopesSatisfyRequest } from "./auth-scopes.js";
 import { type FetchLike } from "./auth-session.js";
-import { saveCredentials } from "./config-store.js";
+import { saveCredentials, type StoredCredentials } from "./config-store.js";
 import { openBrowser } from "./open-browser.js";
 
 interface DeviceCodeResponse {
@@ -43,6 +43,11 @@ export interface DeviceFlowDependencies {
   log?: (message: string) => void;
 }
 
+export type DeviceAuthorizationDependencies = Omit<
+  DeviceFlowDependencies,
+  "saveCredentials"
+>;
+
 function endpoint(issuer: string, pathname: string): string {
   return new URL(pathname, issuer.endsWith("/") ? issuer : `${issuer}/`).toString();
 }
@@ -79,14 +84,13 @@ async function postForm<T>(
   return data;
 }
 
-export async function loginWithDeviceFlow(
+export async function authorizeWithDeviceFlow(
   options: LoginOptions,
-  dependencies: DeviceFlowDependencies = {},
-): Promise<void> {
+  dependencies: DeviceAuthorizationDependencies = {},
+): Promise<StoredCredentials> {
   const fetchRequest = dependencies.fetch ?? fetch;
   const wait = dependencies.delay ?? defaultDelay;
   const browse = dependencies.openBrowser ?? openBrowser;
-  const save = dependencies.saveCredentials ?? saveCredentials;
   const now = dependencies.now ?? Date.now;
   const log = dependencies.log ?? console.log;
 
@@ -131,26 +135,25 @@ export async function loginWithDeviceFlow(
 
       const data = (await response.json()) as TokenResponse | OAuthError;
       if (response.ok && "access_token" in data) {
-        if (!data.refresh_token) {
-          throw new Error("Auth0 did not issue a refresh token.");
-        }
         const grantedScope = data.scope ?? options.scope;
-        if (!grantedScopesSatisfyRequest(grantedScope, options.scope, true)) {
+        if (!grantedScopesSatisfyRequest(
+          grantedScope,
+          options.scope,
+          Boolean(data.refresh_token),
+        )) {
           throw new Error("Auth0 did not grant the permissions Glossa requires.");
         }
-        await save({
+        return {
           issuer: options.issuer,
           clientId: options.clientId,
           audience: options.audience,
           accessToken: data.access_token,
-          refreshToken: data.refresh_token,
+          ...(data.refresh_token ? { refreshToken: data.refresh_token } : {}),
           expiresAt: new Date(now() + data.expires_in * 1000).toISOString(),
           tokenType: data.token_type,
           scope: grantedScope,
           requestedScope: options.scope,
-        });
-        log("Signed in to Glossa.");
-        return;
+        };
       }
 
       const error = data as OAuthError;
@@ -171,4 +174,17 @@ export async function loginWithDeviceFlow(
     }
     throw error;
   }
+}
+
+export async function loginWithDeviceFlow(
+  options: LoginOptions,
+  dependencies: DeviceFlowDependencies = {},
+): Promise<void> {
+  const credentials = await authorizeWithDeviceFlow(options, dependencies);
+  if (!credentials.refreshToken) {
+    throw new Error("Auth0 did not issue a refresh token.");
+  }
+  const save = dependencies.saveCredentials ?? saveCredentials;
+  await save(credentials);
+  (dependencies.log ?? console.log)("Signed in to Glossa.");
 }

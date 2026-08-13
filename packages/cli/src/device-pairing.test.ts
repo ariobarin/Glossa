@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { StoredCredentials } from "./config-store.js";
 import type { StoredDeviceCredential } from "./device-store.js";
 import { pairDevice } from "./device-pairing.js";
-import type { DevicePairingChallenge, RelayEndpoints } from "./relay-client.js";
+import type { RelayEndpoints } from "./relay-client.js";
 
 const endpoints: RelayEndpoints = {
   relayOrigin: "https://mcp.glossa.test",
   workerOrigin: "https://mcp.glossa.test",
 };
-const challenge: DevicePairingChallenge = {
-  pairingId: "00000000-0000-4000-8000-000000000001",
-  userCode: "ABCDE-FGHJK",
-  pairingSecret: "pairing-secret-not-a-real-credential-value",
-  expiresAt: "2026-08-12T12:05:00.000Z",
-  pollIntervalMs: 2_000,
+const credentials: StoredCredentials = {
+  issuer: "https://identity.glossa.test/",
+  clientId: "client",
+  audience: "https://mcp.glossa.test/",
+  accessToken: "access",
+  expiresAt: "2099-01-01T00:00:00.000Z",
+  tokenType: "Bearer",
+  scope: "openid profile glossa:device",
+  requestedScope: "openid profile glossa:device",
 };
 const pairedDevice: StoredDeviceCredential = {
   relayOrigin: endpoints.relayOrigin,
@@ -22,27 +26,32 @@ const pairedDevice: StoredDeviceCredential = {
   token: "gld_00000000-0000-4000-8000-000000000002_placeholder",
 };
 
-test("prints a ChatGPT pairing instruction and waits for approval", async () => {
+test("authorizes in the browser without retaining account credentials", async () => {
   const messages: string[] = [];
-  let completions = 0;
+  let receivedScope = "";
   const paired = await pairDevice(endpoints, undefined, {
     defaultDeviceName: () => "gpu-box",
-    beginDevicePairing: async (_endpoints, name) => {
+    loadAuthConfig: () => ({
+      issuer: credentials.issuer,
+      clientId: credentials.clientId,
+      audience: credentials.audience,
+      scope: "openid profile offline_access glossa:device",
+    }),
+    authorizeWithDeviceFlow: async (options) => {
+      receivedScope = options.scope;
+      return credentials;
+    },
+    enrollDevice: async (_endpoints, receivedCredentials, name) => {
+      assert.equal(receivedCredentials, credentials);
       assert.equal(name, "gpu-box");
-      return challenge;
+      return pairedDevice;
     },
-    completeDevicePairing: async () => {
-      completions += 1;
-      return completions < 2 ? null : pairedDevice;
-    },
-    wait: async () => undefined,
-    now: () => Date.parse("2026-08-12T12:00:00.000Z"),
     log: (message) => messages.push(message),
   });
 
   assert.equal(paired, pairedDevice);
-  assert.equal(completions, 2);
-  assert.ok(messages.includes("@Glossa pair ABCDE-FGHJK"));
+  assert.equal(receivedScope, "openid profile glossa:device");
+  assert.ok(messages.includes("This computer needs to be paired with Glossa."));
   assert.ok(messages.includes("Paired with Glossa as gpu-box."));
 });
 
@@ -53,14 +62,20 @@ test("cancels pairing when the managed session aborts", async () => {
     resolveStarted = resolve;
   });
   const pending = pairDevice(endpoints, controller.signal, {
-    beginDevicePairing: async () => challenge,
-    wait: async (_milliseconds, signal) => {
+    loadAuthConfig: () => ({
+      issuer: credentials.issuer,
+      clientId: credentials.clientId,
+      audience: credentials.audience,
+      scope: "openid profile offline_access glossa:device",
+    }),
+    authorizeWithDeviceFlow: async (options) => {
       resolveStarted();
-      return await new Promise<void>((_resolve, reject) => {
-        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      return await new Promise<StoredCredentials>((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+          once: true,
+        });
       });
     },
-    now: () => Date.parse("2026-08-12T12:00:00.000Z"),
     log: () => undefined,
   });
 
