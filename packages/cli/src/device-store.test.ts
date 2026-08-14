@@ -26,14 +26,14 @@ async function temporaryStore(
   };
 }
 
-test("read-only device probes reject truncated credential files", async (context) => {
+test("device reads reject truncated credential files", async (context) => {
   const { file, store } = await temporaryStore(context);
   await writeFile(file, '{"relayOrigin":', "utf8");
 
-  await assert.rejects(store.peek(), /Stored Glossa device credentials are invalid/);
+  await assert.rejects(store.load(), /Stored Glossa device credentials are invalid/);
 });
 
-test("read-only device probes reject malformed credential files", async (context) => {
+test("device reads reject malformed credential files", async (context) => {
   const { file, store } = await temporaryStore(context);
   await writeFile(
     file,
@@ -46,7 +46,7 @@ test("read-only device probes reject malformed credential files", async (context
     "utf8",
   );
 
-  await assert.rejects(store.peek(), /Stored Glossa device credentials are invalid/);
+  await assert.rejects(store.load(), /Stored Glossa device credentials are invalid/);
 });
 
 test("accepts legacy and account-bound device credentials", () => {

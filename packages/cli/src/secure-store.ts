@@ -7,7 +7,6 @@ const KEYRING_SERVICE = "Glossa";
 interface KeyringEntry {
   setSecret(secret: Uint8Array): Promise<void>;
   getSecret(): Promise<Uint8Array | number[] | null | undefined>;
-  getPassword(): Promise<string | null | undefined>;
   deleteCredential(): Promise<boolean>;
 }
 
@@ -32,6 +31,11 @@ export function configDirectory(): string {
   );
 }
 
+/**
+ * Reads credentials from wherever they are and writes them to the keyring
+ * when available, falling back to a mode-0600 file. Reading never writes:
+ * no format or backend migration happens as a side effect of a load.
+ */
 export class SecureStore<T> {
   readonly #options: SecureStoreOptions<T>;
   #warned = false;
@@ -72,7 +76,7 @@ export class SecureStore<T> {
   async load(): Promise<{ value: T; backend: StorageBackend } | null> {
     const entry = await this.#entry();
     if (entry) {
-      const value = await this.#readEntry(entry, true);
+      const value = await this.#readEntry(entry);
       if (value != null) return { value, backend: "keyring" };
     }
 
@@ -83,38 +87,8 @@ export class SecureStore<T> {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
-
-    if (entry) {
-      try {
-        await this.#writeEntry(entry, JSON.stringify(value));
-        await rm(this.#options.file, { force: true });
-        return { value, backend: "keyring" };
-      } catch {
-        // Keep the existing file and use the warned fallback below.
-      }
-    }
-
     this.#warn();
     return { value, backend: "file" };
-  }
-
-  async peek(): Promise<{ value: T; backend: StorageBackend } | null> {
-    // Read-only presence/value check that never migrates a file credential
-    // into the keyring (unlike load, which writes and removes the file).
-    const entry = await this.#entry();
-    if (entry) {
-      const value = await this.#readEntry(entry, false);
-      if (value != null) return { value, backend: "keyring" };
-    }
-    try {
-      return {
-        value: this.#options.parse(await readFile(this.#options.file, "utf8")),
-        backend: "file",
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    }
   }
 
   async delete(): Promise<void> {
@@ -154,51 +128,19 @@ export class SecureStore<T> {
     }
   }
 
-  async #readEntry(entry: KeyringEntry, migrateLegacy: boolean): Promise<T | null> {
-    let found = false;
+  async #readEntry(entry: KeyringEntry): Promise<T | null> {
     try {
       const secret = await entry.getSecret();
-      if (secret != null) {
-        found = true;
-        try {
-          const bytes = secret instanceof Uint8Array ? secret : Uint8Array.from(secret);
-          return this.#options.parse(
-            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-          );
-        } catch {
-          // Older Glossa versions stored strings, so try that format below.
-        }
-      }
+      if (secret == null) return null;
+      const bytes = secret instanceof Uint8Array ? secret : Uint8Array.from(secret);
+      return this.#options.parse(
+        new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      );
     } catch {
-      // An existing password entry or file can still provide the credential.
+      // A corrupt or unreadable entry reports as absent: the file can still
+      // provide the credential, and delete() removes the entry outright.
+      return null;
     }
-
-    try {
-      const serialized = await entry.getPassword();
-      if (serialized != null) {
-        found = true;
-        const value = this.#options.parse(serialized);
-        if (migrateLegacy) {
-          try {
-            await this.#writeEntry(entry, serialized);
-          } catch {
-            // The readable legacy entry remains available.
-          }
-        }
-        return value;
-      }
-    } catch {
-      // Fall through to cleanup or the file below.
-    }
-
-    if (found && migrateLegacy) {
-      try {
-        await entry.deleteCredential();
-      } catch {
-        // Best effort cleanup of a corrupt keyring entry.
-      }
-    }
-    return null;
   }
 
   async #writeEntry(entry: KeyringEntry, serialized: string): Promise<void> {

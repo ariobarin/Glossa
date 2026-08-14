@@ -17,7 +17,6 @@ async function withTempFile(run: (file: string) => Promise<void>): Promise<void>
 
 test("treats an unparseable keyring value as absent instead of throwing", async () => {
   await withTempFile(async (file) => {
-    let deleted = false;
     const store = new SecureStore<{ token: string }>({
       account: "oauth",
       file,
@@ -31,20 +30,40 @@ test("treats an unparseable keyring value as absent instead of throwing", async 
       },
       warn: () => {},
       entryProvider: async () => ({
-        getSecret: async () => null,
+        getSecret: async () => new TextEncoder().encode("null"),
         setSecret: async () => {},
-        getPassword: async () => "null",
-        deleteCredential: async () => {
-          deleted = true;
-          return true;
-        },
+        deleteCredential: async () => true,
       }),
     });
 
-    const loaded = await store.load();
+    assert.equal(await store.load(), null);
+  });
+});
 
-    assert.equal(loaded, null);
-    assert.equal(deleted, true);
+test("falls back to the file when the keyring entry is unparseable", async () => {
+  await withTempFile(async (file) => {
+    const value = { token: "file-secret" };
+    await writeFile(file, JSON.stringify(value), "utf8");
+    const store = new SecureStore<{ token: string }>({
+      account: "oauth",
+      file,
+      warning: "warned",
+      parse: (serialized) => {
+        const parsed = JSON.parse(serialized);
+        if (typeof parsed !== "object" || parsed === null) {
+          throw new Error("Stored credentials are invalid.");
+        }
+        return parsed;
+      },
+      warn: () => {},
+      entryProvider: async () => ({
+        getSecret: async () => new TextEncoder().encode("corrupt"),
+        setSecret: async () => {},
+        deleteCredential: async () => true,
+      }),
+    });
+
+    assert.deepEqual(await store.load(), { value, backend: "file" });
   });
 });
 
@@ -60,7 +79,6 @@ test("still loads valid keyring credentials", async () => {
       entryProvider: async () => ({
         getSecret: async () => Array.from(new TextEncoder().encode(serialized)),
         setSecret: async () => {},
-        getPassword: async () => null,
         deleteCredential: async () => true,
       }),
     });
@@ -84,7 +102,6 @@ test("treats a missing native credential as empty", async (t) => {
     entryProvider: async () => ({
       setSecret: async () => undefined,
       getSecret: async () => null,
-      getPassword: async () => null,
       deleteCredential: async () => false,
     }),
   });
@@ -107,7 +124,6 @@ test("reports failed native credential deletion", async (t) => {
     entryProvider: async () => ({
       setSecret: async () => undefined,
       getSecret: async () => new TextEncoder().encode("oauth-secret"),
-      getPassword: async () => "oauth-secret",
       deleteCredential: async () => false,
     }),
   });
@@ -120,7 +136,7 @@ test("reports failed native credential deletion", async (t) => {
   await assert.rejects(readFile(file), { code: "ENOENT" });
 });
 
-test("peek reads a file credential without migrating it to the keyring", async (t) => {
+test("loading a file credential never writes to the keyring", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "glossa-secure-store-"));
   t.after(async () => await rm(root, { recursive: true, force: true }));
   const file = path.join(root, "credentials.json");
@@ -137,14 +153,13 @@ test("peek reads a file credential without migrating it to the keyring", async (
       setSecret: async () => {
         setSecretCalls += 1;
       },
-      getPassword: async () => null,
       deleteCredential: async () => true,
     }),
   });
 
-  const peeked = await store.peek();
+  const loaded = await store.load();
 
-  assert.deepEqual(peeked, { value: { token: "file-secret" }, backend: "file" });
+  assert.deepEqual(loaded, { value: { token: "file-secret" }, backend: "file" });
   assert.equal(setSecretCalls, 0);
   assert.equal(await readFile(file, "utf8"), JSON.stringify({ token: "file-secret" }));
 });
@@ -165,7 +180,6 @@ test("stores a Windows-sized OAuth credential as bytes", async () => {
         setSecret: async (secret) => {
           stored = secret;
         },
-        getPassword: async () => null,
         deleteCredential: async () => true,
       }),
     });
@@ -176,35 +190,6 @@ test("stores a Windows-sized OAuth credential as bytes", async () => {
     assert.deepEqual(await store.load(), { value, backend: "keyring" });
     assert.deepEqual(warnings, []);
     await assert.rejects(readFile(file), { code: "ENOENT" });
-  });
-});
-
-test("migrates a legacy password entry to bytes", async () => {
-  await withTempFile(async (file) => {
-    const value = { token: "legacy" };
-    const serialized = JSON.stringify(value);
-    let stored: Uint8Array = new Uint8Array(Buffer.from(serialized, "utf16le"));
-    let password: string | null = serialized;
-    const store = new SecureStore<typeof value>({
-      account: "oauth",
-      file,
-      warning: "file fallback",
-      parse: (candidate) => JSON.parse(candidate) as typeof value,
-      warn: () => {},
-      entryProvider: async () => ({
-        getSecret: async () => stored,
-        setSecret: async (secret) => {
-          stored = secret;
-          password = null;
-        },
-        getPassword: async () => password,
-        deleteCredential: async () => true,
-      }),
-    });
-
-    assert.deepEqual(await store.load(), { value, backend: "keyring" });
-    assert.equal(new TextDecoder().decode(stored), serialized);
-    assert.equal(password, null);
   });
 });
 
@@ -224,7 +209,6 @@ test("warns only once while reusing a file fallback", async () => {
         setSecret: async () => {
           throw new Error("credential store unavailable");
         },
-        getPassword: async () => null,
         deleteCredential: async () => false,
       }),
     });

@@ -71,13 +71,6 @@ export async function loadCredentials(): Promise<LoadedCredentials | null> {
     : null;
 }
 
-export async function peekCredentials(): Promise<LoadedCredentials | null> {
-  const loaded = await store.peek();
-  return loaded
-    ? { credentials: loaded.value, backend: loaded.backend }
-    : null;
-}
-
 export async function deleteCredentials(): Promise<void> {
   await store.delete();
 }
