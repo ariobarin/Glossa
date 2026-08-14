@@ -51,23 +51,24 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - require account ID in every database and in-memory ownership lookup;
 - never fetch by resource ID and check ownership afterward when an account-scoped query is possible;
 - use opaque random identifiers;
-- require explicit browser authorization with the device-enrollment scope before enrolling each new computer;
+- require a single-use, short-lived pairing code claimed through an authenticated control-panel session before enrolling each new computer;
 - bind ephemeral worker credentials to one account, device, worker ID, and generation;
 - verify account isolation with direct integration checks before deployment.
 
 ### Pairing authorization interception
 
-**Threat:** an attacker tricks a user into approving enrollment for an unintended computer or captures temporary authorization material.
+**Threat:** an attacker tricks a user into redeeming a pairing code for an unintended computer or captures a pairing code before the legitimate user redeems it.
 
 **Controls:**
 
-- use Auth0's browser device authorization flow so the user signs in and explicitly approves the requesting CLI;
-- request only `openid`, `profile`, and `glossa:device` for pairing, without `offline_access`;
-- use the temporary access token only for the authenticated enrollment request and never save it as CLI account credentials;
-- validate token signature, issuer, audience, provider allowlist, and the device-enrollment scope at the relay;
-- rate-limit enrollment and store only the issued revocable device credential on the paired computer.
+- issue single-use pairing codes with a ten-minute TTL;
+- store only a SHA-256 hash of each code in the relay database;
+- rate-limit pairing-code creation and redemption;
+- require the human's authenticated control-panel session, validated for issuer, audience, provider allowlist, and the device-enrollment scope, to claim a code;
+- show the requesting device name and platform on the panel before the user confirms;
+- store only the issued revocable device credential on the paired computer.
 
-Before approving, verify that the browser page was opened from the intended Glossa CLI session and select the intended account. Revoke an unfamiliar device immediately from the devices view of any paired computer (press `d`).
+Before confirming, verify that the device name on the panel matches the computer being paired and that the panel is signed in to the intended account. Revoke an unfamiliar device immediately from the devices view of any paired computer (press `d`).
 
 ### Stolen device token
 
@@ -84,7 +85,7 @@ Before approving, verify that the browser page was opened from the intended Glos
 - apply failed-authentication rate limiting and constant-time comparison;
 - never log Authorization headers.
 
-Device management authority is scoped to the token's own account, and enrolling new devices always requires human browser authorization: a device token cannot create another device. Revocation is visible in audit events and recoverable by re-pairing. A device token does not silently broaden a worker's selected access profile. The relay and worker still enforce that profile for every operation.
+Device management authority is scoped to the token's own account, and enrolling a new device always requires a human to redeem its pairing code in an authenticated panel session: a device token cannot create another device. Revocation is visible in audit events and recoverable by re-pairing. A device token does not silently broaden a worker's selected access profile. The relay and worker still enforce that profile for every operation.
 
 ### Stolen worker token
 

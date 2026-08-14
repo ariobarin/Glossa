@@ -68,13 +68,13 @@ The review fixture contains only synthetic files and deterministic scripts. The 
 
 ## Account switching
 
-The CLI keeps no account session: a computer is either paired to an account or not. Pairing authorizes through the browser, which reuses any existing Auth0 browser session. To switch accounts:
+The CLI keeps no account session: a computer is either paired to an account or not. Pairing redeems a CLI pairing code on the control panel, which uses the signed-in Auth0 browser session. To switch accounts:
 
 1. Stop every Glossa worker with Ctrl+C or `q`.
 2. Run `glossa unpair`.
-3. End the Auth0 browser session so the next authorization offers the account chooser. The MCP `get_logout_instructions` tool returns the browser logout URL.
+3. End the Auth0 browser session so the next panel sign-in offers the account chooser. The MCP `get_logout_instructions` tool returns the browser logout URL.
 4. Disconnect Glossa under **Settings > Apps** in ChatGPT and connect it again with the intended account.
-5. Start Glossa and authorize the same identity in the browser pairing flow.
+5. Start Glossa and redeem its new pairing code on the panel while signed in to the intended identity.
 
 The MCP `get_logout_instructions` tool returns equivalent sign-out steps and a browser logout URL. It does not open the URL, revoke credentials, or sign the user out by itself.
 

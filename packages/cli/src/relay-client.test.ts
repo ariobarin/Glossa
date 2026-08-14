@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createPairing,
   enrollDevice,
   listDevices,
+  PairingCodeExpiredError,
+  redeemPairing,
   revokeDevice,
   revokePairedDevice,
 } from "./relay-client.js";
@@ -84,6 +87,58 @@ test("revokes devices through the management API", async () => {
     );
     return new Response(null, { status: 204 });
   });
+});
+
+test("creates a pairing code for this computer", async () => {
+  const grant = await createPairing(endpoints, "Test PC", "win32-x64", async (input, init) => {
+    assert.equal(input, "https://mcp.glossa.test/v1/pairings");
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(JSON.parse(init?.body as string), {
+      name: "Test PC",
+      platform: "win32-x64",
+    });
+    return Response.json({
+      code: "ABCD-EFGH",
+      expiresAt: "2026-08-14T17:30:00.000Z",
+    }, { status: 201 });
+  });
+
+  assert.deepEqual(grant, { code: "ABCD-EFGH", expiresAt: "2026-08-14T17:30:00.000Z" });
+});
+
+test("redeems a claimed pairing code", async () => {
+  const redeemed = await redeemPairing(endpoints, "ABCD-EFGH", async (input, init) => {
+    assert.equal(input, "https://mcp.glossa.test/v1/pairings/redeem");
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(JSON.parse(init?.body as string), { code: "ABCD-EFGH" });
+    return Response.json({
+      device: { id: device.id, name: device.name },
+      device_token: "paired-device-token",
+    });
+  });
+
+  assert.deepEqual(redeemed, {
+    device: { id: device.id, name: device.name },
+    token: "paired-device-token",
+  });
+});
+
+test("reports an unclaimed pairing code as pending", async () => {
+  const redeemed = await redeemPairing(endpoints, "ABCD-EFGH", async () =>
+    Response.json({ status: "pending" }, { status: 202 }));
+  assert.equal(redeemed, "pending");
+});
+
+test("rejects an expired pairing code", async () => {
+  await assert.rejects(
+    redeemPairing(endpoints, "ABCD-EFGH", async () =>
+      Response.json({ error: "pairing_not_found" }, { status: 404 })),
+    (error: unknown) => {
+      assert.ok(error instanceof PairingCodeExpiredError);
+      assert.match(error.message, /pairing code expired/);
+      return true;
+    },
+  );
 });
 
 test("rejects incomplete status responses", async () => {

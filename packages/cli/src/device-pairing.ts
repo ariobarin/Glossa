@@ -1,31 +1,33 @@
-import type { FetchLike } from "./oauth.js";
-import { loadAuthConfig } from "./auth-config.js";
-import { authorizePairing } from "./device-flow.js";
+import { setTimeout as delay } from "node:timers/promises";
 import type { StoredDeviceCredential } from "./device-store.js";
 import {
+  createPairing,
   defaultDeviceName,
-  enrollDevice,
+  PairingCodeExpiredError,
+  redeemPairing,
+  type FetchLike,
   type RelayEndpoints,
 } from "./relay-client.js";
 
 export interface PairDeviceDependencies {
-  authorizePairing?: typeof authorizePairing;
+  createPairing?: typeof createPairing;
+  redeemPairing?: typeof redeemPairing;
   defaultDeviceName?: typeof defaultDeviceName;
-  enrollDevice?: typeof enrollDevice;
-  loadAuthConfig?: typeof loadAuthConfig;
   fetch?: FetchLike;
+  delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
+  now?: () => number;
   log?: (message: string) => void;
 }
+
+const MAX_PAIRING_CODES = 3;
+const POLL_INTERVAL_MS = 2_000;
 
 function canceledError(): Error {
   return new Error("Pairing canceled.");
 }
 
-function pairingScope(scope: string): string {
-  return scope
-    .split(/\s+/)
-    .filter((value) => value && value !== "offline_access")
-    .join(" ");
+async function defaultDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  await delay(milliseconds, undefined, signal ? { signal } : undefined);
 }
 
 export async function pairDevice(
@@ -33,10 +35,11 @@ export async function pairDevice(
   signal?: AbortSignal,
   dependencies: PairDeviceDependencies = {},
 ): Promise<StoredDeviceCredential> {
-  const authorize = dependencies.authorizePairing ?? authorizePairing;
-  const enroll = dependencies.enrollDevice ?? enrollDevice;
-  const authConfig = dependencies.loadAuthConfig ?? loadAuthConfig;
+  const create = dependencies.createPairing ?? createPairing;
+  const redeem = dependencies.redeemPairing ?? redeemPairing;
   const name = dependencies.defaultDeviceName ?? defaultDeviceName;
+  const wait = dependencies.delay ?? defaultDelay;
+  const now = dependencies.now ?? Date.now;
   const log = dependencies.log ?? console.log;
   const baseFetch = dependencies.fetch ?? fetch;
   const fetchRequest: FetchLike = signal
@@ -46,24 +49,41 @@ export async function pairDevice(
   try {
     signal?.throwIfAborted();
     log("This computer needs to be paired with Glossa.");
-    const auth = authConfig();
-    const authorization = await authorize(
-      {
-        ...auth,
-        scope: pairingScope(auth.scope),
-        ...(signal ? { signal } : {}),
-      },
-      { fetch: fetchRequest, log },
-    );
-    signal?.throwIfAborted();
-    const paired = await enroll(
-      endpoints,
-      `${authorization.tokenType} ${authorization.accessToken}`,
-      name(),
-      fetchRequest,
-    );
-    log(`Paired with Glossa as ${paired.deviceName}.`);
-    return paired;
+    const deviceName = name();
+    const platform = `${process.platform}-${process.arch}`;
+
+    for (let attempt = 0; attempt < MAX_PAIRING_CODES; attempt += 1) {
+      signal?.throwIfAborted();
+      const pairing = await create(endpoints, deviceName, platform, fetchRequest);
+      log("");
+      log(`Pairing code: ${pairing.code} (valid for 10 minutes)`);
+      log("");
+      log(`Enter it at ${endpoints.relayOrigin}/panel`);
+
+      const expiresAt = Date.parse(pairing.expiresAt);
+      while (now() < expiresAt) {
+        signal?.throwIfAborted();
+        await wait(POLL_INTERVAL_MS, signal);
+        signal?.throwIfAborted();
+        try {
+          const redeemed = await redeem(endpoints, pairing.code, fetchRequest);
+          if (redeemed === "pending") continue;
+          log(`Paired with Glossa as ${redeemed.device.name}.`);
+          return {
+            relayOrigin: endpoints.relayOrigin,
+            deviceId: redeemed.device.id,
+            deviceName: redeemed.device.name,
+            token: redeemed.token,
+          };
+        } catch (error) {
+          if (!(error instanceof PairingCodeExpiredError)) throw error;
+          log(error.message);
+          break;
+        }
+      }
+    }
+
+    throw new Error("Pairing timed out. Run Glossa again to retry.");
   } catch (error) {
     if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
       throw canceledError();

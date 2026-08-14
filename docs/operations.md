@@ -47,7 +47,7 @@ Create a custom MCP app in ChatGPT Developer Mode using OAuth and:
 https://mcp.glossa.sh/mcp
 ```
 
-Authorize Glossa in ChatGPT and run **Scan Tools**. On first `glossa`, follow the browser authorization link. A headless worker prints the link to open elsewhere and retains no login credentials.
+Authorize Glossa in ChatGPT and run **Scan Tools**. On first `glossa`, enter the printed pairing code on the Glossa control panel. A headless worker prints the code to redeem from any browser and retains no login credentials.
 
 Verify discovery with:
 
@@ -105,11 +105,11 @@ A paired computer manages the account's devices from the devices view in its ter
 
 ## Troubleshooting
 
-- **No online workspace:** keep the terminal open, complete any pending browser authorization, or confirm the stored pairing is still valid.
+- **No online workspace:** keep the terminal open, redeem any pending pairing code on the control panel, or confirm the stored pairing is still valid.
 - **Wrong workspace:** stop it and restart in the intended project with a unique `--label`.
 - **Permission error:** restart with broader access only if the task genuinely requires it.
 - **`restricted_data_blocked`:** remove the credential or use a non-sensitive placeholder. Do not retry with encoding, another tool, or a shell fallback.
-- **Wrong paired account:** stop workers, run `glossa unpair`, restart, and select the intended account in the browser authorization flow.
+- **Wrong paired account:** stop workers, run `glossa unpair`, restart, and redeem the new pairing code on the control panel while signed in to the intended account.
 - **Tool definitions changed:** run **Scan Tools** again.
 - **Service health:** confirm `https://mcp.glossa.sh/healthz` returns an object with `ok` set to `true`.
 - **Sensitive security issue:** use the private process in [`SECURITY.md`](../SECURITY.md), not a public issue.

@@ -31,7 +31,7 @@ Open a terminal in your project folder and run:
 glossa
 ```
 
-The first time a computer runs Glossa, follow the browser authorization link and sign in to the account that should own the computer. On a headless or SSH-only machine, open the printed link on another device. Glossa uses that authorization once to enroll the computer, then stores only its revocable device credential. It does not retain your Google or Auth0 refresh token.
+The first time a computer runs Glossa, it shows a short pairing code. Enter it on the Glossa control panel and sign in to the account that should own the computer. On a headless or SSH-only machine, redeem the printed code from any other device. Glossa then stores only the computer's revocable device credential. It does not retain your Google or Auth0 refresh token.
 
 Keep the terminal open after pairing. Later `glossa` runs on that computer reuse the device pairing without user sign-in. Run `glossa unpair` to revoke the computer before pairing it with another Glossa account.
 
