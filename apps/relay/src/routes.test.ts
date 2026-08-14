@@ -254,7 +254,16 @@ test("uses worker credentials without repeating device authentication", async (c
     return await response.json() as Record<string, unknown>;
   };
 
-  const legacy = await register({});
+  const retiredRegistration = await fetch(`${origin}/device/register`, {
+    method: "POST",
+    headers: {
+      authorization: `Device ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+  assert.equal(retiredRegistration.status, 400);
+
   const current = await register({
     workerId,
     workspaceLabel: "frontend",
@@ -268,25 +277,9 @@ test("uses worker credentials without repeating device authentication", async (c
       commandOutputRanges: true,
     },
   });
-  assert.equal(legacy.workerId, deviceId);
   assert.equal(current.workerId, workerId);
-  assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
-  assert.equal(state.supportsCommandProgress(accountId, deviceId), false);
-  assert.equal(state.supportsConcurrentJobs(accountId, deviceId), false);
-  assert.equal(state.supportsStructuredReads(accountId, deviceId), false);
-  assert.equal(state.supportsStructuredMutations(accountId, deviceId), false);
-  assert.equal(state.supportsCommandOutputRanges(accountId, deviceId), false);
-  assert.equal(state.workerAccessProfile(accountId, deviceId), "system");
-  assert.equal(state.supportsFileWrites(accountId, deviceId), true);
-  assert.equal(state.supportsCommands(accountId, deviceId), true);
-  assert.equal(state.supportsCommandProgress(accountId, workerId), true);
-  assert.equal(state.supportsConcurrentJobs(accountId, workerId), true);
-  assert.equal(state.supportsStructuredReads(accountId, workerId), true);
-  assert.equal(state.supportsStructuredMutations(accountId, workerId), true);
-  assert.equal(state.supportsCommandOutputRanges(accountId, workerId), true);
+  assert.equal(state.activeWorkerCount(accountId, deviceId), 1);
   assert.equal(state.workerAccessProfile(accountId, workerId), "workspace");
-  assert.equal(state.supportsFileWrites(accountId, workerId), true);
-  assert.equal(state.supportsCommands(accountId, workerId), false);
   const currentWorker = state.listDevices(accountId)
     .find((entry) => entry.deviceId === workerId);
   assert.equal(currentWorker?.workspaceLabel, "frontend");
@@ -307,7 +300,6 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(deviceAuthentications, 2);
   assert.equal(typeof current.workerToken, "string");
   assert.equal(typeof current.generation, "string");
-  assert.equal(legacy.accessProfile, "system");
   assert.equal(current.accessProfile, "workspace");
   assert.equal(current.workspaceLabel, "frontend");
   assert.deepEqual(current.capabilities, {
@@ -404,20 +396,6 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.deepEqual(await repeated.json(), { accepted: false });
   assert.equal(deviceAuthentications, 2);
   assert.equal(deviceTouches, 0);
-
-  const legacyHeartbeat = await fetch(`${origin}/device/heartbeat`, {
-    method: "POST",
-    headers: {
-      authorization: `Device ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      workerId: deviceId,
-      generation: legacy.generation,
-    }),
-  });
-  assert.equal(legacyHeartbeat.status, 204);
-  assert.equal(deviceAuthentications, 3);
 
   now += 30_000;
   const firstPresenceHeartbeat = await fetch(`${origin}/device/heartbeat`, {

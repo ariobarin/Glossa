@@ -14,8 +14,6 @@ Each worker exposes one canonical local directory and one access profile:
 
 The selected profile is visible in the local terminal and returned by `list_workspaces` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
 
-A worker from an older release that did not declare a profile is reported as `system`, because that release historically accepted commands. Compatibility never understates legacy authority.
-
 ## Warning about system access
 
 `system` access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.
@@ -132,7 +130,6 @@ A device token does not silently broaden a worker's selected access profile. The
 - reject writes and commands before relay dispatch when permission is absent;
 - reject the same operations again inside `LocalWorker`;
 - return stable, actionable `write_access_disabled` and `command_access_disabled` errors that tell the model not to retry or bypass the boundary;
-- classify profile-less legacy workers as `system` rather than assuming a safer state;
 - cover all profiles at the CLI, relay, MCP, and local-worker test layers.
 
 ### Path escape

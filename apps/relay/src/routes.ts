@@ -15,7 +15,10 @@ import { parseDeviceToken } from "./device-token.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
-import type { RouterState } from "./router-state.js";
+import {
+  CURRENT_WORKER_CAPABILITIES,
+  type RouterState,
+} from "./router-state.js";
 import {
   consoleRelayTimingSink,
   relayTimingMiddleware,
@@ -49,45 +52,33 @@ const workerJobTypeSchema = z.enum([
   "read_command_output",
   "cancel_command",
 ]);
-const registerSchema = z.union([
-  z.object({
-    workerId: workerIdSchema,
-    accessProfile: workerAccessProfileSchema.optional(),
-    workspaceLabel: workspaceLabelSchema.optional(),
-    workerVersion: z
-      .string()
-      .max(64)
-      .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/)
-      .optional(),
-    capabilities: z
-      .object({
-        commandProgress: z.literal(true).optional(),
-        concurrentJobs: z.literal(true).optional(),
-        structuredReads: z.literal(true).optional(),
-        structuredMutations: z.literal(true).optional(),
-        commandOutputRanges: z.literal(true).optional(),
-      })
-      .strict()
-      .optional(),
+const registerSchema = z.object({
+  workerId: workerIdSchema,
+  accessProfile: workerAccessProfileSchema,
+  workspaceLabel: workspaceLabelSchema.optional(),
+  workerVersion: z
+    .string()
+    .max(64)
+    .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/)
+    .optional(),
+  capabilities: z.object({
+    commandProgress: z.literal(true),
+    concurrentJobs: z.literal(true),
+    structuredReads: z.literal(true),
+    structuredMutations: z.literal(true),
+    commandOutputRanges: z.literal(true),
   }).strict(),
-  z.object({}).strict(),
-]);
-const pollSchema = z.union([
-  z.object({
-    workerId: workerIdSchema,
-    generation: z.string().uuid(),
-    acceptedTypes: z.array(workerJobTypeSchema).min(1).max(13).optional(),
-    waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
-  }).strict(),
-  z.object({ generation: z.string().uuid() }).strict(),
-]);
-const workerResultRequestSchema = z.union([
-  z.object({
-    workerId: workerIdSchema,
-    result: workerResultSchema,
-  }).strict(),
-  workerResultSchema,
-]);
+}).strict();
+const pollSchema = z.object({
+  workerId: workerIdSchema,
+  generation: z.string().uuid(),
+  acceptedTypes: z.array(workerJobTypeSchema).min(1).max(13).optional(),
+  waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
+}).strict();
+const workerResultRequestSchema = z.object({
+  workerId: workerIdSchema,
+  result: workerResultSchema,
+}).strict();
 const unregisterSchema = z.object({ workerId: workerIdSchema }).strict();
 const heartbeatSchema = z.object({
   workerId: workerIdSchema,
@@ -175,9 +166,12 @@ async function activeAccountId(
   return null;
 }
 
-type WorkerRequestIdentity =
-  | { mode: "worker"; accountId: string; deviceId: string; workerId: string; generation: string }
-  | { mode: "device"; device: DeviceRecord };
+type WorkerRequestIdentity = {
+  accountId: string;
+  deviceId: string;
+  workerId: string;
+  generation: string;
+};
 
 async function authenticatedDevice(
   request: Request,
@@ -270,38 +264,26 @@ async function authenticatedWorkerRequest(
 ): Promise<WorkerRequestIdentity | null> {
   const header = request.header("authorization");
   const [scheme, token] = header?.split(/\s+/, 2) ?? [];
-  if (scheme?.toLowerCase() === "worker" && token) {
-    const identity = state.authenticateWorkerToken(token);
-    if (
-      identity &&
-      await refreshWorkerDevicePresence(
-        identity,
-        response,
-        store,
-        state,
-        deadlineAt,
-        runBeforeDeadline,
-      )
-    ) {
-      return { mode: "worker", ...identity };
-    }
-    if (identity) return null;
+  const identity = scheme?.toLowerCase() === "worker" && token
+    ? state.authenticateWorkerToken(token)
+    : null;
+  if (!identity) {
     const source = request.ip || request.socket.remoteAddress || "unknown";
     if (!rejectRateLimit(response, limiter, source)) {
       response.status(401).json({ error: "invalid_worker" });
     }
     return null;
   }
-
-  const device = await authenticatedDevice(
-    request,
+  return await refreshWorkerDevicePresence(
+    identity,
     response,
     store,
-    limiter,
+    state,
     deadlineAt,
     runBeforeDeadline,
-  );
-  return device ? { mode: "device", device } : null;
+  )
+    ? identity
+    : null;
 }
 
 function workerIdentityMismatch(
@@ -309,9 +291,8 @@ function workerIdentityMismatch(
   workerId: string,
   generation?: string,
 ): boolean {
-  return identity.mode === "worker" &&
-    (identity.workerId !== workerId ||
-      (generation !== undefined && identity.generation !== generation));
+  return identity.workerId !== workerId ||
+    (generation !== undefined && identity.generation !== generation);
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -504,35 +485,18 @@ export function buildRoutes(
       rejectInvalidInput(response);
       return;
     }
-    const workerId = "workerId" in parsed.data ? parsed.data.workerId : device.id;
+    const workerId = parsed.data.workerId;
     const session = state.register(
       device.accountId,
       device.id,
       device.name,
       workerId,
       {
-        commandProgress:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.commandProgress === true,
-        concurrentJobs:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.concurrentJobs === true,
-        structuredReads:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.structuredReads === true,
-        structuredMutations:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.structuredMutations === true,
-        commandOutputRanges:
-          "capabilities" in parsed.data &&
-          parsed.data.capabilities?.commandOutputRanges === true,
-        ...("accessProfile" in parsed.data && parsed.data.accessProfile
-          ? { accessProfile: parsed.data.accessProfile }
-          : {}),
-        ...("workerVersion" in parsed.data && parsed.data.workerVersion
+        accessProfile: parsed.data.accessProfile,
+        ...(parsed.data.workerVersion
           ? { workerVersion: parsed.data.workerVersion }
           : {}),
-        ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+        ...(parsed.data.workspaceLabel
           ? { workspaceLabel: parsed.data.workspaceLabel }
           : {}),
       },
@@ -542,21 +506,9 @@ export function buildRoutes(
       workerId,
       generation: session.generation,
       workerToken: session.workerToken,
-      accessProfile: state.workerAccessProfile(device.accountId, workerId),
-      capabilities: {
-        commandProgress: state.supportsCommandProgress(device.accountId, workerId),
-        concurrentJobs: state.supportsConcurrentJobs(device.accountId, workerId),
-        structuredReads: state.supportsStructuredReads(device.accountId, workerId),
-        structuredMutations: state.supportsStructuredMutations(
-          device.accountId,
-          workerId,
-        ),
-        commandOutputRanges: state.supportsCommandOutputRanges(
-          device.accountId,
-          workerId,
-        ),
-      },
-      ...("workspaceLabel" in parsed.data && parsed.data.workspaceLabel
+      accessProfile: parsed.data.accessProfile,
+      capabilities: CURRENT_WORKER_CAPABILITIES,
+      ...(parsed.data.workspaceLabel
         ? { workspaceLabel: parsed.data.workspaceLabel }
         : {}),
     });
@@ -579,15 +531,8 @@ export function buildRoutes(
       rejectInvalidInput(response);
       return;
     }
-    const accountId = identity.mode === "worker"
-      ? identity.accountId
-      : identity.device.accountId;
-    const deviceId = identity.mode === "worker"
-      ? identity.deviceId
-      : identity.device.id;
-    const workerId = "workerId" in parsed.data
-      ? parsed.data.workerId
-      : deviceId;
+    const { accountId, deviceId } = identity;
+    const workerId = parsed.data.workerId;
     if (workerIdentityMismatch(identity, workerId, parsed.data.generation)) {
       response.status(409).json({ error: "unknown_worker_generation" });
       return;
@@ -608,12 +553,12 @@ export function buildRoutes(
         parsed.data.generation,
         Math.min(
           config.GLOSSA_WORKER_POLL_MS,
-          "waitMs" in parsed.data && parsed.data.waitMs !== undefined
+          parsed.data.waitMs !== undefined
             ? parsed.data.waitMs
             : config.GLOSSA_WORKER_POLL_MS,
           remainingRequestMs,
         ),
-        "acceptedTypes" in parsed.data && parsed.data.acceptedTypes
+        parsed.data.acceptedTypes
           ? new Set(parsed.data.acceptedTypes)
           : undefined,
       );
@@ -644,24 +589,15 @@ export function buildRoutes(
       rejectInvalidInput(response);
       return;
     }
-    const accountId = identity.mode === "worker"
-      ? identity.accountId
-      : identity.device.accountId;
-    const deviceId = identity.mode === "worker"
-      ? identity.deviceId
-      : identity.device.id;
-    const requestedWorkerId = "workerId" in parsed.data
-      ? parsed.data.workerId
-      : deviceId;
-    if (workerIdentityMismatch(identity, requestedWorkerId)) {
+    if (workerIdentityMismatch(identity, parsed.data.workerId)) {
       response.status(409).json({ error: "unknown_worker_generation" });
       return;
     }
-    const workerId = identity.mode === "worker"
-      ? identity.workerId
-      : requestedWorkerId;
-    const result = "result" in parsed.data ? parsed.data.result : parsed.data;
-    const accepted = state.complete(accountId, workerId, result);
+    const accepted = state.complete(
+      identity.accountId,
+      identity.workerId,
+      parsed.data.result,
+    );
     response.status(202).json({ accepted });
   });
 
@@ -693,8 +629,8 @@ export function buildRoutes(
       return;
     }
     const accepted = state.heartbeat(
-      identity.mode === "worker" ? identity.accountId : identity.device.accountId,
-      identity.mode === "worker" ? identity.deviceId : identity.device.id,
+      identity.accountId,
+      identity.deviceId,
       parsed.data.workerId,
       parsed.data.generation,
     );
@@ -727,10 +663,10 @@ export function buildRoutes(
       return;
     }
     state.unregisterWorker(
-      identity.mode === "worker" ? identity.accountId : identity.device.accountId,
-      identity.mode === "worker" ? identity.deviceId : identity.device.id,
+      identity.accountId,
+      identity.deviceId,
       parsed.data.workerId,
-      identity.mode === "worker" ? identity.generation : undefined,
+      identity.generation,
     );
     response.status(204).end();
   });

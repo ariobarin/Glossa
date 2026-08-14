@@ -4,13 +4,10 @@ import type { WorkerJob } from "@glossa/protocol";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
-  accessProfileNotice,
   accessProfileSummary,
-  combinedCompatibilityNotice,
   deviceForSession,
   statusMessage,
   visibleWorker,
-  workspaceLabelNotice,
 } from "./managed-session.js";
 
 test("aborts device pairing when the managed session stops", async () => {
@@ -295,84 +292,12 @@ test("returns a failed activity when its worker throws", async () => {
   ]);
 });
 
-test("combines compatibility warnings so later notices cannot replace them", () => {
-  const labelNotice =
-    "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
-  assert.equal(
-    combinedCompatibilityNotice(labelNotice, undefined, true),
-    labelNotice + " The relay needs an update before this computer can expose several workspaces at once.",
-  );
-  assert.equal(
-    combinedCompatibilityNotice(labelNotice, undefined, false),
-    labelNotice,
-  );
-  assert.equal(
-    combinedCompatibilityNotice(undefined, undefined, true),
-    "The relay needs an update before this computer can expose several workspaces at once.",
-  );
-  assert.equal(
-    combinedCompatibilityNotice(undefined, undefined, false),
-    undefined,
-  );
-});
-
-test("describes and reports access profile compatibility", () => {
+test("describes access profiles", () => {
   assert.match(accessProfileSummary("read-only"), /cannot modify.*run commands/i);
   assert.match(accessProfileSummary("workspace"), /modify files.*commands are disabled/i);
   assert.match(
     accessProfileSummary("system"),
     /full environment.*permissions.*credentials.*network access/i,
-  );
-  assert.equal(
-    accessProfileNotice(
-      {
-        state: "connected",
-        reconnected: false,
-        legacyRelay: false,
-        accessProfileAccepted: false,
-      },
-      "workspace",
-    ),
-    "The relay needs an update before this access profile can be shown to connected clients. Local profile enforcement remains active.",
-  );
-  assert.equal(
-    accessProfileNotice(
-      {
-        state: "connected",
-        reconnected: false,
-        legacyRelay: false,
-        accessProfileAccepted: true,
-      },
-      "workspace",
-    ),
-    undefined,
-  );
-});
-
-test("reports when an older relay drops a requested workspace label", () => {
-  assert.equal(
-    workspaceLabelNotice(
-      {
-        state: "connected",
-        reconnected: false,
-        legacyRelay: false,
-        workspaceLabelAccepted: false,
-      },
-      "frontend",
-    ),
-    "The relay needs an update before workspace labels are available. This workspace is online without the requested label.",
-  );
-  assert.equal(
-    workspaceLabelNotice(
-      {
-        state: "connected",
-        reconnected: false,
-        legacyRelay: false,
-        workspaceLabelAccepted: true,
-      },
-      "frontend",
-    ),
-    undefined,
   );
 });
 

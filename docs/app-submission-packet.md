@@ -82,7 +82,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 
 | Tool | Read only | Destructive | Open world | Explanation |
 | --- | --- | --- | --- | --- |
-| `list_workspaces` | Yes | No | No | Reads online workspaces, labels, versions, access profiles, permissions, and negotiated capabilities for the signed-in account. |
+| `list_workspaces` | Yes | No | No | Reads online workspaces, labels, versions, access profiles, permissions, and protocol capabilities for the signed-in account. |
 | `get_logout_instructions` | Yes | No | No | Returns sign-out steps and a browser logout URL. It does not revoke credentials, navigate, or claim logout is complete. |
 | `read_file` | Yes | No | No | Reads one bounded relative UTF-8 file inside the exposed root. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |

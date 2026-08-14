@@ -189,7 +189,6 @@ test("access handoff keeps connection health stable until replacement connects",
     status: {
       state: "connected",
       reconnected: true,
-      legacyRelay: false,
     },
   });
   assert.equal(connected.connection, "connected");

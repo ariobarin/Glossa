@@ -17,11 +17,6 @@ test("routes multiple workers enrolled on one computer independently", async () 
     "Test PC",
     firstWorkerId,
     {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      structuredMutations: true,
-      commandOutputRanges: true,
       accessProfile: "workspace",
       workspaceLabel: "frontend",
       workerVersion: "1.0.0",
@@ -30,22 +25,8 @@ test("routes multiple workers enrolled on one computer independently", async () 
   state.register(accountId, deviceId, "Test PC", secondWorkerId);
 
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
-  assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
-  assert.equal(state.supportsConcurrentJobs(accountId, firstWorkerId), true);
-  assert.equal(state.supportsStructuredReads(accountId, firstWorkerId), true);
-  assert.equal(state.supportsStructuredMutations(accountId, firstWorkerId), true);
-  assert.equal(state.supportsCommandOutputRanges(accountId, firstWorkerId), true);
   assert.equal(state.workerAccessProfile(accountId, firstWorkerId), "workspace");
-  assert.equal(state.supportsFileWrites(accountId, firstWorkerId), true);
-  assert.equal(state.supportsCommands(accountId, firstWorkerId), false);
-  assert.equal(state.supportsCommandProgress(accountId, secondWorkerId), false);
-  assert.equal(state.supportsConcurrentJobs(accountId, secondWorkerId), false);
-  assert.equal(state.supportsStructuredReads(accountId, secondWorkerId), false);
-  assert.equal(state.supportsStructuredMutations(accountId, secondWorkerId), false);
-  assert.equal(state.supportsCommandOutputRanges(accountId, secondWorkerId), false);
   assert.equal(state.workerAccessProfile(accountId, secondWorkerId), "system");
-  assert.equal(state.supportsFileWrites(accountId, secondWorkerId), true);
-  assert.equal(state.supportsCommands(accountId, secondWorkerId), true);
   assert.deepEqual(state.listDevices(accountId), [
     {
       deviceId: firstWorkerId,
@@ -78,11 +59,11 @@ test("routes multiple workers enrolled on one computer independently", async () 
         runCommands: true,
       },
       capabilities: {
-        commandProgress: false,
-        concurrentJobs: false,
-        structuredReads: false,
-        structuredMutations: false,
-        commandOutputRanges: false,
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
       },
     },
   ]);
@@ -124,11 +105,11 @@ test("routes multiple workers enrolled on one computer independently", async () 
         runCommands: true,
       },
       capabilities: {
-        commandProgress: false,
-        concurrentJobs: false,
-        structuredReads: false,
-        structuredMutations: false,
-        commandOutputRanges: false,
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
       },
     },
   ]);
@@ -142,16 +123,9 @@ test("reconnecting one worker does not displace another", () => {
   assert.equal(state.activeWorkerCount(accountId, deviceId), 2);
 });
 
-test("filters progress against the current worker generation", async () => {
+test("routes progress against the current worker generation", async () => {
   const state = new RouterState();
-  state.register(
-    accountId,
-    deviceId,
-    "Test PC",
-    firstWorkerId,
-    { commandProgress: true },
-  );
-  assert.equal(state.supportsCommandProgress(accountId, firstWorkerId), true);
+  state.register(accountId, deviceId, "Test PC", firstWorkerId);
 
   const generation = state.register(
     accountId,
@@ -175,12 +149,7 @@ test("filters progress against the current worker generation", async () => {
       generation.generation,
       100,
     ),
-    {
-      type: "get_command",
-      requestId: job.requestId,
-      commandId: job.commandId,
-      waitMs: job.waitMs,
-    },
+    job,
   );
 
   const result: WorkerResult = {
@@ -275,7 +244,6 @@ test("delivers only job types accepted by the current worker capacity", async ()
     deviceId,
     "Test PC",
     firstWorkerId,
-    { commandProgress: true, concurrentJobs: true },
   );
   const readJob: WorkerJob = {
     type: "read_file",
@@ -335,7 +303,6 @@ test("enforces declared worker access profiles before queueing jobs", async () =
   const workspaceWorkerId = "00000000-0000-4000-8000-000000000021";
   const systemWorkerId = "00000000-0000-4000-8000-000000000022";
   state.register(accountId, deviceId, "Test PC", readOnlyWorkerId, {
-    commandProgress: true,
     accessProfile: "read-only",
   });
   const workspaceSession = state.register(
@@ -343,14 +310,14 @@ test("enforces declared worker access profiles before queueing jobs", async () =
     deviceId,
     "Test PC",
     workspaceWorkerId,
-    { commandProgress: true, accessProfile: "workspace" },
+    { accessProfile: "workspace" },
   );
   const systemSession = state.register(
     accountId,
     deviceId,
     "Test PC",
     systemWorkerId,
-    { commandProgress: true, accessProfile: "system" },
+    { accessProfile: "system" },
   );
 
   const writeJob: WorkerJob = {

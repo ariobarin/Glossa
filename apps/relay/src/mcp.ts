@@ -124,10 +124,10 @@ const listWorkspacesOutputSchema = z
             workerVersion: z
               .string()
               .optional()
-              .describe("CLI package version reported by a current worker. Omitted by legacy workers."),
+              .describe("CLI package version reported by the worker when available."),
             accessProfile: z
               .enum(["read-only", "workspace", "system"])
-              .describe("User-selected authority boundary for this worker. Legacy workers are reported as system because they historically allowed commands."),
+              .describe("User-selected authority boundary for this worker."),
             permissions: z
               .object({
                 readFiles: z.literal(true).describe("Whether structured file reads are allowed."),
@@ -145,7 +145,7 @@ const listWorkspacesOutputSchema = z
                 commandOutputRanges: z.boolean().describe("Whether retained stdout and stderr can be read in bounded byte ranges."),
               })
               .strict()
-              .describe("Capabilities negotiated by this worker generation."),
+              .describe("Capabilities provided by the current worker protocol."),
           })
           .strict(),
       )
@@ -474,7 +474,7 @@ export const MCP_SERVER_INSTRUCTIONS = "Use Glossa only to work in a local devel
 const MCP_TOOL_COPY = {
   list_workspaces: {
     title: "Find Glossa Workspaces",
-    description: "Use this when no earlier Glossa result identifies an online workspace, when multiple workspaces must be distinguished, or before an operation whose required permission is unknown. It returns identifiers, user labels, worker versions, access profiles, permissions, and negotiated capabilities. Do not call it repeatedly when a prior result already selected an unambiguous online workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
+    description: "Use this when no earlier Glossa result identifies an online workspace, when multiple workspaces must be distinguished, or before an operation whose required permission is unknown. It returns identifiers, user labels, worker versions, access profiles, permissions, and protocol capabilities. Do not call it repeatedly when a prior result already selected an unambiguous online workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
   },
   get_logout_instructions: {
     title: "Get Glossa Sign-Out Steps",
@@ -506,15 +506,15 @@ const MCP_TOOL_COPY = {
   },
   make_directory: {
     title: "Create Workspace Directory",
-    description: "Use this only when the user asked to create a directory and the selected workspace reports permissions.writeFiles true and capabilities.structuredMutations true. It creates a relative directory inside the exposed root without following links. Set recursive true only when the request also authorizes creating missing parents.",
+    description: "Use this only when the user asked to create a directory and the selected workspace reports permissions.writeFiles true. It creates a relative directory inside the exposed root without following links. Set recursive true only when the request also authorizes creating missing parents.",
   },
   delete_path: {
     title: "Delete Workspace Path",
-    description: "Use this only when the user explicitly asked to delete a file or directory and the selected workspace reports permissions.writeFiles true and capabilities.structuredMutations true. It never deletes the exposed root and does not follow links. Non-empty directories require recursive true, which is destructive and must remain scoped to the user's request.",
+    description: "Use this only when the user explicitly asked to delete a file or directory and the selected workspace reports permissions.writeFiles true. It never deletes the exposed root and does not follow links. Non-empty directories require recursive true, which is destructive and must remain scoped to the user's request.",
   },
   move_path: {
     title: "Move Workspace Path",
-    description: "Use this only when the user asked to rename or move a file or directory and the selected workspace reports permissions.writeFiles true and capabilities.structuredMutations true. Both paths must stay inside the exposed root, links are rejected, and the destination must not already exist.",
+    description: "Use this only when the user asked to rename or move a file or directory and the selected workspace reports permissions.writeFiles true. Both paths must stay inside the exposed root, links are rejected, and the destination must not already exist.",
   },
   run_command: {
     title: "Run Workspace Command",
@@ -526,7 +526,7 @@ const MCP_TOOL_COPY = {
   },
   read_command_output: {
     title: "Read Workspace Command Output",
-    description: "Use this only after run_command or get_command reports truncated stdout or stderr and the selected workspace reports capabilities.commandOutputRanges true. Pass the workspaceId and commandId returned with the command. It reads one bounded retained byte range from one stream without rerunning the command. Follow nextOffset to continue. Output is transient, capped per stream, and deleted with the command record; retentionTruncated means bytes beyond that cap are unavailable.",
+    description: "Use this only after run_command or get_command reports truncated stdout or stderr. Pass the workspaceId and commandId returned with the command. It reads one bounded retained byte range from one stream without rerunning the command. Follow nextOffset to continue. Output is transient, capped per stream, and deleted with the command record; retentionTruncated means bytes beyond that cap are unavailable.",
   },
   cancel_command: {
     title: "Stop Workspace Command",
@@ -754,60 +754,6 @@ function commandOutputRangeSuccess(
   return structuredResult({ workspaceId, ...parsed.data });
 }
 
-function structuredReadError(
-  state: RouterState,
-  accountId: string,
-  deviceId: string,
-) {
-  const online = state
-    .listDevices(accountId)
-    .some((device) => device.deviceId === deviceId);
-  if (!online) return errorResult("device_offline", "The workspace is offline.");
-  if (!state.supportsStructuredReads(accountId, deviceId)) {
-    return errorResult(
-      "worker_update_required",
-      "Update and reconnect the Glossa worker before using structured repository tools.",
-    );
-  }
-  return null;
-}
-
-function structuredMutationError(
-  state: RouterState,
-  accountId: string,
-  deviceId: string,
-) {
-  const online = state
-    .listDevices(accountId)
-    .some((device) => device.deviceId === deviceId);
-  if (!online) return errorResult("device_offline", "The workspace is offline.");
-  if (!state.supportsStructuredMutations(accountId, deviceId)) {
-    return errorResult(
-      "worker_update_required",
-      "Update and reconnect the Glossa worker before using structured path lifecycle tools.",
-    );
-  }
-  return null;
-}
-
-function commandOutputRangeError(
-  state: RouterState,
-  accountId: string,
-  deviceId: string,
-) {
-  const online = state
-    .listDevices(accountId)
-    .some((device) => device.deviceId === deviceId);
-  if (!online) return errorResult("device_offline", "The workspace is offline.");
-  if (!state.supportsCommandOutputRanges(accountId, deviceId)) {
-    return errorResult(
-      "worker_update_required",
-      "Update and reconnect the Glossa worker before reading retained command output ranges.",
-    );
-  }
-  return null;
-}
-
 function structuredReadTimeoutMs(config: RelayConfig): number {
   return Math.max(
     1,
@@ -980,8 +926,6 @@ function registerTools(
       if (containsRestrictedAuthenticationData({ path, cursor })) {
         return restrictedDataResult();
       }
-      const unavailable = structuredReadError(state, accountId, deviceId);
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "list_files",
@@ -1018,8 +962,6 @@ function registerTools(
       if (containsRestrictedAuthenticationData({ query, path, extensions, includeGlobs, excludeGlobs })) {
         return restrictedDataResult();
       }
-      const unavailable = structuredReadError(state, accountId, deviceId);
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "search_text",
@@ -1060,8 +1002,6 @@ function registerTools(
       if (containsRestrictedAuthenticationData(path)) {
         return restrictedDataResult();
       }
-      const unavailable = structuredReadError(state, accountId, deviceId);
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "read_file_range",
@@ -1179,8 +1119,6 @@ function registerTools(
       if (containsRestrictedAuthenticationData(path)) {
         return restrictedDataResult();
       }
-      const unavailable = structuredMutationError(state, accountId, deviceId);
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "make_directory",
@@ -1214,8 +1152,6 @@ function registerTools(
       if (containsRestrictedAuthenticationData(path)) {
         return restrictedDataResult();
       }
-      const unavailable = structuredMutationError(state, accountId, deviceId);
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "delete_path",
@@ -1249,8 +1185,6 @@ function registerTools(
       if (containsRestrictedAuthenticationData({ source, destination })) {
         return restrictedDataResult();
       }
-      const unavailable = structuredMutationError(state, accountId, deviceId);
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(state, config, accountId, deviceId, {
           type: "move_path",
@@ -1368,12 +1302,6 @@ function registerTools(
     },
     async ({ workspaceId, commandId, stream, offset, maxBytes }) => {
       const deviceId = workspaceId;
-      const unavailable = commandOutputRangeError(
-        state,
-        accountId,
-        deviceId,
-      );
-      if (unavailable) return unavailable;
       try {
         const result = await executeJob(
           state,
