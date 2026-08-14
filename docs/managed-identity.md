@@ -56,7 +56,7 @@ Do not place the reviewer subject or credentials in this repository, test fixtur
 ## Reviewer onboarding runbook
 
 1. Prepare the deterministic review workspace with `node scripts/prepare-app-review-workspace.mjs --reset`.
-2. Sign out of any existing CLI session with `glossa logout`.
+2. Unpair any existing pairing on the fixture machine with `glossa unpair`.
 3. Start the fixture with `glossa --access system --label openai-review .review-workspace` using a dedicated operating-system account or isolated virtual machine.
 4. Complete CLI authorization with the reviewer username and password.
 5. In ChatGPT, connect Glossa with the same credentials and scan tools.
@@ -68,13 +68,13 @@ The review fixture contains only synthetic files and deterministic scripts. The 
 
 ## Account switching
 
-Running `glossa logout` deletes the CLI's local OAuth credentials and offers Auth0's browser logout URL — press Enter to open it, or open it manually at any time. To switch accounts:
+The CLI keeps no account session: a computer is either paired to an account or not. Pairing authorizes through the browser, which reuses any existing Auth0 browser session. To switch accounts:
 
 1. Stop every Glossa worker with Ctrl+C or `q`.
-2. Run `glossa logout` and complete the offered browser sign-out.
-3. Disconnect Glossa under **Settings > Apps** in ChatGPT and connect it again.
-4. Choose or enter the intended account during ChatGPT authorization.
-5. Start Glossa and authorize the same identity in the CLI.
+2. Run `glossa unpair`.
+3. End the Auth0 browser session so the next authorization offers the account chooser. The MCP `get_logout_instructions` tool returns the browser logout URL.
+4. Disconnect Glossa under **Settings > Apps** in ChatGPT and connect it again with the intended account.
+5. Start Glossa and authorize the same identity in the browser pairing flow.
 
 The MCP `get_logout_instructions` tool returns equivalent sign-out steps and a browser logout URL. It does not open the URL, revoke credentials, or sign the user out by itself.
 

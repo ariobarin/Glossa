@@ -1,4 +1,4 @@
-import type { Request, RequestHandler, Response } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import {
@@ -166,6 +166,21 @@ async function activeAccountId(
   return null;
 }
 
+interface ManagementRequest extends AuthenticatedRequest {
+  deviceAccountId?: string;
+}
+
+async function managementAccountId(
+  request: ManagementRequest,
+  response: Response,
+  store: RelayStore,
+): Promise<string | null> {
+  // A paired device manages its own account directly; the OAuth path resolves
+  // the account from the human's subject instead.
+  if (request.deviceAccountId) return request.deviceAccountId;
+  return await activeAccountId(request, response, store);
+}
+
 type WorkerRequestIdentity = {
   accountId: string;
   deviceId: string;
@@ -329,6 +344,35 @@ export function buildRoutes(
     (config.GLOSSA_TIMING_LOGS ? consoleRelayTimingSink : undefined);
   if (timingSink) router.use(relayTimingMiddleware(timingSink));
 
+  // Device management accepts either the human's OAuth token or a paired
+  // device credential; enrollment stays OAuth-only so only a
+  // human-authenticated session can bind a new device to an account.
+  const managementOAuth = authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE);
+  const managementAuth: RequestHandler = async (
+    request: ManagementRequest,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    const header = request.header("authorization");
+    const scheme = header?.split(/\s+/, 2)[0]?.toLowerCase();
+    if (scheme !== "device") {
+      await managementOAuth(request, response, next);
+      return;
+    }
+    const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
+    const device = await authenticatedDevice(
+      request,
+      response,
+      store,
+      deviceRateLimiter,
+      deadlineAt,
+      runBeforeDeadline,
+    );
+    if (!device) return;
+    request.deviceAccountId = device.accountId;
+    next();
+  };
+
   router.use((request, response, next) => {
     if (config.NODE_ENV === "production" && !request.secure) {
       response.status(400).json({ error: "https_required" });
@@ -389,9 +433,9 @@ export function buildRoutes(
 
   router.get(
     "/v1/devices",
-    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
-    async (request: AuthenticatedRequest, response: Response) => {
-      const accountId = await activeAccountId(request, response, store);
+    managementAuth,
+    async (request: ManagementRequest, response: Response) => {
+      const accountId = await managementAccountId(request, response, store);
       if (!accountId) return;
       const devices = await store.listDevices(accountId);
       response.json({ devices: devices.map((device) => publicDevice(device, state)) });
@@ -400,15 +444,15 @@ export function buildRoutes(
 
   router.patch(
     "/v1/devices/:deviceId",
-    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
-    async (request: AuthenticatedRequest, response: Response) => {
+    managementAuth,
+    async (request: ManagementRequest, response: Response) => {
       const deviceId = parseDeviceId(request);
       const parsed = renameSchema.safeParse(request.body);
       if (!deviceId || !parsed.success) {
         rejectInvalidInput(response);
         return;
       }
-      const accountId = await activeAccountId(request, response, store);
+      const accountId = await managementAccountId(request, response, store);
       if (!accountId) return;
       try {
         const device = await store.renameDevice(
@@ -430,14 +474,14 @@ export function buildRoutes(
 
   router.delete(
     "/v1/devices/:deviceId",
-    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
-    async (request: AuthenticatedRequest, response: Response) => {
+    managementAuth,
+    async (request: ManagementRequest, response: Response) => {
       const deviceId = parseDeviceId(request);
       if (!deviceId) {
         rejectInvalidInput(response);
         return;
       }
-      const accountId = await activeAccountId(request, response, store);
+      const accountId = await managementAccountId(request, response, store);
       if (!accountId) return;
       const revoked = await store.revokeDevice(accountId, deviceId);
       if (!revoked) {

@@ -85,16 +85,13 @@ glossa update --policy off
 
 Disconnect every running workspace before installing an update.
 
-## Account and device controls
+## Device controls
 
 ```shell
-glossa status
-glossa devices revoke <id>
-glossa logout
 glossa unpair
 ```
 
-`status` shows the account, devices, and active workspaces. Revocation invalidates a device. `logout` signs out CLI account administration but does not unpair the computer; it offers the Auth0 browser sign-out URL for finishing the browser session, which is required to switch accounts. `unpair` revokes this computer and removes its local pairing. Disconnect Glossa in ChatGPT separately to revoke the client authorization.
+A paired computer manages the account's devices from the devices view in its terminal UI: press `d` to list devices and active workspaces, and revoke a device with Enter. `unpair` revokes this computer and removes its local pairing. Disconnect Glossa in ChatGPT separately to revoke the client authorization.
 
 ## Verify a setup
 
@@ -112,7 +109,7 @@ glossa unpair
 - **Wrong workspace:** stop it and restart in the intended project with a unique `--label`.
 - **Permission error:** restart with broader access only if the task genuinely requires it.
 - **`restricted_data_blocked`:** remove the credential or use a non-sensitive placeholder. Do not retry with encoding, another tool, or a shell fallback.
-- **Wrong paired account:** stop workers, run `glossa unpair`, restart, and select the intended account in the browser authorization flow. Use `glossa logout` separately for CLI administration.
+- **Wrong paired account:** stop workers, run `glossa unpair`, restart, and select the intended account in the browser authorization flow.
 - **Tool definitions changed:** run **Scan Tools** again.
 - **Service health:** confirm `https://mcp.glossa.sh/healthz` returns an object with `ok` set to `true`.
 - **Sensitive security issue:** use the private process in [`SECURITY.md`](../SECURITY.md), not a public issue.

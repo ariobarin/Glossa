@@ -67,11 +67,11 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - validate token signature, issuer, audience, provider allowlist, and the device-enrollment scope at the relay;
 - rate-limit enrollment and store only the issued revocable device credential on the paired computer.
 
-Before approving, verify that the browser page was opened from the intended Glossa CLI session and select the intended account. Revoke an unfamiliar device from `glossa devices` immediately.
+Before approving, verify that the browser page was opened from the intended Glossa CLI session and select the intended account. Revoke an unfamiliar device immediately from the devices view of any paired computer (press `d`).
 
 ### Stolen device token
 
-**Threat:** a device token is used to enroll or operate workers for the affected account.
+**Threat:** a device token is used to operate workers for the affected account, or to list and revoke that account's devices.
 
 **Controls:**
 
@@ -84,7 +84,7 @@ Before approving, verify that the browser page was opened from the intended Glos
 - apply failed-authentication rate limiting and constant-time comparison;
 - never log Authorization headers.
 
-A device token does not silently broaden a worker's selected access profile. The relay and worker still enforce that profile for every operation.
+Device management authority is scoped to the token's own account, and enrolling new devices always requires human browser authorization: a device token cannot create another device. Revocation is visible in audit events and recoverable by re-pairing. A device token does not silently broaden a worker's selected access profile. The relay and worker still enforce that profile for every operation.
 
 ### Stolen worker token
 

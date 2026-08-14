@@ -1,33 +1,19 @@
 #!/usr/bin/env node
 import type { WorkerAccessProfile } from "@glossa/protocol";
-import { loadAuthConfig } from "./auth-config.js";
-import {
-  currentSession,
-  signedInSession,
-} from "./auth-login.js";
-import { SessionExpiredError } from "./auth-session.js";
 import {
   parseInvocation,
   UsageError,
   type CliInvocation,
 } from "./cli-options.js";
-import type { StoredCredentials } from "./config-store.js";
 import { deviceStatus, formatRelativeTime } from "./device-format.js";
-import { logoutFromGlossa } from "./logout.js";
 import {
+  listDevices,
   loadRelayEndpoints,
   revokeDevice,
 } from "./relay-client.js";
-import { formatStatus } from "./status-display.js";
-import {
-  WorkspaceStatusService,
-  type StatusDetails,
-} from "./status-service.js";
 import { runSessionHud } from "./ui-hud.js";
 import {
   retainPostExitNotice,
-  type HudExitAction,
-  type HudStatus,
 } from "./ui-hud-model.js";
 import {
   checkForUpdate,
@@ -61,9 +47,6 @@ const HELP = `Glossa ${VERSION}
 
 Usage:
   glossa [--access <read-only|workspace|system>] [--label <name>] [directory]
-  glossa status
-  glossa devices revoke <id>
-  glossa logout
   glossa unpair
   glossa update [--check]
   glossa update --policy <notify|auto|off>
@@ -85,77 +68,8 @@ Keys:
   ←→ change workspace access
   Enter/r  revoke selected device
   Esc  workspace
-  l  account sign out
   ?  help
   q  disconnect and quit`;
-
-async function withLoginSignal<T>(
-  action: (signal: AbortSignal) => Promise<T>,
-): Promise<T> {
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
-  process.once("SIGINT", cancel);
-  try {
-    return await action(controller.signal);
-  } finally {
-    process.removeListener("SIGINT", cancel);
-  }
-}
-
-async function authenticatedCredentials(
-  signal?: AbortSignal,
-): Promise<StoredCredentials> {
-  if (signal) return await signedInSession({ ...loadAuthConfig(), signal });
-  return await withLoginSignal(async (loginSignal) =>
-    await signedInSession({ ...loadAuthConfig(), signal: loginSignal })
-  );
-}
-
-/**
- * Account credentials for actions inside the running HUD. The HUD cannot host
- * a browser sign-in, so an absent or expired session becomes a notice telling
- * the user how to sign in instead of launching the device flow mid-session.
- */
-async function hudCredentials(signal: AbortSignal): Promise<StoredCredentials> {
-  try {
-    return await currentSession({ ...loadAuthConfig(), signal });
-  } catch (error) {
-    if (error instanceof SessionExpiredError) {
-      throw new Error(
-        "No active account sign-in. Quit and run `glossa status` to sign in.",
-      );
-    }
-    throw error;
-  }
-}
-
-async function showStatus(): Promise<void> {
-  const credentials = await authenticatedCredentials();
-  const endpoints = loadRelayEndpoints();
-  const status = await new WorkspaceStatusService(
-    credentials,
-    endpoints,
-  ).refresh();
-  for (const line of formatStatus(status)) console.log(line);
-}
-
-function hudStatus(status: StatusDetails): HudStatus {
-  return {
-    ...status,
-    devices: status.devices.map((device) => ({
-      id: device.id,
-      name: device.name,
-      platform: device.platform ?? "Unknown platform",
-      lastSeen: formatRelativeTime(device.lastSeenAt),
-      status: deviceStatus(device),
-    })),
-  };
-}
-
-async function revokeKnownDevice(deviceId: string): Promise<void> {
-  const credentials = await authenticatedCredentials();
-  await revokeDevice(loadRelayEndpoints(), credentials, deviceId);
-}
 
 async function runWorkspaceSession(
   path: string | undefined,
@@ -170,7 +84,7 @@ async function runWorkspaceSession(
     let postExitNotice: string | undefined;
     let requestedAccessProfile = accessProfile;
     let activeSessionController: AbortController | undefined;
-    const exitAction: HudExitAction = await runSessionHud({
+    await runSessionHud({
       workspace: root,
       ...(label ? { workspaceLabel: label } : {}),
       run: async (signal, onEvent) => {
@@ -214,16 +128,29 @@ async function runWorkspaceSession(
         }
       },
       loadStatus: async (signal) => {
-        const credentials = await hudCredentials(signal);
-        return hudStatus(
-          await new WorkspaceStatusService(credentials, endpoints).refresh(signal),
-        );
+        const withSignal = async (input: string, init?: RequestInit) =>
+          await fetch(input, { ...init, signal });
+        const devices = (
+          await listDevices(endpoints, `Device ${device.token}`, withSignal)
+        ).filter((entry) => entry.revokedAt === null);
+        return {
+          relay: endpoints.relayOrigin,
+          activeWorkers: devices.some((entry) => entry.activeWorkers === null)
+            ? null
+            : devices.reduce((total, entry) => total + entry.activeWorkers!, 0),
+          devices: devices.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            platform: entry.platform ?? "Unknown platform",
+            lastSeen: formatRelativeTime(entry.lastSeenAt),
+            status: deviceStatus(entry),
+          })),
+        };
       },
       revokeDevice: async (deviceId, signal) => {
-        const credentials = await hudCredentials(signal);
         await revokeDevice(
           endpoints,
-          credentials,
+          `Device ${device.token}`,
           deviceId,
           async (input, init) => await fetch(input, { ...init, signal }),
         );
@@ -235,7 +162,6 @@ async function runWorkspaceSession(
       },
     });
     if (postExitNotice) console.error(postExitNotice);
-    if (exitAction === "logout") await logoutFromGlossa();
   } finally {
     await lease.release();
   }
@@ -358,17 +284,10 @@ async function main(): Promise<void> {
       invocation.label,
       invocation.accessProfile,
     );
-  } else if (invocation.command === "status") {
-    await showStatus();
-  } else if (invocation.command === "logout") {
-    await logoutFromGlossa();
   } else if (invocation.command === "unpair") {
     await unpairComputer();
   } else if (invocation.command === "update") {
     await runUpdateCommand(invocation);
-  } else {
-    await revokeKnownDevice(invocation.deviceId);
-    console.log(`Revoked device ${invocation.deviceId}. Running workspaces on it are disconnected.`);
   }
 }
 
