@@ -68,6 +68,15 @@ const environmentSchema = z
       .enum(["0", "1"])
       .default("0")
       .transform((value) => value === "1"),
+    // The control panel is enabled only when all three values are set.
+    GLOSSA_PANEL_CLIENT_ID: z.string().trim().min(1).max(255).optional(),
+    GLOSSA_PANEL_CLIENT_SECRET: z
+      .string()
+      .trim()
+      .min(1)
+      .max(1024)
+      .optional(),
+    GLOSSA_PANEL_SESSION_SECRET: z.string().min(32).max(1024).optional(),
   })
   .superRefine((environment, context) => {
     if (
@@ -88,6 +97,18 @@ const environmentSchema = z
         code: "custom",
         path: ["GLOSSA_PUBLIC_ORIGIN"],
         message: "Production public origin must use HTTPS.",
+      });
+    }
+    const panelValues = [
+      environment.GLOSSA_PANEL_CLIENT_ID,
+      environment.GLOSSA_PANEL_CLIENT_SECRET,
+      environment.GLOSSA_PANEL_SESSION_SECRET,
+    ];
+    if (panelValues.some((value) => value !== undefined) && panelValues.some((value) => value === undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["GLOSSA_PANEL_CLIENT_ID"],
+        message: "The control panel requires all three GLOSSA_PANEL_* variables.",
       });
     }
   });
@@ -112,14 +133,24 @@ const auth0ExactSubjectSchema = z
     message: "Exact Auth0 subjects must include a provider prefix and user identifier.",
   });
 
+export interface PanelConfig {
+  clientId: string;
+  clientSecret: string;
+  sessionSecret: string;
+}
+
 export type RelayConfig = Omit<
   ParsedEnvironment,
   | "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES"
   | "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX"
   | "GLOSSA_AUTH0_ALLOWED_SUBJECTS"
+  | "GLOSSA_PANEL_CLIENT_ID"
+  | "GLOSSA_PANEL_CLIENT_SECRET"
+  | "GLOSSA_PANEL_SESSION_SECRET"
 > & {
   GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: readonly string[];
   GLOSSA_AUTH0_ALLOWED_SUBJECTS: readonly string[];
+  GLOSSA_PANEL: PanelConfig | undefined;
 };
 
 function commaSeparatedValues(
@@ -167,11 +198,22 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): RelayC
     GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: _pluralInput,
     GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: _legacyInput,
     GLOSSA_AUTH0_ALLOWED_SUBJECTS: _exactInput,
+    GLOSSA_PANEL_CLIENT_ID: panelClientId,
+    GLOSSA_PANEL_CLIENT_SECRET: panelClientSecret,
+    GLOSSA_PANEL_SESSION_SECRET: panelSessionSecret,
     ...config
   } = parsed;
   return {
     ...config,
     GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: allowedSubjectPrefixes(parsed),
     GLOSSA_AUTH0_ALLOWED_SUBJECTS: allowedExactSubjects(parsed),
+    GLOSSA_PANEL:
+      panelClientId && panelClientSecret && panelSessionSecret
+        ? {
+            clientId: panelClientId,
+            clientSecret: panelClientSecret,
+            sessionSecret: panelSessionSecret,
+          }
+        : undefined,
   };
 }

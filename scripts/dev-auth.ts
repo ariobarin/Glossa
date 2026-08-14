@@ -85,6 +85,21 @@ export async function startDevAuth(port = DEFAULT_PORT): Promise<DevAuthServer> 
         );
         return;
       }
+      // Authorization-code flow for the relay control panel: auto-login as
+      // the local development identity, no consent screen.
+      if (request.method === "GET" && url.pathname === "/authorize") {
+        const redirectUri = url.searchParams.get("redirect_uri");
+        if (!redirectUri) {
+          json(response, 400, { error: "invalid_request" });
+          return;
+        }
+        const target = new URL(redirectUri);
+        target.searchParams.set("code", crypto.randomUUID());
+        target.searchParams.set("state", url.searchParams.get("state") ?? "");
+        response.writeHead(302, { location: target.toString() });
+        response.end();
+        return;
+      }
       if (request.method === "POST" && url.pathname === "/oauth/device/code") {
         const form = await readForm(request);
         const deviceCode = crypto.randomUUID();
@@ -124,6 +139,24 @@ export async function startDevAuth(port = DEFAULT_PORT): Promise<DevAuthServer> 
             token_type: "Bearer",
             expires_in: 3600,
             scope: code.scope,
+          });
+          return;
+        }
+        // Authorization-code exchange for the relay control panel.
+        if (grantType === "authorization_code") {
+          json(response, 200, {
+            access_token: await sign(
+              "dev|local-user",
+              form.get("audience") ?? issuer,
+              "openid profile",
+            ),
+            id_token: await sign(
+              "dev|local-user",
+              form.get("client_id") ?? "dev-panel",
+              "openid profile",
+            ),
+            token_type: "Bearer",
+            expires_in: 3600,
           });
           return;
         }
@@ -179,6 +212,11 @@ if (isStandalone) {
   console.log(`  GLOSSA_AUTH0_ISSUER=${devAuth.issuer}`);
   console.log(`  GLOSSA_AUTH0_AUDIENCE=${relayOrigin}/`);
   console.log("  GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES=dev|");
+  console.log("");
+  console.log("Optional relay control panel at /panel:");
+  console.log("  GLOSSA_PANEL_CLIENT_ID=dev-panel");
+  console.log("  GLOSSA_PANEL_CLIENT_SECRET=dev-changeme");
+  console.log(`  GLOSSA_PANEL_SESSION_SECRET=${crypto.randomBytes(32).toString("hex")}`);
   console.log("");
   console.log("CLI environment for local integration:");
   console.log(`  GLOSSA_RELAY_ORIGIN=${relayOrigin}`);
