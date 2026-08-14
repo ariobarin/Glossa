@@ -94,6 +94,8 @@ jobs:
           codesign --verify --deep --strict "dist/standalone/${{ matrix.asset }}"
       - name: Smoke standalone executable
         run: node packages/cli/scripts/smoke-standalone.mjs "dist/standalone/${{ matrix.asset }}"
+      - name: Smoke direct installer
+        run: node packages/cli/scripts/smoke-direct-installer.mjs "dist/standalone/${{ matrix.asset }}" "${{ matrix.asset }}"
       - name: Write checksum
         env:
           ASSET: ${{ matrix.asset }}

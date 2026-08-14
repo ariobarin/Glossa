@@ -43,7 +43,6 @@ import {
 } from "./update-state.js";
 import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
 import { unpairComputer } from "./unpair.js";
-import { recordSessionUsage, recordToolUsage } from "./usage-store.js";
 import {
   deviceForSession,
   runManagedSession,
@@ -152,17 +151,12 @@ async function runWorkspaceSession(
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const lease = await acquireWorkspaceLease(root);
-  let usageWrites = Promise.resolve();
-  const queueUsage = (write: () => Promise<void>): void => {
-    usageWrites = usageWrites.then(write).catch(() => undefined);
-  };
   try {
     const endpoints = loadRelayEndpoints();
     const device = await deviceForSession(endpoints);
     let postExitNotice: string | undefined;
     let requestedAccessProfile = accessProfile;
     let activeSessionController: AbortController | undefined;
-    queueUsage(async () => await recordSessionUsage());
     const exitAction: HudExitAction = await runSessionHud({
       workspace: root,
       ...(label ? { workspaceLabel: label } : {}),
@@ -183,9 +177,6 @@ async function runWorkspaceSession(
               signal: sessionController.signal,
               onEvent: (event) => {
                 postExitNotice = retainPostExitNotice(postExitNotice, event);
-                if (event.type === "activity" && event.phase === "returned") {
-                  queueUsage(async () => await recordToolUsage(event.job.type, event.ok));
-                }
                 onEvent(event);
               },
               quiet: true,
@@ -233,7 +224,6 @@ async function runWorkspaceSession(
     if (postExitNotice) console.error(postExitNotice);
     if (exitAction === "logout") await logoutFromGlossa();
   } finally {
-    await usageWrites;
     await lease.release();
   }
 }
@@ -250,7 +240,7 @@ async function runWorkspace(
 
 async function refreshUpdateInfo(timeoutMs: number): Promise<UpdateInfo> {
   const info = await loadUpdateInfo(timeoutMs);
-  await recordUpdateCheck(VERSION, info.availableVersion);
+  await recordUpdateCheck(VERSION);
   return info;
 }
 
@@ -313,12 +303,12 @@ async function updateBeforeWorkspace(): Promise<boolean> {
     return false;
   }
   if (!info.updateAvailable) {
-    await recordUpdateCheck(VERSION, info.availableVersion);
+    await recordUpdateCheck(VERSION);
     return false;
   }
 
   if (state.policy === "notify") {
-    await recordUpdateCheck(VERSION, info.availableVersion);
+    await recordUpdateCheck(VERSION);
     console.error(
       `Glossa ${info.availableVersion} is available. Run glossa update after disconnecting.`,
     );

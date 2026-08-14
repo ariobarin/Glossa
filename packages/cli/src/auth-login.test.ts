@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ensureSignedIn, signedInSession } from "./auth-login.js";
+import { signedInSession } from "./auth-login.js";
 import type { StoredCredentials } from "./config-store.js";
 import type { LoginOptions } from "./device-flow.js";
 
@@ -36,7 +36,7 @@ test("forwards cancellation while validating matching stored credentials", async
   const stored = credentials();
   let loginCalled = false;
 
-  const pending = ensureSignedIn(loginOptions(controller.signal), {
+  const pending = signedInSession(loginOptions(controller.signal), {
     loadCredentials: async () => ({ credentials: stored, backend: "file" }),
     validCredentials: async (received, dependencies) => {
       assert.equal(received, stored);

@@ -9,7 +9,6 @@ export interface UpdateState {
   policy: UpdatePolicy;
   channel: UpdateChannel;
   lastCheckedAt?: string;
-  latestVersion?: string;
 }
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -45,12 +44,10 @@ export async function loadUpdateState(
   try {
     const parsed = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
     const lastCheckedAt = optionalString(parsed.lastCheckedAt);
-    const latestVersion = optionalString(parsed.latestVersion);
     return {
       policy: isPolicy(parsed.policy) ? parsed.policy : defaults.policy,
       channel: isChannel(parsed.channel) ? parsed.channel : defaults.channel,
       ...(lastCheckedAt ? { lastCheckedAt } : {}),
-      ...(latestVersion ? { latestVersion } : {}),
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) {
@@ -95,14 +92,12 @@ export async function configureUpdates(
 
 export async function recordUpdateCheck(
   currentVersion: string,
-  latestVersion: string,
   checkedAt = new Date(),
   file = updateStateFile(),
 ): Promise<UpdateState> {
   const state = {
     ...await loadUpdateState(currentVersion, file),
     lastCheckedAt: checkedAt.toISOString(),
-    latestVersion,
   };
   await saveUpdateState(state, file);
   return state;

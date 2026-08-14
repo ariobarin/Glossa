@@ -35,12 +35,10 @@ test("uses version-aware defaults and persists update settings", async () => {
     const checkedAt = new Date("2026-07-31T12:00:00.000Z");
     const recorded = await recordUpdateCheck(
       "0.1.0-beta.13",
-      "0.1.0-beta.14",
       checkedAt,
       file,
     );
     assert.equal(recorded.lastCheckedAt, checkedAt.toISOString());
-    assert.equal(recorded.latestVersion, "0.1.0-beta.14");
     assert.match(await readFile(file, "utf8"), /"policy": "auto"/);
     const reset = await configureUpdates(
       "0.1.0-beta.13",

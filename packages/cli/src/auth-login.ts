@@ -79,10 +79,3 @@ export async function signedInSession(
     loginPerformed: true,
   };
 }
-
-export async function ensureSignedIn(
-  options: LoginOptions,
-  dependencies: SignInDependencies = {},
-): Promise<boolean> {
-  return (await signedInSession(options, dependencies)).loginPerformed;
-}
