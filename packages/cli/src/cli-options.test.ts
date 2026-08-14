@@ -55,14 +55,13 @@ test("parses explicit least-privilege and system access profiles", () => {
 });
 
 test("keeps the reduced direct CLI actions", () => {
-  assert.deepEqual(parseInvocation(["status"]), { command: "status" });
-  assert.deepEqual(parseInvocation(["devices", "revoke", "device-1"]), {
-    command: "devices",
-    action: "revoke",
-    deviceId: "device-1",
-  });
-  assert.deepEqual(parseInvocation(["logout"]), { command: "logout" });
   assert.deepEqual(parseInvocation(["unpair"]), { command: "unpair" });
+  for (const retired of ["status", "devices", "logout", "login"]) {
+    assert.throws(
+      () => parseInvocation([retired]),
+      new UsageError(`The ${retired} command is no longer available.`),
+    );
+  }
 });
 
 test("parses update actions and settings", () => {

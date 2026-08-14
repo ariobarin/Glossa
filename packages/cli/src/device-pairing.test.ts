@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { StoredCredentials } from "./config-store.js";
+import type { PairingAuthorization } from "./device-flow.js";
 import type { StoredDeviceCredential } from "./device-store.js";
 import { pairDevice } from "./device-pairing.js";
 import type { RelayEndpoints } from "./relay-client.js";
@@ -9,15 +9,15 @@ const endpoints: RelayEndpoints = {
   relayOrigin: "https://mcp.glossa.test",
   workerOrigin: "https://mcp.glossa.test",
 };
-const credentials: StoredCredentials = {
+const authConfig = {
   issuer: "https://identity.glossa.test/",
   clientId: "client",
   audience: "https://mcp.glossa.test/",
+  scope: "openid profile offline_access glossa:device",
+};
+const authorization: PairingAuthorization = {
   accessToken: "access",
-  expiresAt: "2099-01-01T00:00:00.000Z",
   tokenType: "Bearer",
-  scope: "openid profile glossa:device",
-  requestedScope: "openid profile glossa:device",
 };
 const pairedDevice: StoredDeviceCredential = {
   relayOrigin: endpoints.relayOrigin,
@@ -31,18 +31,13 @@ test("authorizes in the browser without retaining account credentials", async ()
   let receivedScope = "";
   const paired = await pairDevice(endpoints, undefined, {
     defaultDeviceName: () => "gpu-box",
-    loadAuthConfig: () => ({
-      issuer: credentials.issuer,
-      clientId: credentials.clientId,
-      audience: credentials.audience,
-      scope: "openid profile offline_access glossa:device",
-    }),
-    authorizeWithDeviceFlow: async (options) => {
+    loadAuthConfig: () => authConfig,
+    authorizePairing: async (options) => {
       receivedScope = options.scope;
-      return credentials;
+      return authorization;
     },
-    enrollDevice: async (_endpoints, receivedCredentials, name) => {
-      assert.equal(receivedCredentials, credentials);
+    enrollDevice: async (_endpoints, receivedAuthorization, name) => {
+      assert.equal(receivedAuthorization, "Bearer access");
       assert.equal(name, "gpu-box");
       return pairedDevice;
     },
@@ -62,15 +57,10 @@ test("cancels pairing when the managed session aborts", async () => {
     resolveStarted = resolve;
   });
   const pending = pairDevice(endpoints, controller.signal, {
-    loadAuthConfig: () => ({
-      issuer: credentials.issuer,
-      clientId: credentials.clientId,
-      audience: credentials.audience,
-      scope: "openid profile offline_access glossa:device",
-    }),
-    authorizeWithDeviceFlow: async (options) => {
+    loadAuthConfig: () => authConfig,
+    authorizePairing: async (options) => {
       resolveStarted();
-      return await new Promise<StoredCredentials>((_resolve, reject) => {
+      return await new Promise<PairingAuthorization>((_resolve, reject) => {
         options.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
           once: true,
         });

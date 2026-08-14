@@ -779,13 +779,12 @@ test("activity pagination shows newest entries and range only when needed", () =
   assert.doesNotMatch(unpaged.split("\n")[0]!, /Activity \(/);
 });
 
-test("devices page shows account overview and active devices", () => {
+test("devices page shows pairing overview and active devices", () => {
   const output = renderHud(
     {
       ...connectedState(),
       view: "devices",
       status: {
-        account: "dev@example.com",
         relay: "https://relay.example",
         activeWorkers: 3,
         devices: [{
@@ -819,7 +818,6 @@ test("devices use a compact readable row in narrow terminals", () => {
       ...connectedState(),
       view: "devices",
       status: {
-        account: "dev@example.com",
         relay: "https://relay.example",
         activeWorkers: 1,
         devices: [{
@@ -857,7 +855,6 @@ test("devices view scrolls to keep the selected device visible", () => {
       view: "devices",
       deviceSelection: 10,
       status: {
-        account: "dev@example.com",
         relay: "https://relay.example",
         activeWorkers: 0,
         devices,
@@ -894,7 +891,6 @@ test("every view stays within a narrow terminal and retains its footer", () => {
       ...state,
       view: "devices",
       status: {
-        account: "dev@example.com",
         relay: "https://relay.example",
         activeWorkers: null,
         devices: [],
@@ -924,8 +920,8 @@ test("help keeps the useful navigation without removed commands", () => {
   assert.match(output, /\?\s+Help/);
   assert.match(output, /Esc\s+Workspace/);
   assert.match(output, /Enter\/R\s+Revoke selected device/);
-  assert.match(output, /L\s+Account sign out/);
   assert.match(output, /Q\s+Disconnect and quit/);
+  assert.doesNotMatch(output, /sign out/i);
   assert.doesNotMatch(output, /update/i);
 });
 

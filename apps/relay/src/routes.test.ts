@@ -432,3 +432,122 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(unregistered.status, 204);
   assert.equal(state.authenticateWorkerToken(String(current.workerToken)), null);
 });
+
+test("manages devices with a paired device credential", async (context) => {
+  const otherDevice: DeviceRecord = {
+    id: "00000000-0000-4000-8000-000000000009",
+    accountId,
+    name: "Laptop",
+    platform: null,
+    revokedAt: null,
+    lastSeenAt: null,
+  };
+  const store: RelayStore = {
+    accountIdForSubject: unused,
+    enrollDevice: unused,
+    listDevices: async (receivedAccountId) => {
+      assert.equal(receivedAccountId, accountId);
+      return [device, otherDevice];
+    },
+    renameDevice: async (receivedAccountId, receivedDeviceId, name) => {
+      assert.equal(receivedAccountId, accountId);
+      return receivedDeviceId === otherDevice.id
+        ? { ...otherDevice, name }
+        : null;
+    },
+    revokeDevice: async (receivedAccountId, receivedDeviceId) =>
+      receivedAccountId === accountId && receivedDeviceId === otherDevice.id,
+    touchDevice: unused,
+    authenticateDevice: async (receivedDeviceId, secret) =>
+      receivedDeviceId === deviceId && secret === "a".repeat(43) ? device : null,
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: () => (_request, response) => {
+      response.status(401).json({ error: "authentication_required" });
+    },
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+  const origin = `http://127.0.0.1:${address.port}`;
+  const authorization = `Device ${token}`;
+
+  const listed = await fetch(`${origin}/v1/devices`, {
+    headers: { authorization },
+  });
+  assert.equal(listed.status, 200);
+  assert.deepEqual(await listed.json(), {
+    devices: [
+      {
+        id: deviceId,
+        name: "Test PC",
+        platform: "win32-x64",
+        lastSeenAt: null,
+        revokedAt: null,
+        activeWorkers: 0,
+      },
+      {
+        id: otherDevice.id,
+        name: "Laptop",
+        platform: null,
+        lastSeenAt: null,
+        revokedAt: null,
+        activeWorkers: 0,
+      },
+    ],
+  });
+
+  const renamed = await fetch(`${origin}/v1/devices/${otherDevice.id}`, {
+    method: "PATCH",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Renamed Laptop" }),
+  });
+  assert.equal(renamed.status, 200);
+  assert.deepEqual(await renamed.json(), {
+    device: {
+      id: otherDevice.id,
+      name: "Renamed Laptop",
+      platform: null,
+      lastSeenAt: null,
+      revokedAt: null,
+      activeWorkers: 0,
+    },
+  });
+
+  const revoked = await fetch(`${origin}/v1/devices/${otherDevice.id}`, {
+    method: "DELETE",
+    headers: { authorization },
+  });
+  assert.equal(revoked.status, 204);
+
+  const missing = await fetch(
+    `${origin}/v1/devices/00000000-0000-4000-8000-000000000099`,
+    {
+      method: "DELETE",
+      headers: { authorization },
+    },
+  );
+  assert.equal(missing.status, 404);
+
+  const invalid = await fetch(`${origin}/v1/devices`, {
+    headers: { authorization: `Device gld_${deviceId}_${"b".repeat(43)}` },
+  });
+  assert.equal(invalid.status, 401);
+
+  const enrolled = await fetch(`${origin}/v1/devices/enroll`, {
+    method: "POST",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Sneaky", platform: null }),
+  });
+  assert.equal(enrolled.status, 401);
+});

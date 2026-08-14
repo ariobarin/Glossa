@@ -1,6 +1,6 @@
-import type { FetchLike } from "./auth-session.js";
+import type { FetchLike } from "./oauth.js";
 import { loadAuthConfig } from "./auth-config.js";
-import { authorizeWithDeviceFlow } from "./device-flow.js";
+import { authorizePairing } from "./device-flow.js";
 import type { StoredDeviceCredential } from "./device-store.js";
 import {
   defaultDeviceName,
@@ -9,7 +9,7 @@ import {
 } from "./relay-client.js";
 
 export interface PairDeviceDependencies {
-  authorizeWithDeviceFlow?: typeof authorizeWithDeviceFlow;
+  authorizePairing?: typeof authorizePairing;
   defaultDeviceName?: typeof defaultDeviceName;
   enrollDevice?: typeof enrollDevice;
   loadAuthConfig?: typeof loadAuthConfig;
@@ -33,7 +33,7 @@ export async function pairDevice(
   signal?: AbortSignal,
   dependencies: PairDeviceDependencies = {},
 ): Promise<StoredDeviceCredential> {
-  const authorize = dependencies.authorizeWithDeviceFlow ?? authorizeWithDeviceFlow;
+  const authorize = dependencies.authorizePairing ?? authorizePairing;
   const enroll = dependencies.enrollDevice ?? enrollDevice;
   const authConfig = dependencies.loadAuthConfig ?? loadAuthConfig;
   const name = dependencies.defaultDeviceName ?? defaultDeviceName;
@@ -47,7 +47,7 @@ export async function pairDevice(
     signal?.throwIfAborted();
     log("This computer needs to be paired with Glossa.");
     const auth = authConfig();
-    const credentials = await authorize(
+    const authorization = await authorize(
       {
         ...auth,
         scope: pairingScope(auth.scope),
@@ -56,7 +56,12 @@ export async function pairDevice(
       { fetch: fetchRequest, log },
     );
     signal?.throwIfAborted();
-    const paired = await enroll(endpoints, credentials, name(), fetchRequest);
+    const paired = await enroll(
+      endpoints,
+      `${authorization.tokenType} ${authorization.accessToken}`,
+      name(),
+      fetchRequest,
+    );
     log(`Paired with Glossa as ${paired.deviceName}.`);
     return paired;
   } catch (error) {

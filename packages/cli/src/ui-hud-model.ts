@@ -34,7 +34,6 @@ export interface HudDevice {
 }
 
 export interface HudStatus {
-  account: string;
   relay: string;
   activeWorkers: number | null;
   devices: HudDevice[];
@@ -42,11 +41,8 @@ export interface HudStatus {
 
 type HudView = "activity" | "workspace" | "devices" | "help";
 type HudPrompt =
-  | { type: "logout" }
   | { type: "revoke-confirm"; deviceIndex: number }
   | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
-
-export type HudExitAction = "quit" | "logout";
 
 export interface HudState {
   workspace: string;

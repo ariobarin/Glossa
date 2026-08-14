@@ -15,9 +15,6 @@ export type CliInvocation =
       label?: string;
       accessProfile: WorkerAccessProfile;
     }
-  | { command: "status" }
-  | { command: "devices"; action: "revoke"; deviceId: string }
-  | { command: "logout" }
   | { command: "unpair" }
   | { command: "update"; action: "install" | "check" }
   | {
@@ -31,9 +28,12 @@ export type CliInvocation =
 
 const retiredCommands = new Set([
   "completions",
+  "devices",
   "doctor",
   "login",
+  "logout",
   "start",
+  "status",
 ]);
 
 function parseWorkspace(args: string[]): CliInvocation {
@@ -93,13 +93,6 @@ function parseWorkspace(args: string[]): CliInvocation {
     ...(label ? { label } : {}),
     accessProfile,
   };
-}
-
-function parseDevices(args: string[]): CliInvocation {
-  if (args[0] === "revoke" && args.length === 2) {
-    return { command: "devices", action: "revoke", deviceId: args[1]! };
-  }
-  throw new UsageError("Use: glossa devices revoke <id>.");
 }
 
 function parseUpdate(args: string[]): CliInvocation {
@@ -165,15 +158,6 @@ export function parseInvocation(args: string[]): CliInvocation {
     return { command: "version" };
   }
   if (command === "--") return parseWorkspace(args);
-  if (command === "status") {
-    noOptions("Status", options);
-    return { command };
-  }
-  if (command === "devices") return parseDevices(options);
-  if (command === "logout") {
-    noOptions("Logout", options);
-    return { command };
-  }
   if (command === "unpair") {
     noOptions("Unpair", options);
     return { command };

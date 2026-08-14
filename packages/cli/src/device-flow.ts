@@ -1,11 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { grantedScopesSatisfyRequest } from "./auth-scopes.js";
-import { type FetchLike } from "./auth-session.js";
-import { saveCredentials, type StoredCredentials } from "./config-store.js";
 import {
   isTokenResponse,
   issuerEndpoint,
   oauthErrorMessage,
+  type FetchLike,
   type OAuthError,
   type OAuthTokenResponse,
 } from "./oauth.js";
@@ -20,7 +19,7 @@ interface DeviceCodeResponse {
   interval?: number;
 }
 
-export interface LoginOptions {
+export interface PairingOptions {
   issuer: string;
   clientId: string;
   audience: string;
@@ -28,22 +27,25 @@ export interface LoginOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * The temporary browser authorization used to enroll this computer. It is
+ * never stored: pairing trades it for the durable device credential.
+ */
+export interface PairingAuthorization {
+  accessToken: string;
+  tokenType: string;
+}
+
 export interface DeviceFlowDependencies {
   fetch?: FetchLike;
   delay?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   openBrowser?: typeof openBrowser;
-  saveCredentials?: typeof saveCredentials;
   now?: () => number;
   log?: (message: string) => void;
 }
 
-export type DeviceAuthorizationDependencies = Omit<
-  DeviceFlowDependencies,
-  "saveCredentials"
->;
-
 function canceledError(): Error {
-  return new Error("Login canceled.");
+  return new Error("Pairing canceled.");
 }
 
 function assertActive(signal?: AbortSignal): void {
@@ -73,10 +75,10 @@ async function postForm<T>(
   return data;
 }
 
-export async function authorizeWithDeviceFlow(
-  options: LoginOptions,
-  dependencies: DeviceAuthorizationDependencies = {},
-): Promise<StoredCredentials> {
+export async function authorizePairing(
+  options: PairingOptions,
+  dependencies: DeviceFlowDependencies = {},
+): Promise<PairingAuthorization> {
   const fetchRequest = dependencies.fetch ?? fetch;
   const wait = dependencies.delay ?? defaultDelay;
   const browse = dependencies.openBrowser ?? openBrowser;
@@ -99,7 +101,7 @@ export async function authorizeWithDeviceFlow(
     const verificationUrl = code.verification_uri_complete ?? code.verification_uri;
     const opened = await browse(verificationUrl);
 
-    log(opened ? "Opened your browser for Glossa login." : "Open this URL to sign in:");
+    log(opened ? "Opened your browser to pair this computer." : "Open this URL to pair this computer:");
     log(verificationUrl);
     if (!code.verification_uri_complete) log(`Code: ${code.user_code}`);
 
@@ -133,15 +135,8 @@ export async function authorizeWithDeviceFlow(
           throw new Error("Auth0 did not grant the permissions Glossa requires.");
         }
         return {
-          issuer: options.issuer,
-          clientId: options.clientId,
-          audience: options.audience,
           accessToken: data.access_token,
-          ...(data.refresh_token ? { refreshToken: data.refresh_token } : {}),
-          expiresAt: new Date(now() + data.expires_in * 1000).toISOString(),
           tokenType: data.token_type,
-          scope: grantedScope,
-          requestedScope: options.scope,
         };
       }
 
@@ -151,29 +146,16 @@ export async function authorizeWithDeviceFlow(
         intervalSeconds += 5;
         continue;
       }
-      if (error.error === "access_denied") throw new Error("Login was denied.");
-      if (error.error === "expired_token") throw new Error("The login code expired.");
+      if (error.error === "access_denied") throw new Error("Pairing was denied.");
+      if (error.error === "expired_token") throw new Error("The pairing code expired.");
       throw new Error(oauthErrorMessage(error, response.status));
     }
 
-    throw new Error("The login code expired.");
+    throw new Error("The pairing code expired.");
   } catch (error) {
     if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
       throw canceledError();
     }
     throw error;
   }
-}
-
-export async function loginWithDeviceFlow(
-  options: LoginOptions,
-  dependencies: DeviceFlowDependencies = {},
-): Promise<void> {
-  const credentials = await authorizeWithDeviceFlow(options, dependencies);
-  if (!credentials.refreshToken) {
-    throw new Error("Auth0 did not issue a refresh token.");
-  }
-  const save = dependencies.saveCredentials ?? saveCredentials;
-  await save(credentials);
-  (dependencies.log ?? console.log)("Signed in to Glossa.");
 }

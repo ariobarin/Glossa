@@ -69,7 +69,6 @@ test("footer keeps navigation left and contextual controls right", () => {
       ...connectedState(),
       view: "devices",
       status: {
-        account: "dev@example.com",
         relay: "https://relay.example",
         activeWorkers: 0,
         devices: [{
@@ -92,7 +91,7 @@ test("footer keeps navigation left and contextual controls right", () => {
     20,
   ).split("\n").at(-1)!;
 
-  const regularNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+L Account sign out\s+Q Quit/;
+  const regularNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+Q Quit/;
   for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, regularNav);
   }
@@ -192,7 +191,7 @@ test("activity view paginates newest-first without an agent block", () => {
     false,
     20,
   );
-  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(1-14\/30\)/);
+  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(1-15\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
   assert.match(output, /file-30\.txt/);
   assert.doesNotMatch(output, /file-1\.txt/);
@@ -251,7 +250,6 @@ test("devices keyboard navigation revokes the selected device", async () => {
         });
       },
       loadStatus: async () => ({
-        account: "dev@example.com",
         relay: "https://relay.example",
         activeWorkers: 0,
         devices,
@@ -277,7 +275,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
   assert.deepEqual(revoked, ["device-2"]);
 
   input.write("q");
-  assert.equal(await run, "quit");
+  await run;
 });
 
 test("workspace access controls deescalate directly and confirm escalation", async () => {
@@ -368,7 +366,7 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   assert.deepEqual(changes, ["system", "workspace", "read-only"]);
 
   input.write("q");
-  assert.equal(await run, "quit");
+  await run;
 });
 
 test("runtime owns the TTY lifecycle and survives resize", async () => {
@@ -434,7 +432,7 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
   await new Promise<void>((resolve) => setTimeout(resolve, 20));
   input.write("q");
 
-  assert.equal(await run, "quit");
+  await run;
   assert.equal(input.isRaw, false);
   assert.ok(rendered.includes("\u001b]0;Glossa | ink-test\u0007"));
   assert.match(rendered, /\u001b\[\?1049h/);

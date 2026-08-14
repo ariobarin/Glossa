@@ -20,7 +20,6 @@ import {
   initialHudState,
   type HudActivity,
   type HudDevice,
-  type HudExitAction,
   type HudState,
   type HudUiActions,
 } from "./ui-hud-model.js";
@@ -177,7 +176,6 @@ function primaryFooterHints(): HudHint[] {
     { key: "W", label: "Workspace" },
     { key: "D", label: "Devices" },
     { key: "?", label: "Help" },
-    { key: "L", label: "Account sign out", tone: COLORS.coral },
     { key: "Q", label: "Quit", tone: COLORS.coral },
   ];
 }
@@ -262,12 +260,6 @@ function promptText(
 ): { message: string; choices?: string } | undefined {
   if (state.busy) return { message: "Working…" };
   if (!state.prompt) return undefined;
-  if (state.prompt.type === "logout") {
-    return {
-      message: "Sign out the CLI account and disconnect? Computer pairing stays active.",
-      choices: "Y confirm  N cancel",
-    };
-  }
   if (state.prompt.type === "access-confirm") {
     const detail = state.prompt.accessProfile === "system"
       ? "Commands will inherit this OS account's permissions."
@@ -729,7 +721,7 @@ function DevicesView({ state, usable, bodyBudget, color }: {
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
-      <SectionTitle color={color}>Account</SectionTitle>
+      <SectionTitle color={color}>Paired</SectionTitle>
       {state.statusLoading ? (
         <>
           <Blank />
@@ -742,7 +734,7 @@ function DevicesView({ state, usable, bodyBudget, color }: {
         </>
       ) : (
         <>
-          <Text color={color ? COLORS.ink : undefined} wrap="truncate">{state.status.account}</Text>
+          <Text color={color ? COLORS.ink : undefined} wrap="truncate">{state.deviceName ?? "This computer"}</Text>
           <Text color={color ? COLORS.muted : undefined} wrap="truncate">{state.status.relay}</Text>
           <Blank />
           <SectionTitle color={color}>Overview</SectionTitle>
@@ -808,7 +800,6 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
       <SectionTitle color={color} tone={COLORS.coral}>Manage</SectionTitle>
       <HelpRow keyLabel="←/→" label="Change workspace access" color={color} tone={COLORS.coral} />
       <HelpRow keyLabel="Enter/R" label="Revoke selected device" color={color} tone={COLORS.coral} />
-      <HelpRow keyLabel="L" label="Account sign out" color={color} tone={COLORS.coral} />
       <Blank />
       <SectionTitle color={color}>App</SectionTitle>
       <HelpRow keyLabel="Q" label="Disconnect and quit" color={color} tone={COLORS.coral} />
@@ -1013,7 +1004,7 @@ function HudRuntime({ store, actions, signal, stop }: {
   store: HudStore;
   actions: HudUiActions;
   signal: AbortSignal;
-  stop: (action?: HudExitAction) => void;
+  stop: () => void;
 }): React.ReactNode {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const { columns, rows } = useWindowSize();
@@ -1068,10 +1059,6 @@ function HudRuntime({ store, actions, signal, stop }: {
         return;
       }
       if (value !== "y") return;
-      if (current.prompt.type === "logout") {
-        stop("logout");
-        return;
-      }
       if (current.prompt.type === "access-confirm") {
         beginAccessChange(store, actions, current.prompt.accessProfile);
         return;
@@ -1202,14 +1189,6 @@ function HudRuntime({ store, actions, signal, stop }: {
           });
       return;
     }
-    if (value === "l") {
-      store.update((state) => ({
-        ...state,
-        prompt: { type: "logout" },
-        notice: undefined,
-      }));
-      return;
-    }
     if (input === "?") {
       store.update((state) => ({
         ...state,
@@ -1234,18 +1213,16 @@ export async function runSessionHud(
   actions: HudUiActions,
   input: ReadStream = process.stdin,
   output: WriteStream = process.stdout,
-): Promise<HudExitAction> {
+): Promise<void> {
   if (!input.isTTY || !output.isTTY) {
     throw new Error("Glossa requires an interactive terminal.");
   }
 
   const controller = new AbortController();
   const store = new HudStore(actions.workspace);
-  let exitAction: HudExitAction = "quit";
   let instance: ReturnType<typeof render> | undefined;
 
-  const stop = (action: HudExitAction = "quit"): void => {
-    exitAction = action;
+  const stop = (): void => {
     controller.abort();
     instance?.unmount();
   };
@@ -1293,7 +1270,6 @@ export async function runSessionHud(
   try {
     await instance.waitUntilExit();
     await session;
-    return exitAction;
   } finally {
     controller.abort();
     process.removeListener("SIGINT", stopFromSignal);

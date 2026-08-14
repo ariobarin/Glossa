@@ -1,7 +1,6 @@
 import os from "node:os";
 import { deviceNameSchema } from "@glossa/protocol";
-import type { StoredCredentials } from "./config-store.js";
-import type { FetchLike } from "./auth-session.js";
+import type { FetchLike } from "./oauth.js";
 import type { StoredDeviceCredential } from "./device-store.js";
 
 export const DEFAULT_RELAY_ORIGIN = "https://mcp.glossa.sh";
@@ -100,8 +99,12 @@ interface DeviceListResponse extends RelayErrorResponse {
   devices?: unknown;
 }
 
-function relayError(status: number, data: RelayErrorResponse): Error {
-  if (status === 401) return new Error("Glossa login was rejected. Sign in again when prompted.");
+function relayError(
+  status: number,
+  data: RelayErrorResponse,
+  unauthorized: string,
+): Error {
+  if (status === 401) return new Error(unauthorized);
   if (status === 403 && data.error === "account_disabled") {
     return new Error("This Glossa account is disabled.");
   }
@@ -148,15 +151,16 @@ function parseDevices(value: unknown): RelayDevice[] {
   }));
 }
 
+const PAIRING_REJECTED =
+  "This computer's pairing is no longer valid. Run Glossa again to pair it.";
+
 export async function listDevices(
   endpoints: RelayEndpoints,
-  credentials: StoredCredentials,
+  authorization: string,
   fetchRequest: FetchLike = fetch,
 ): Promise<RelayDevice[]> {
   const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices`, {
-    headers: {
-      authorization: `${credentials.tokenType} ${credentials.accessToken}`,
-    },
+    headers: { authorization },
   });
   let data: DeviceListResponse = {};
   try {
@@ -164,13 +168,13 @@ export async function listDevices(
   } catch {
     // Status-specific errors below remain stable for non-JSON proxy responses.
   }
-  if (!response.ok) throw relayError(response.status, data);
+  if (!response.ok) throw relayError(response.status, data, PAIRING_REJECTED);
   return parseDevices(data.devices);
 }
 
 export async function enrollDevice(
   endpoints: RelayEndpoints,
-  credentials: StoredCredentials,
+  authorization: string,
   deviceName: string,
   fetchRequest: FetchLike = fetch,
 ): Promise<StoredDeviceCredential> {
@@ -181,7 +185,7 @@ export async function enrollDevice(
     const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices/enroll`, {
       method: "POST",
       headers: {
-        authorization: `${credentials.tokenType} ${credentials.accessToken}`,
+        authorization,
         "content-type": "application/json",
       },
       body: JSON.stringify({ name, platform: `${process.platform}-${process.arch}` }),
@@ -198,7 +202,7 @@ export async function enrollDevice(
       attempt < 2
     ) {
       const activeNames = new Set(
-        (await listDevices(endpoints, credentials, fetchRequest))
+        (await listDevices(endpoints, authorization, fetchRequest))
           .filter((device) => device.revokedAt === null)
           .map((device) => device.name),
       );
@@ -212,7 +216,13 @@ export async function enrollDevice(
       }
       continue;
     }
-    if (!response.ok) throw relayError(response.status, data);
+    if (!response.ok) {
+      throw relayError(
+        response.status,
+        data,
+        "Pairing authorization was rejected. Run Glossa again to retry pairing.",
+      );
+    }
     if (
       typeof data.device?.id !== "string" ||
       typeof data.device.name !== "string" ||
@@ -229,27 +239,6 @@ export async function enrollDevice(
   }
 
   throw new Error("Glossa could not enroll this computer.");
-}
-
-export async function renameDevice(
-  endpoints: RelayEndpoints,
-  credentials: StoredCredentials,
-  deviceId: string,
-  name: string,
-  fetchRequest: FetchLike = fetch,
-): Promise<RelayDevice> {
-  const validName = deviceNameSchema.parse(name);
-  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices/${encodeURIComponent(deviceId)}`, {
-    method: "PATCH",
-    headers: {
-      authorization: `${credentials.tokenType} ${credentials.accessToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ name: validName }),
-  });
-  const data = await response.json().catch(() => ({})) as RelayErrorResponse & { device?: unknown };
-  if (!response.ok) throw relayError(response.status, data);
-  return parseDevices([data.device])[0]!;
 }
 
 export async function revokePairedDevice(
@@ -270,18 +259,16 @@ export async function revokePairedDevice(
 
 export async function revokeDevice(
   endpoints: RelayEndpoints,
-  credentials: StoredCredentials,
+  authorization: string,
   deviceId: string,
   fetchRequest: FetchLike = fetch,
 ): Promise<void> {
   const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices/${encodeURIComponent(deviceId)}`, {
     method: "DELETE",
-    headers: {
-      authorization: `${credentials.tokenType} ${credentials.accessToken}`,
-    },
+    headers: { authorization },
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({})) as RelayErrorResponse;
-    throw relayError(response.status, data);
+    throw relayError(response.status, data, PAIRING_REJECTED);
   }
 }

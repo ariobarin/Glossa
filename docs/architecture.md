@@ -40,9 +40,9 @@ The authorization server handles discovery, login, consent, and access tokens. T
 
 The managed service uses the Google social connection for regular users and can explicitly enable a dedicated Auth0 database connection for OpenAI review. The relay enforces a bounded provider-prefix allowlist plus an optional exact-subject allowlist in addition to JWT validation. Managed review keeps Google as the only provider-wide prefix and admits only the dedicated database reviewer's exact Auth0 subject, so enabling the connection does not admit every database identity. Production review credentials and the exact subject are manually provisioned, independent of operator accounts, and excluded from source control. Self-hosted relays may select provider prefixes, exact subjects, or both; the legacy singular prefix setting remains compatible.
 
-### CLI account identity
+### CLI identity
 
-Normal workspace startup does not require the CLI process to authenticate as the user. Account-level CLI actions such as `glossa status` and device administration still use OAuth Device Authorization Flow when needed. The embedded client ID is public, and those account-level flows request `openid profile offline_access glossa:device`.
+The CLI has no account sign-in. Pairing (below) is its only browser authorization, and it retains no user OAuth material: afterward the revocable device credential authorizes everything the CLI does, including listing and revoking the account's devices. The embedded client ID is public, and pairing requests `openid profile glossa:device`.
 
 The managed Auth0 Google connection requests Google's account chooser on every new account authorization. This lets a user choose among multiple Google accounts instead of silently reusing a browser session. That user OAuth material is not required on a remote or headless computer merely to expose a workspace.
 
