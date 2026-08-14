@@ -41,19 +41,19 @@ async function waitForHealthz(timeoutMs = 30_000): Promise<void> {
   }
 }
 
-async function issueMcpToken(): Promise<string> {
+async function issueToken(scope: string): Promise<string> {
   const response = await fetch(`${devAuth!.issuer}oauth/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
       sub: "dev|local-user",
-      scope: "glossa:access",
+      scope,
       audience,
     }),
   });
   const data = await response.json() as { access_token?: string };
-  assert.ok(data.access_token, "dev issuer returned an MCP token");
+  assert.ok(data.access_token, "dev issuer returned a token");
   return data.access_token;
 }
 
@@ -68,7 +68,6 @@ async function main(): Promise<void> {
   devAuth = await startDevAuth();
   process.env.GLOSSA_AUTH0_ISSUER = devAuth.issuer;
   process.env.GLOSSA_AUTH0_AUDIENCE = audience;
-  process.env.GLOSSA_AUTH0_CLI_CLIENT_ID = "dev-cli";
 
   relay = spawn(
     process.execPath,
@@ -105,17 +104,36 @@ async function main(): Promise<void> {
 
   const endpoints = loadRelayEndpoints(process.env);
 
-  // 1. Pairing: browser authorization against the mock issuer, auto-approved.
-  const device = await pairDevice(endpoints, undefined, {
-    authorizePairing: async (options, dependencies) => {
-      const { authorizePairing } = await import("../packages/cli/src/device-flow.js");
-      return await authorizePairing(options, {
-        ...dependencies,
-        openBrowser: async () => false,
-      });
+  // 1. Pairing: the CLI shows a pairing code; the smoke claims it through the
+  // same authenticated endpoint the control panel uses.
+  const pairingLogs: string[] = [];
+  const pairing = pairDevice(endpoints, undefined, {
+    log: (message) => {
+      pairingLogs.push(message);
+      console.log(`pairing: ${message}`);
     },
-    log: (message) => console.log(`pairing: ${message}`),
   });
+  const code = await new Promise<string>((resolve, reject) => {
+    const deadline = setTimeout(
+      () => reject(new Error("CLI did not print a pairing code")),
+      15_000,
+    );
+    const poll = setInterval(() => {
+      const line = pairingLogs.find((message) => message.startsWith("Pairing code: "));
+      const match = line?.match(/^Pairing code: (\S+)/);
+      if (match) {
+        clearInterval(poll);
+        clearTimeout(deadline);
+        resolve(match[1]!);
+      }
+    }, 50);
+  });
+  const claim = await fetch(`${relayOrigin}/v1/pairings/${encodeURIComponent(code)}/claim`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await issueToken("glossa:device")}` },
+  });
+  assert.ok(claim.ok, `claiming the pairing code failed with HTTP ${claim.status}`);
+  const device = await pairing;
   await deviceStore.saveDeviceCredential(device);
   assert.equal((await deviceStore.loadDeviceCredential())?.deviceId, device.deviceId);
   console.log(`pairing: enrolled as ${device.deviceName}`);
@@ -131,7 +149,7 @@ async function main(): Promise<void> {
   // 3. MCP session with a locally issued token.
   const mcp = new Client({ name: "glossa-integration-smoke", version: "0.0.0" });
   const transport = new StreamableHTTPClientTransport(new URL(`${relayOrigin}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${await issueMcpToken()}` } },
+    requestInit: { headers: { authorization: `Bearer ${await issueToken("glossa:access")}` } },
   });
   await mcp.connect(transport);
   const offline = await mcp.callTool({ name: "list_workspaces", arguments: {} });

@@ -42,13 +42,13 @@ The managed service uses the Google social connection for regular users and can 
 
 ### CLI identity
 
-The CLI has no account sign-in. Pairing (below) is its only browser authorization, and it retains no user OAuth material: afterward the revocable device credential authorizes everything the CLI does, including listing and revoking the account's devices. The embedded client ID is public, and pairing requests `openid profile glossa:device`.
+The CLI has no account sign-in. Pairing (below) is its only enrollment step, and it retains no user OAuth material: afterward the revocable device credential authorizes everything the CLI does, including listing and revoking the account's devices. The CLI embeds no client credentials; the relay-issued pairing code is the only enrollment secret, and it expires within minutes.
 
 The managed Auth0 Google connection requests Google's account chooser on every new account authorization. This lets a user choose among multiple Google accounts instead of silently reusing a browser session. That user OAuth material is not required on a remote or headless computer merely to expose a workspace.
 
 ### Worker device identity and pairing
 
-An unpaired CLI starts Auth0's browser device authorization flow and asks only for the account and device-enrollment scopes. A local computer opens the verification link; a headless or SSH-only computer prints the same link so the user can open it elsewhere. After approval, the CLI uses the temporary access token once with `POST /v1/devices/enroll` and does not request or store `offline_access` or a refresh token.
+An unpaired CLI asks the relay to create a single-use pairing code with a ten-minute TTL, bound to the computer's name and platform, and prints it with the control-panel URL. The user signs in to the panel and enters the code, claiming it for that account; the CLI polls the relay until the code is claimed and then receives the enrollment result. A headless or SSH-only computer prints the same code for the user to redeem from any browser. Older CLIs instead enroll with a temporary Auth0 access token through `POST /v1/devices/enroll`; the relay keeps that endpoint for them.
 
 The enrollment response contains the computer's revocable device credential:
 
@@ -60,7 +60,7 @@ The database stores the device ID, account ID, salt, and scrypt hash. After deli
 
 A machine-wide local pairing lease ensures concurrent first-run workspace processes share one computer pairing instead of racing to mint separate credentials. A stored device credential is sufficient for later workspace startups on that computer, so a headless SSH target does not need a browser session or the user's Google/Auth0 refresh token. `glossa unpair` authenticates with the device credential, revokes that device at the relay, and removes the local credential. Re-pairing is the explicit way to move a computer to another Glossa account.
 
-Published 0.2.0 clients used the earlier MCP short-code flow. Current clients use browser authorization because ChatGPT blocks authentication-like codes before an app tool can process them.
+Published 0.2.0 clients used the earlier MCP short-code flow, which ChatGPT blocks before an app tool can process it. Current clients redeem the pairing code on the relay's control panel instead, keeping authentication-like codes out of ChatGPT.
 
 ## State ownership
 

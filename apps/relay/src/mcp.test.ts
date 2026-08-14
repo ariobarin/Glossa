@@ -108,7 +108,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /do not use it for general questions, web research, built-in ChatGPT tasks/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Pairing is completed by the Glossa CLI through a browser authorization flow, not through an MCP tool/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /The Glossa CLI shows a short pairing code that the user redeems on the Glossa control panel; pairing never happens through an MCP tool/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Never attempt a write when writeFiles is false or a command when runCommands is false/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
@@ -516,7 +516,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(logout.isError, undefined);
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
-    instructions: `The Glossa CLI keeps no account session: a computer is either paired or not. To detach a computer, run glossa unpair on it. To switch the account a computer pairs to, end the Auth0 browser session by opening ${logoutUrl}, run glossa unpair on that computer, start glossa there again, and select the intended account in the browser authorization flow. Disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
+    instructions: `The Glossa CLI keeps no account session: a computer is either paired or not. To detach a computer, run glossa unpair on it. To switch the account a computer pairs to, end the Auth0 browser session by opening ${logoutUrl}, run glossa unpair on that computer, start glossa there again, and redeem its new pairing code on the control panel while signed in to the intended account. Disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
   });
   assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
 

@@ -1,7 +1,8 @@
 import os from "node:os";
 import { deviceNameSchema } from "@glossa/protocol";
-import type { FetchLike } from "./oauth.js";
 import type { StoredDeviceCredential } from "./device-store.js";
+
+export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export const DEFAULT_RELAY_ORIGIN = "https://mcp.glossa.sh";
 
@@ -84,6 +85,93 @@ interface EnrollmentResponse {
 
 interface RelayErrorResponse {
   error?: unknown;
+}
+
+export class PairingCodeExpiredError extends Error {}
+
+export interface PairingCodeGrant {
+  code: string;
+  expiresAt: string;
+}
+
+interface PairingCreateResponse extends RelayErrorResponse {
+  code?: unknown;
+  expiresAt?: unknown;
+}
+
+export type PairingRedemption =
+  | "pending"
+  | { device: { id: string; name: string }; token: string };
+
+function pairingHttpError(status: number): Error {
+  if (status === 429) {
+    return new Error("Glossa pairing is rate limited. Try again later.");
+  }
+  return new Error(`The Glossa relay returned HTTP ${status}.`);
+}
+
+export async function createPairing(
+  endpoints: RelayEndpoints,
+  deviceName: string,
+  platform: string,
+  fetchRequest: FetchLike = fetch,
+): Promise<PairingCodeGrant> {
+  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: deviceNameSchema.parse(deviceName), platform }),
+  });
+  let data: PairingCreateResponse = {};
+  try {
+    data = (await response.json()) as PairingCreateResponse;
+  } catch {
+    // Status-specific errors below remain stable for non-JSON proxy responses.
+  }
+  if (!response.ok) throw pairingHttpError(response.status);
+  if (
+    typeof data.code !== "string" ||
+    typeof data.expiresAt !== "string" ||
+    Number.isNaN(Date.parse(data.expiresAt))
+  ) {
+    throw new Error("The Glossa relay returned an invalid pairing response.");
+  }
+  return { code: data.code, expiresAt: data.expiresAt };
+}
+
+export async function redeemPairing(
+  endpoints: RelayEndpoints,
+  code: string,
+  fetchRequest: FetchLike = fetch,
+): Promise<PairingRedemption> {
+  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/pairings/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  let data: EnrollmentResponse = {};
+  try {
+    data = (await response.json()) as EnrollmentResponse;
+  } catch {
+    // Status-specific errors below remain stable for non-JSON proxy responses.
+  }
+  if (response.status === 202) return "pending";
+  if (response.status === 404) {
+    throw new PairingCodeExpiredError(
+      "The pairing code expired. Glossa will show a fresh one.",
+    );
+  }
+  if (!response.ok) throw pairingHttpError(response.status);
+  if (
+    typeof data.device?.id !== "string" ||
+    typeof data.device.name !== "string" ||
+    typeof data.device_token !== "string"
+  ) {
+    throw new Error("The Glossa relay returned an invalid pairing response.");
+  }
+  return {
+    device: { id: data.device.id, name: data.device.name },
+    token: data.device_token,
+  };
 }
 
 export interface RelayDevice {

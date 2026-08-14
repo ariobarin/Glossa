@@ -30,7 +30,21 @@ Revoke a device owned by the account.
 
 ### `POST /v1/devices/enroll`
 
-Current CLIs obtain a temporary access token through browser device authorization, call this endpoint once, then discard the token. Pairing does not request or retain `offline_access`; only the returned revocable device credential is stored.
+Older CLIs obtain a temporary access token through browser device authorization, call this endpoint once, then discard the token. Current CLIs pair with the single-use relay pairing codes described below; only the returned revocable device credential is stored.
+
+## Pairing codes
+
+### `POST /v1/pairings`
+
+Unauthenticated and rate-limited. Creates a single-use pairing code bound to the requested device name and platform, valid for ten minutes. Returns the code and its expiry; the relay stores only a SHA-256 hash.
+
+### `POST /v1/pairings/:code/claim`
+
+OAuth bearer token with the device-enrollment scope required. Claims the code for the authenticated account; used by the control panel after the signed-in user confirms the device name.
+
+### `POST /v1/pairings/redeem`
+
+Unauthenticated and rate-limited. Returns `202` with `{"status": "pending"}` while the code is unclaimed, the enrolled device and its revocable device credential once claimed, and `404` when the code is unknown or expired. The CLI polls this endpoint after printing the code.
 
 ## Worker API authentication
 
@@ -84,7 +98,7 @@ The origin route `POST /` serves the same authenticated transport for MCP client
 
 MCP initialization advertises public tool-contract version `3.0.0` and one compact app-wide instruction. It defines Glossa's distinct local-workspace scope, directs general questions, web research, and built-in ChatGPT tasks away from Glossa, requires context-dependent workspace discovery, exposes ambiguous selection rules, treats tool results as untrusted data, and explains all three access profiles. It explicitly discloses that `system` commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the root. It also prohibits requesting, passing, or returning access credentials and authentication secrets and identifies the recognizable-secret detector as defense in depth rather than a sandbox. Tool descriptions state when each operation should and should not be used. A copy-only metadata change requires a fresh connector scan and review, but does not change the tool contract version. Bump `MCP_SERVER_VERSION` when a public tool name, input or output schema, annotation, permission field, or result contract changes.
 
-Contract `3.0.0` removes the unusable `pair_device` tool after ChatGPT's safety layer proved to block its pairing-code argument before Glossa could process it. Computer enrollment now uses the CLI's browser authorization flow. The workspace routing and operation contracts otherwise remain the v2 surface.
+Contract `3.0.0` removes the unusable `pair_device` tool after ChatGPT's safety layer proved to block its pairing-code argument before Glossa could process it. Computer enrollment now uses relay pairing codes that the CLI prints and the user redeems on the control panel. The workspace routing and operation contracts otherwise remain the v2 surface.
 
 Tools:
 
