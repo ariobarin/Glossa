@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Pool } from "pg";
@@ -8,8 +8,10 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
-const migrationPath = path.resolve(currentDirectory, "../../sql/001_init.sql");
-const sql = await readFile(migrationPath, "utf8");
+const migrationsDirectory = path.resolve(currentDirectory, "../../sql");
+const migrationFiles = (await readdir(migrationsDirectory))
+  .filter((file) => file.endsWith(".sql"))
+  .sort();
 
 const pool = new Pool({
   ...databaseOptions(databaseUrl),
@@ -17,7 +19,11 @@ const pool = new Pool({
 });
 
 try {
-  await pool.query(sql);
+  for (const file of migrationFiles) {
+    const sql = await readFile(path.join(migrationsDirectory, file), "utf8");
+    await pool.query(sql);
+    console.log(`Applied migration ${file}.`);
+  }
   console.log("Glossa database migration complete.");
 } finally {
   await pool.end();

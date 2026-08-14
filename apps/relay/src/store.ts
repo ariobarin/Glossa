@@ -12,6 +12,14 @@ export interface DeviceRecord {
   lastSeenAt: Date | null;
 }
 
+export interface PairingRecord {
+  id: string;
+  deviceName: string;
+  platform: string | null;
+  accountId: string | null;
+  expiresAt: Date;
+}
+
 export interface RelayStore {
   accountIdForSubject(subject: string): Promise<string | null>;
   enrollDevice(
@@ -31,10 +39,41 @@ export interface RelayStore {
     deviceId: string,
     secret: string,
   ): Promise<DeviceRecord | null>;
+  createPairing(
+    id: string,
+    codeHash: Buffer,
+    deviceName: string,
+    platform: string | null,
+    expiresAt: Date,
+  ): Promise<void>;
+  findPairing(codeHash: Buffer): Promise<PairingRecord | null>;
+  claimPairing(
+    codeHash: Buffer,
+    accountId: string,
+  ): Promise<PairingRecord | null>;
+  redeemPairing(codeHash: Buffer): Promise<PairingRecord | null>;
 }
 
 const DUMMY_TOKEN_SALT = Buffer.alloc(16);
 const DUMMY_TOKEN_HASH = Buffer.alloc(32);
+
+interface PairingRow {
+  id: string;
+  device_name: string;
+  platform: string | null;
+  account_id: string | null;
+  expires_at: Date;
+}
+
+function toPairingRecord(row: PairingRow): PairingRecord {
+  return {
+    id: row.id,
+    deviceName: row.device_name,
+    platform: row.platform,
+    accountId: row.account_id,
+    expiresAt: row.expires_at,
+  };
+}
 
 export class Store implements RelayStore {
   readonly #pool: Pool;
@@ -268,6 +307,57 @@ export class Store implements RelayStore {
       revokedAt: row.revoked_at,
       lastSeenAt,
     };
+  }
+
+  async createPairing(
+    id: string,
+    codeHash: Buffer,
+    deviceName: string,
+    platform: string | null,
+    expiresAt: Date,
+  ): Promise<void> {
+    await this.#pool.query(
+      `INSERT INTO pairing_codes (id, code_hash, device_name, platform, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, codeHash, deviceName, platform, expiresAt],
+    );
+  }
+
+  async findPairing(codeHash: Buffer): Promise<PairingRecord | null> {
+    const result = await this.#pool.query<PairingRow>(
+      `SELECT id, device_name, platform, account_id, expires_at
+       FROM pairing_codes
+       WHERE code_hash = $1 AND expires_at > now()`,
+      [codeHash],
+    );
+    const row = result.rows[0];
+    return row ? toPairingRecord(row) : null;
+  }
+
+  async claimPairing(
+    codeHash: Buffer,
+    accountId: string,
+  ): Promise<PairingRecord | null> {
+    const result = await this.#pool.query<PairingRow>(
+      `UPDATE pairing_codes
+       SET account_id = $2, claimed_at = now()
+       WHERE code_hash = $1 AND account_id IS NULL AND expires_at > now()
+       RETURNING id, device_name, platform, account_id, expires_at`,
+      [codeHash, accountId],
+    );
+    const row = result.rows[0];
+    return row ? toPairingRecord(row) : null;
+  }
+
+  async redeemPairing(codeHash: Buffer): Promise<PairingRecord | null> {
+    const result = await this.#pool.query<PairingRow>(
+      `DELETE FROM pairing_codes
+       WHERE code_hash = $1 AND account_id IS NOT NULL AND expires_at > now()
+       RETURNING id, device_name, platform, account_id, expires_at`,
+      [codeHash],
+    );
+    const row = result.rows[0];
+    return row ? toPairingRecord(row) : null;
   }
 
   async transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
