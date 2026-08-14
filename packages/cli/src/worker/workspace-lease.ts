@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, rm, stat } from "node:fs/promises";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { accountHomeDirectory } from "./path-policy.js";

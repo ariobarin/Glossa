@@ -72,10 +72,6 @@ Glossa does not derive labels from local paths. A duplicate process for the same
 
 The HUD opens on **Workspace**, showing the exposed directory, paired computer, current access boundary, and newest activity. `A` opens full **Activity** history; `W` or Escape returns to Workspace. Workspace arrows change access, with confirmation before increases. `D` opens **Devices** for account-level device administration; use up/down and Enter or `R` to revoke. `?` opens Help.
 
-## Local usage history
-
-The CLI keeps an append-only usage history in the local Glossa config directory so future versions can show lifetime usefulness and hourly/daily trends. Each record contains only a timestamp plus either a session start or a tool type and success/failure outcome. It does not store tool arguments, paths, command text, file contents, or credentials, and the usage history is not sent to the relay.
-
 ## Updates
 
 Glossa checks the stable release channel at most once per day before connecting and prints a notice by default.

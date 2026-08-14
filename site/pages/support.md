@@ -6,11 +6,11 @@ Start with the [quickstart](/docs/quickstart). For reproducible bugs, setup prob
 
 ## Common fixes
 
-- **No online workspace:** keep the worker terminal open. If it shows a pairing code, approve that code from the intended authenticated ChatGPT account; otherwise confirm the stored pairing has not been revoked.
+- **No online workspace:** keep the worker terminal open. If it opens or prints a browser authorization link, sign in to the intended Glossa account; otherwise confirm the stored pairing has not been revoked.
 - **Wrong workspace:** stop the worker and restart it in the intended project, optionally with a unique `--label`.
 - **Permission error:** restart with broader access only when the task genuinely requires it. Do not try to bypass the selected profile.
 - **`restricted_data_blocked`:** remove the credential from the request or reproduce the problem with a non-sensitive placeholder such as `<redacted>`. Do not retry with encoding, another tool, or a shell workaround.
-- **Wrong paired account:** stop workers, run `glossa unpair`, start `glossa` again, and approve the new pairing code from the intended ChatGPT account. Use `glossa logout` separately to switch the CLI account used for status or device administration.
+- **Wrong paired account:** stop workers, run `glossa unpair`, start `glossa` again, and sign in to the intended account through the browser authorization link. Use `glossa logout` separately to switch the CLI account used for status or device administration.
 - **Tools changed:** run **Scan Tools** again after a Glossa update.
 
 Before posting diagnostics, remove source code, local paths, account identifiers, tokens, credentials, and command output.

@@ -7,7 +7,3 @@ export class WorkerError extends Error {
     this.name = "WorkerError";
   }
 }
-
-export function errorCode(error: unknown): string | null {
-  return error instanceof WorkerError ? error.code : null;
-}

@@ -31,7 +31,7 @@ Open a terminal in your project folder and run:
 glossa
 ```
 
-On a computer that has not been paired before, Glossa prints a short one-time code and waits. In an authenticated ChatGPT conversation with Glossa enabled, approve the code shown by that terminal. The computer receives its own revocable device credential; it does not need your Google/Auth0 refresh token or a browser session. This works the same way on a headless machine reached over SSH.
+The first time a computer runs Glossa, follow the browser authorization link and sign in to the account that should own the computer. On a headless or SSH-only machine, open the printed link on another device. Glossa uses that authorization once to enroll the computer, then stores only its revocable device credential. It does not retain your Google or Auth0 refresh token.
 
 Keep the terminal open after pairing. Later `glossa` runs on that computer reuse the device pairing without user sign-in. Run `glossa unpair` to revoke the computer before pairing it with another Glossa account.
 
