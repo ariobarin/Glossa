@@ -2,9 +2,10 @@
 import type { WorkerAccessProfile } from "@glossa/protocol";
 import { loadAuthConfig } from "./auth-config.js";
 import {
+  currentSession,
   signedInSession,
-  type SignedInSession,
 } from "./auth-login.js";
+import { SessionExpiredError } from "./auth-session.js";
 import {
   parseInvocation,
   UsageError,
@@ -101,19 +102,31 @@ async function withLoginSignal<T>(
   }
 }
 
-async function authenticatedSession(
+async function authenticatedCredentials(
   signal?: AbortSignal,
-): Promise<SignedInSession> {
+): Promise<StoredCredentials> {
   if (signal) return await signedInSession({ ...loadAuthConfig(), signal });
   return await withLoginSignal(async (loginSignal) =>
     await signedInSession({ ...loadAuthConfig(), signal: loginSignal })
   );
 }
 
-async function authenticatedCredentials(
-  signal?: AbortSignal,
-): Promise<StoredCredentials> {
-  return (await authenticatedSession(signal)).credentials;
+/**
+ * Account credentials for actions inside the running HUD. The HUD cannot host
+ * a browser sign-in, so an absent or expired session becomes a notice telling
+ * the user how to sign in instead of launching the device flow mid-session.
+ */
+async function hudCredentials(signal: AbortSignal): Promise<StoredCredentials> {
+  try {
+    return await currentSession({ ...loadAuthConfig(), signal });
+  } catch (error) {
+    if (error instanceof SessionExpiredError) {
+      throw new Error(
+        "No active account sign-in. Quit and run `glossa status` to sign in.",
+      );
+    }
+    throw error;
+  }
 }
 
 async function showStatus(): Promise<void> {
@@ -201,13 +214,13 @@ async function runWorkspaceSession(
         }
       },
       loadStatus: async (signal) => {
-        const credentials = await authenticatedCredentials(signal);
+        const credentials = await hudCredentials(signal);
         return hudStatus(
           await new WorkspaceStatusService(credentials, endpoints).refresh(signal),
         );
       },
       revokeDevice: async (deviceId, signal) => {
-        const credentials = await authenticatedCredentials(signal);
+        const credentials = await hudCredentials(signal);
         await revokeDevice(
           endpoints,
           credentials,

@@ -1,24 +1,40 @@
+import readline from "node:readline/promises";
 import { loadAuthConfig } from "./auth-config.js";
 import {
   deleteCredentials,
   peekCredentials,
   type LoadedCredentials,
 } from "./config-store.js";
+import { issuerEndpoint } from "./oauth.js";
 import { openBrowser } from "./open-browser.js";
 
 export interface LogoutDependencies {
   deleteCredentials?: typeof deleteCredentials;
   peekCredentials?: typeof peekCredentials;
   openBrowser?: typeof openBrowser;
+  confirmBrowserSignOut?: () => Promise<boolean>;
   issuer?: string;
   log?: (message: string) => void;
 }
 
 export function browserLogoutUrl(issuer: string): string {
-  return new URL(
-    "v2/logout",
-    issuer.endsWith("/") ? issuer : `${issuer}/`,
-  ).toString();
+  return issuerEndpoint(issuer, "v2/logout");
+}
+
+async function promptBrowserSignOut(): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const prompt = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await prompt.question(
+      "Press Enter to also open browser sign-out (needed to switch accounts), or type anything to skip: ",
+    );
+    return answer.trim() === "";
+  } finally {
+    prompt.close();
+  }
 }
 
 export async function logoutFromGlossa(
@@ -27,6 +43,7 @@ export async function logoutFromGlossa(
   const remove = dependencies.deleteCredentials ?? deleteCredentials;
   const peek = dependencies.peekCredentials ?? peekCredentials;
   const browse = dependencies.openBrowser ?? openBrowser;
+  const confirm = dependencies.confirmBrowserSignOut ?? promptBrowserSignOut;
   const log = dependencies.log ?? console.log;
 
   let stored: LoadedCredentials | null = null;
@@ -54,11 +71,12 @@ export async function logoutFromGlossa(
   );
 
   const url = browserLogoutUrl(issuer ?? loadAuthConfig().issuer);
-  const opened = await browse(url);
-  if (opened) {
-    log("Opened Glossa browser sign-out.");
-  } else {
-    log("Open this URL to finish signing out in your browser:");
-    log(url);
+  if (await confirm()) {
+    const opened = await browse(url);
+    if (opened) {
+      log("Opened Glossa browser sign-out.");
+      return;
+    }
   }
+  log(`Finish signing out in the browser when needed: ${url}`);
 }

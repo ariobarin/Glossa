@@ -2,6 +2,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { grantedScopesSatisfyRequest } from "./auth-scopes.js";
 import { type FetchLike } from "./auth-session.js";
 import { saveCredentials, type StoredCredentials } from "./config-store.js";
+import {
+  isTokenResponse,
+  issuerEndpoint,
+  oauthErrorMessage,
+  type OAuthError,
+  type OAuthTokenResponse,
+} from "./oauth.js";
 import { openBrowser } from "./open-browser.js";
 
 interface DeviceCodeResponse {
@@ -11,19 +18,6 @@ interface DeviceCodeResponse {
   verification_uri_complete?: string;
   expires_in: number;
   interval?: number;
-}
-
-interface TokenResponse {
-  access_token: string;
-  refresh_token?: string;
-  expires_in: number;
-  token_type: string;
-  scope?: string;
-}
-
-interface OAuthError {
-  error: string;
-  error_description?: string;
 }
 
 export interface LoginOptions {
@@ -47,10 +41,6 @@ export type DeviceAuthorizationDependencies = Omit<
   DeviceFlowDependencies,
   "saveCredentials"
 >;
-
-function endpoint(issuer: string, pathname: string): string {
-  return new URL(pathname, issuer.endsWith("/") ? issuer : `${issuer}/`).toString();
-}
 
 function canceledError(): Error {
   return new Error("Login canceled.");
@@ -78,8 +68,7 @@ async function postForm<T>(
   });
   const data = (await response.json()) as T;
   if (!response.ok) {
-    const oauth = data as OAuthError;
-    throw new Error(oauth.error_description ?? oauth.error ?? `HTTP ${response.status}`);
+    throw new Error(oauthErrorMessage(data as OAuthError, response.status));
   }
   return data;
 }
@@ -98,7 +87,7 @@ export async function authorizeWithDeviceFlow(
     assertActive(options.signal);
     const code = await postForm<DeviceCodeResponse>(
       fetchRequest,
-      endpoint(options.issuer, "oauth/device/code"),
+      issuerEndpoint(options.issuer, "oauth/device/code"),
       {
         client_id: options.clientId,
         audience: options.audience,
@@ -122,7 +111,7 @@ export async function authorizeWithDeviceFlow(
       await wait(intervalSeconds * 1000, options.signal);
       assertActive(options.signal);
 
-      const response = await fetchRequest(endpoint(options.issuer, "oauth/token"), {
+      const response = await fetchRequest(issuerEndpoint(options.issuer, "oauth/token"), {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -133,8 +122,8 @@ export async function authorizeWithDeviceFlow(
         ...(options.signal ? { signal: options.signal } : {}),
       });
 
-      const data = (await response.json()) as TokenResponse | OAuthError;
-      if (response.ok && "access_token" in data) {
+      const data = (await response.json()) as OAuthTokenResponse | OAuthError;
+      if (response.ok && isTokenResponse(data)) {
         const grantedScope = data.scope ?? options.scope;
         if (!grantedScopesSatisfyRequest(
           grantedScope,
@@ -164,7 +153,7 @@ export async function authorizeWithDeviceFlow(
       }
       if (error.error === "access_denied") throw new Error("Login was denied.");
       if (error.error === "expired_token") throw new Error("The login code expired.");
-      throw new Error(error.error_description ?? error.error);
+      throw new Error(oauthErrorMessage(error, response.status));
     }
 
     throw new Error("The login code expired.");

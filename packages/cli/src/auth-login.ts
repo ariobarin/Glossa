@@ -21,11 +21,6 @@ export interface SignInDependencies {
   loginWithDeviceFlow?: typeof loginWithDeviceFlow;
 }
 
-export interface SignedInSession {
-  credentials: StoredCredentials;
-  loginPerformed: boolean;
-}
-
 function normalizedIssuer(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -47,35 +42,43 @@ export function credentialsMatchLoginOptions(
   );
 }
 
+/**
+ * Returns the stored session, refreshing it when needed. Never starts an
+ * interactive login: callers that cannot open a browser prompt (such as the
+ * running HUD) use this and surface the SessionExpiredError instead.
+ */
+export async function currentSession(
+  options: LoginOptions,
+  dependencies: SignInDependencies = {},
+): Promise<StoredCredentials> {
+  const load = dependencies.loadCredentials ?? loadCredentials;
+  const validate = dependencies.validCredentials ?? validCredentials;
+  const loaded = await load();
+
+  if (!loaded || !credentialsMatchLoginOptions(loaded.credentials, options)) {
+    throw new SessionExpiredError();
+  }
+  return await validate(
+    loaded.credentials,
+    options.signal ? { signal: options.signal } : {},
+  );
+}
+
+/**
+ * Returns a valid session, signing in through the browser device flow when no
+ * valid stored session exists.
+ */
 export async function signedInSession(
   options: LoginOptions,
   dependencies: SignInDependencies = {},
-): Promise<SignedInSession> {
-  const load = dependencies.loadCredentials ?? loadCredentials;
-  const validate = dependencies.validCredentials ?? validCredentials;
+): Promise<StoredCredentials> {
   const login = dependencies.loginWithDeviceFlow ?? loginWithDeviceFlow;
-  const loaded = await load();
-
-  if (loaded && credentialsMatchLoginOptions(loaded.credentials, options)) {
-    try {
-      const credentials = await validate(
-        loaded.credentials,
-        options.signal ? { signal: options.signal } : {},
-      );
-      return { credentials, loginPerformed: false };
-    } catch (error) {
-      if (!(error instanceof SessionExpiredError)) throw error;
-    }
+  try {
+    return await currentSession(options, dependencies);
+  } catch (error) {
+    if (!(error instanceof SessionExpiredError)) throw error;
   }
 
   await login(options);
-  const completed = await load();
-  if (!completed) throw new Error("Glossa could not load the completed login.");
-  return {
-    credentials: await validate(
-      completed.credentials,
-      options.signal ? { signal: options.signal } : {},
-    ),
-    loginPerformed: true,
-  };
+  return await currentSession(options, dependencies);
 }
