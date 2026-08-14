@@ -1,10 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  RelayAccessProfileUnsupportedError,
+  RelayProtocolUnsupportedError,
   RemoteWorker,
   type RemoteWorkerStatus,
 } from "./remote-worker.js";
+
+function registrationResponse(
+  body: Record<string, unknown>,
+  generation: string,
+  workerToken = `glw_${"a".repeat(43)}`,
+): Response {
+  return Response.json({
+    workerId: body.workerId,
+    generation,
+    workerToken,
+    accessProfile: body.accessProfile,
+    ...(body.workspaceLabel ? { workspaceLabel: body.workspaceLabel } : {}),
+    capabilities: {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
+    },
+  });
+}
 
 test("reports retry, connection, and graceful disconnection", async () => {
   const controller = new AbortController();
@@ -19,10 +40,10 @@ test("reports retry, connection, and graceful disconnection", async () => {
       registrations += 1;
       if (registrations === 1) throw new Error("relay unavailable");
       const body = JSON.parse(String(init?.body)) as { workerId: string };
-      return Response.json({
-        workerId: body.workerId,
-        generation: "00000000-0000-4000-8000-000000000001",
-      });
+      return registrationResponse(
+        body,
+        "00000000-0000-4000-8000-000000000001",
+      );
     }
     if (url.pathname === "/device/poll") {
       controller.abort();
@@ -69,17 +90,10 @@ test("advertises and verifies the selected worker access profile", async () => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
       registerBodies.push(body);
-      return Response.json({
-        workerId: body.workerId,
-        generation: "00000000-0000-4000-8000-000000000001",
-        accessProfile: body.accessProfile,
-        workspaceLabel: body.workspaceLabel,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
+      return registrationResponse(
+        body,
+        "00000000-0000-4000-8000-000000000001",
+      );
     }
     if (url.pathname === "/device/poll") {
       controller.abort();
@@ -107,566 +121,41 @@ test("advertises and verifies the selected worker access profile", async () => {
   assert.equal(registerBodies[0]?.workerVersion, "1.0.0");
   assert.equal(registerBodies[0]?.workspaceLabel, "review");
   assert.equal(registerBodies[0]?.accessProfile, "system");
-  const connected = statuses.find((status) => status.state === "connected");
-  assert.equal(connected?.state, "connected");
-  if (connected?.state === "connected") {
-    assert.equal(connected.accessProfileAccepted, true);
-    assert.equal(connected.workspaceLabelAccepted, true);
-  }
+  assert.equal(statuses.some((status) => status.state === "connected"), true);
 });
 
 
-test("preserves access profile while falling back to production 1.0 capabilities", async () => {
+test("rejects a relay that does not support the current worker protocol", async () => {
   const controller = new AbortController();
-  const registerBodies: Array<Record<string, unknown>> = [];
   const statuses: RemoteWorkerStatus[] = [];
-  const generation = "00000000-0000-4000-8000-000000000001";
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      const capabilities = body.capabilities as Record<string, unknown> | undefined;
-      if (
-        capabilities?.structuredMutations === true ||
-        capabilities?.commandOutputRanges === true
-      ) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      assert.equal(body.accessProfile, "read-only");
-      assert.equal(body.workerVersion, "0.2.0-beta.2");
-      assert.equal(body.workspaceLabel, "review");
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        accessProfile: body.accessProfile,
-        workspaceLabel: body.workspaceLabel,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
-    }
-    if (url.pathname === "/device/poll") {
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    workerVersion: "0.2.0-beta.2",
-    workspaceLabel: "review",
-    accessProfile: "read-only",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-    onStatus: (status) => statuses.push(status),
-  }).run();
-
-  assert.equal(registerBodies.length, 3);
-  for (const body of registerBodies) {
-    assert.equal(body.accessProfile, "read-only");
-    assert.equal(body.workerVersion, "0.2.0-beta.2");
-    assert.equal(body.workspaceLabel, "review");
-  }
-  assert.deepEqual(registerBodies[2]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-  });
-  const connected = statuses.find((status) => status.state === "connected");
-  assert.equal(connected?.state, "connected");
-  if (connected?.state === "connected") {
-    assert.equal(connected.accessProfileAccepted, true);
-    assert.equal(connected.workspaceLabelAccepted, true);
-  }
-});
-
-test("refuses and unregisters a non-system profile that the relay does not confirm", async () => {
-  const controller = new AbortController();
-  let unregisterCalls = 0;
-  let pollCalls = 0;
-  const generation = "00000000-0000-4000-8000-000000000001";
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      assert.equal(body.accessProfile, "read-only");
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
-    }
-    if (url.pathname === "/device/unregister") {
-      unregisterCalls += 1;
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/poll") {
-      pollCalls += 1;
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
 
   await assert.rejects(
     new RemoteWorker({
       origin: "https://relay.glossa.test",
       deviceToken: "device-token",
-      workerVersion: "0.2.0-beta.3",
-      accessProfile: "read-only",
       worker: { handle: async () => ({ requestId: "unused", ok: true }) },
       signal: controller.signal,
-      fetcher,
-    }).run(),
-    RelayAccessProfileUnsupportedError,
-  );
-
-  assert.equal(unregisterCalls, 1);
-  assert.equal(pollCalls, 0);
-});
-
-test("refuses a non-system profile when the relay cannot represent profiles", async () => {
-  const controller = new AbortController();
-  const registerBodies: Array<Record<string, unknown>> = [];
-  const statuses: RemoteWorkerStatus[] = [];
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      if ("accessProfile" in body) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      throw new Error("A non-system worker must never attempt profileless registration.");
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await assert.rejects(
-    new RemoteWorker({
-      origin: "https://relay.glossa.test",
-      deviceToken: "device-token",
-      workerVersion: "0.2.0-beta.2",
-      accessProfile: "workspace",
-      worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-      signal: controller.signal,
-      fetcher,
+      fetcher: async () =>
+        Response.json({ error: "invalid_request" }, { status: 400 }),
       onStatus: (status) => statuses.push(status),
     }).run(),
-    RelayAccessProfileUnsupportedError,
+    RelayProtocolUnsupportedError,
   );
 
-  assert.ok(registerBodies.length > 0);
-  assert.ok(registerBodies.every((body) => body.accessProfile === "workspace"));
-  assert.equal(statuses.some((status) => status.state === "connected"), false);
-});
-
-test("reports its package version and falls back for older relays", async () => {
-  const controller = new AbortController();
-  const registerBodies: Array<Record<string, unknown>> = [];
-  const generation = "00000000-0000-4000-8000-000000000001";
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      if ("workerVersion" in body) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
-    }
-    if (url.pathname === "/device/poll") {
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    workerVersion: "0.1.0-beta.13",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-  }).run();
-
-  assert.ok(registerBodies.length > 1);
-  assert.ok(
-    registerBodies.slice(0, -1).every((body) =>
-      body.workerVersion === "0.1.0-beta.13"
-    ),
-  );
-  const acceptedBody = registerBodies.at(-1)!;
-  assert.equal("workerVersion" in acceptedBody, false);
-  assert.deepEqual(acceptedBody.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
-    commandOutputRanges: true,
-  });
-});
-
-test("falls back without a label when the relay does not accept labels", async () => {
-  const controller = new AbortController();
-  const registerBodies: Array<Record<string, unknown>> = [];
-  const statuses: RemoteWorkerStatus[] = [];
-  const generation = "00000000-0000-4000-8000-000000000001";
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      if ("workspaceLabel" in body) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
-    }
-    if (url.pathname === "/device/poll") {
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    workspaceLabel: "frontend",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-    onStatus: (status) => statuses.push(status),
-  }).run();
-
-  assert.ok(registerBodies.length > 1);
-  assert.ok(
-    registerBodies.slice(0, -1).every((body) =>
-      body.workspaceLabel === "frontend"
-    ),
-  );
-  const acceptedBody = registerBodies.at(-1)!;
-  assert.equal("workspaceLabel" in acceptedBody, false);
-  assert.deepEqual(acceptedBody.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
-    commandOutputRanges: true,
-  });
-  const connected = statuses.find((status) => status.state === "connected");
-  assert.equal(connected?.state, "connected");
-  if (connected?.state === "connected") {
-    assert.equal(connected.workspaceLabelAccepted, false);
-  }
-});
-
-test("falls back when structured and concurrent capabilities are unsupported", async () => {
-  const controller = new AbortController();
-  const registerBodies: Array<Record<string, unknown>> = [];
-  const statuses: RemoteWorkerStatus[] = [];
-  const generation = "00000000-0000-4000-8000-000000000001";
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      if (registerBodies.length <= 3) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      return Response.json({ workerId: body.workerId, generation });
-    }
-    if (url.pathname === "/device/poll") {
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-    onStatus: (status) => statuses.push(status),
-  }).run();
-
-  assert.equal(registerBodies.length, 4);
-  assert.deepEqual(registerBodies[0]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
-    commandOutputRanges: true,
-  });
-  assert.deepEqual(registerBodies[1]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
-  });
-  assert.deepEqual(registerBodies[2]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-  });
-  assert.deepEqual(registerBodies[3]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-  });
-  assert.equal(
-    statuses.find((status) => status.state === "connected")?.legacyRelay,
-    false,
-  );
-});
-
-test("keeps structured job types out of concurrency-only relay polls", async () => {
-  const controller = new AbortController();
-  const generation = "00000000-0000-4000-8000-000000000001";
-  const registerBodies: Array<Record<string, unknown>> = [];
-  let pollBody: Record<string, unknown> | undefined;
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      const capabilities = body.capabilities as Record<string, unknown> | undefined;
-      if (capabilities?.structuredReads === true) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        capabilities: { commandProgress: true, concurrentJobs: true },
-      });
-    }
-    if (url.pathname === "/device/poll") {
-      pollBody = body;
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      return new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-  }).run();
-
-  assert.equal(registerBodies.length, 4);
-  const accepted = pollBody?.acceptedTypes as string[];
-  assert.equal(accepted.includes("read_file"), true);
-  assert.equal(accepted.includes("list_files"), false);
-  assert.equal(accepted.includes("search_text"), false);
-  assert.equal(accepted.includes("read_file_range"), false);
-  assert.equal(accepted.includes("make_directory"), false);
-  assert.equal(accepted.includes("delete_path"), false);
-  assert.equal(accepted.includes("move_path"), false);
-  assert.equal(accepted.includes("read_command_output"), false);
-});
-
-test("falls back to the legacy single-worker protocol", async () => {
-  const controller = new AbortController();
-  const registerBodies: Array<Record<string, unknown>> = [];
-  const statuses: RemoteWorkerStatus[] = [];
-  const generation = "00000000-0000-4000-8000-000000000001";
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      registerBodies.push(body);
-      if ("workerId" in body) {
-        return Response.json({ error: "invalid_request" }, { status: 400 });
-      }
-      return Response.json({ deviceId: "legacy-device", generation });
-    }
-    if (url.pathname === "/device/poll") {
-      assert.deepEqual(body, { generation });
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      return Response.json({ error: "not_found" }, { status: 404 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-    onStatus: (status) => statuses.push(status),
-  }).run();
-
-  assert.equal(registerBodies.length, 7);
-  assert.deepEqual(registerBodies[0]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
-    commandOutputRanges: true,
-  });
-  assert.deepEqual(registerBodies[1]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
-  });
-  assert.deepEqual(registerBodies[2]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-  });
-  assert.deepEqual(registerBodies[3]?.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-  });
-  assert.deepEqual(registerBodies[4]?.capabilities, { commandProgress: true });
-  assert.equal("capabilities" in registerBodies[5]!, false);
-  assert.deepEqual(registerBodies[6], {});
-  assert.equal(
-    statuses.find((status) => status.state === "connected")?.legacyRelay,
-    true,
-  );
-});
-
-test("falls back to device auth when worker unregister is rejected", async () => {
-  const controller = new AbortController();
-  const generation = "00000000-0000-4000-8000-000000000001";
-  const workerToken = `glw_${"b".repeat(43)}`;
-  const unregisterAuthorizations: Array<string | null> = [];
-
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const authorization = new Headers(init?.headers).get("authorization");
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-      });
-    }
-    if (url.pathname === "/device/poll") {
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      unregisterAuthorizations.push(authorization);
-      return authorization?.startsWith("Worker ")
-        ? Response.json({ error: "invalid_worker" }, { status: 401 })
-        : new Response(null, { status: 204 });
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
-
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-  }).run();
-
-  assert.deepEqual(unregisterAuthorizations, [
-    `Worker ${workerToken}`,
-    "Device device-token",
+  assert.deepEqual(statuses.map((status) => status.state), [
+    "connecting",
+    "disconnected",
   ]);
 });
 
-test("does not retry unregister after a network failure", async () => {
-  const controller = new AbortController();
-  const generation = "00000000-0000-4000-8000-000000000001";
-  const workerToken = `glw_${"b".repeat(43)}`;
-  const unregisterAuthorizations: Array<string | null> = [];
 
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(String(input));
-    const authorization = new Headers(init?.headers).get("authorization");
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    if (url.pathname === "/device/register") {
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-      });
-    }
-    if (url.pathname === "/device/poll") {
-      controller.abort();
-      return new Response(null, { status: 204 });
-    }
-    if (url.pathname === "/device/unregister") {
-      unregisterAuthorizations.push(authorization);
-      throw new Error("relay unavailable");
-    }
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  };
 
-  await new RemoteWorker({
-    origin: "https://relay.glossa.test",
-    deviceToken: "device-token",
-    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
-    signal: controller.signal,
-    fetcher,
-  }).run();
 
-  assert.deepEqual(unregisterAuthorizations, [`Worker ${workerToken}`]);
-});
+
+
+
+
+
 
 test("re-registers when an ephemeral worker credential is rejected", async () => {
   const controller = new AbortController();
@@ -686,11 +175,7 @@ test("re-registers when an ephemeral worker credential is rejected", async () =>
       assert.equal(authorization, "Device device-token");
       const workerToken = workerTokens[registrations]!;
       registrations += 1;
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-      });
+      return registrationResponse(body, generation, workerToken);
     }
     if (url.pathname === "/device/poll") {
       assert.equal(authorization, `Worker ${workerTokens[registrations - 1]}`);
@@ -737,6 +222,7 @@ test("uses a worker credential for current-protocol hot requests", async () => {
     releaseHandler = resolve;
   });
   const paths: string[] = [];
+  let delivered = false;
 
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -746,10 +232,17 @@ test("uses a worker credential for current-protocol hot requests", async () => {
     if (url.pathname === "/device/register") {
       assert.equal(authorization, "Device device-token");
       workerId = String(body.workerId);
-      return Response.json({ workerId, generation, workerToken });
+      return registrationResponse(body, generation, workerToken);
     }
     assert.equal(authorization, `Worker ${workerToken}`);
     if (url.pathname === "/device/poll") {
+      if (delivered) {
+        await new Promise<void>((resolve) => {
+          controller.signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return new Response(null, { status: 204 });
+      }
+      delivered = true;
       return Response.json({
         job: {
           type: "read_file",
@@ -823,16 +316,7 @@ test("handles cancellation while a command status wait is still running", async 
     const url = new URL(String(input));
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
+      return registrationResponse(body, generation, workerToken);
     }
     if (url.pathname === "/device/poll") {
       pollBodies.push(body);
@@ -898,6 +382,7 @@ test("handles cancellation while a command status wait is still running", async 
   assert.equal(pollBodies[1]?.waitMs, undefined);
   assert.deepEqual(pollBodies[0]?.acceptedTypes, [
     "get_command",
+    "read_command_output",
     "cancel_command",
     "read_file",
     "list_files",
@@ -905,6 +390,9 @@ test("handles cancellation while a command status wait is still running", async 
     "read_file_range",
     "write_file",
     "edit_file",
+    "make_directory",
+    "delete_path",
+    "move_path",
     "run_command",
   ]);
   assert.equal(
@@ -932,16 +420,7 @@ test("keeps file mutation jobs serialized while other lanes stay available", asy
     const url = new URL(String(input));
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
+      return registrationResponse(body, generation, workerToken);
     }
     if (url.pathname === "/device/poll") {
       polls += 1;
@@ -1020,16 +499,7 @@ test("refreshes a stale capacity poll as soon as a mutation lane becomes free", 
     const url = new URL(String(input));
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
+      return registrationResponse(body, generation, workerToken);
     }
     if (url.pathname === "/device/poll") {
       pollBodies.push(body);
@@ -1055,6 +525,9 @@ test("refreshes a stale capacity poll as soon as a mutation lane becomes free", 
         assert.deepEqual(body.acceptedTypes, [
           "write_file",
           "edit_file",
+          "make_directory",
+          "delete_path",
+          "move_path",
           "run_command",
         ]);
         return Response.json({
@@ -1120,16 +593,7 @@ test("does not refresh capacity after an in-flight result fails", async () => {
     const url = new URL(String(input));
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
-      return Response.json({
-        workerId: body.workerId,
-        generation,
-        workerToken,
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-        },
-      });
+      return registrationResponse(body, generation, workerToken);
     }
     if (url.pathname === "/device/poll") {
       polls += 1;
@@ -1191,7 +655,7 @@ test("accepts a discarded late result without reconnecting", async () => {
     const url = new URL(String(input));
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.pathname === "/device/register") {
-      return Response.json({ workerId: body.workerId, generation });
+      return registrationResponse(body, generation);
     }
     if (url.pathname === "/device/poll") {
       polls += 1;

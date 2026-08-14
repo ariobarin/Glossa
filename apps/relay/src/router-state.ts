@@ -11,6 +11,13 @@ const WORKER_STALE_MS = 45_000;
 const WORKER_PRUNE_INTERVAL_MS = 5_000;
 const DEVICE_SEEN_PERSIST_MS = 60_000;
 const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
+export const CURRENT_WORKER_CAPABILITIES = {
+  commandProgress: true,
+  concurrentJobs: true,
+  structuredReads: true,
+  structuredMutations: true,
+  commandOutputRanges: true,
+} as const;
 
 function workerTokenDigest(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -31,11 +38,6 @@ interface ConnectedWorker {
   deviceName: string;
   workerId: string;
   generation: string;
-  commandProgress: boolean;
-  concurrentJobs: boolean;
-  structuredReads: boolean;
-  structuredMutations: boolean;
-  commandOutputRanges: boolean;
   accessProfile: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
@@ -59,19 +61,6 @@ interface ResultWaiter {
   reject: (error: Error) => void;
   expiresAt: number;
   timer: NodeJS.Timeout;
-}
-
-function compatibleJob(worker: ConnectedWorker, job: WorkerJob): WorkerJob {
-  if (
-    job.type !== "get_command" ||
-    job.afterSequence === undefined ||
-    worker.commandProgress
-  ) {
-    return job;
-  }
-  const compatible = { ...job };
-  delete compatible.afterSequence;
-  return compatible;
 }
 
 function jobPermissionError(
@@ -116,15 +105,10 @@ export class RouterState {
     deviceName: string,
     workerId: string,
     options: {
-      commandProgress: boolean;
-      concurrentJobs?: boolean;
-      structuredReads?: boolean;
-      structuredMutations?: boolean;
-      commandOutputRanges?: boolean;
-      accessProfile?: WorkerAccessProfile;
+      accessProfile: WorkerAccessProfile;
       workspaceLabel?: string;
       workerVersion?: string;
-    } = { commandProgress: false },
+    } = { accessProfile: "system" },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
     const generation = randomUUID();
@@ -155,14 +139,7 @@ export class RouterState {
       deviceName,
       workerId,
       generation,
-      commandProgress: options.commandProgress === true,
-      concurrentJobs: options.concurrentJobs === true,
-      structuredReads: options.structuredReads === true,
-      structuredMutations: options.structuredMutations === true,
-      commandOutputRanges: options.commandOutputRanges === true,
-      // A missing profile identifies a legacy worker, whose historical behavior
-      // included full command authority. New workers always declare a profile.
-      accessProfile: options.accessProfile ?? "system",
+      accessProfile: options.accessProfile,
       ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
       ...(options.workspaceLabel
         ? { workspaceLabel: options.workspaceLabel }
@@ -319,18 +296,17 @@ export class RouterState {
       return Promise.reject(new Error(permissionError));
     }
 
-    const deliverableJob = compatibleJob(worker, job);
     const waitingPoll = worker.pollWaiter;
     if (
       waitingPoll &&
       (
         !waitingPoll.acceptedTypes ||
-        waitingPoll.acceptedTypes.has(deliverableJob.type)
+        waitingPoll.acceptedTypes.has(job.type)
       )
     ) {
-      waitingPoll.resolve(deliverableJob);
+      waitingPoll.resolve(job);
     } else {
-      worker.pendingJobs.push(deliverableJob);
+      worker.pendingJobs.push(job);
     }
 
     return new Promise((resolve, reject) => {
@@ -385,13 +361,7 @@ export class RouterState {
     workerVersion?: string;
     accessProfile: WorkerAccessProfile;
     permissions: WorkerPermissions;
-    capabilities: {
-      commandProgress: boolean;
-      concurrentJobs: boolean;
-      structuredReads: boolean;
-      structuredMutations: boolean;
-      commandOutputRanges: boolean;
-    };
+    capabilities: typeof CURRENT_WORKER_CAPABILITIES;
   }> {
     this.#pruneStaleWorkers();
     return [...this.#workers.values()]
@@ -403,13 +373,7 @@ export class RouterState {
         ...(worker.workerVersion ? { workerVersion: worker.workerVersion } : {}),
         accessProfile: worker.accessProfile,
         permissions: workerPermissions(worker.accessProfile),
-        capabilities: {
-          commandProgress: worker.commandProgress,
-          concurrentJobs: worker.concurrentJobs,
-          structuredReads: worker.structuredReads,
-          structuredMutations: worker.structuredMutations,
-          commandOutputRanges: worker.commandOutputRanges,
-        },
+        capabilities: CURRENT_WORKER_CAPABILITIES,
         ...(worker.workspaceLabel
           ? { workspaceLabel: worker.workspaceLabel }
           : {}),
@@ -428,46 +392,6 @@ export class RouterState {
     this.#pruneStaleWorkers();
     const worker = this.#workers.get(workerId);
     return worker?.accountId === accountId ? worker.accessProfile : null;
-  }
-
-  supportsFileWrites(accountId: string, workerId: string): boolean {
-    const accessProfile = this.workerAccessProfile(accountId, workerId);
-    return accessProfile !== null && workerPermissions(accessProfile).writeFiles;
-  }
-
-  supportsCommands(accountId: string, workerId: string): boolean {
-    const accessProfile = this.workerAccessProfile(accountId, workerId);
-    return accessProfile !== null && workerPermissions(accessProfile).runCommands;
-  }
-
-  supportsCommandProgress(accountId: string, workerId: string): boolean {
-    this.#pruneStaleWorkers();
-    const worker = this.#workers.get(workerId);
-    return worker?.accountId === accountId && worker.commandProgress;
-  }
-
-  supportsConcurrentJobs(accountId: string, workerId: string): boolean {
-    this.#pruneStaleWorkers();
-    const worker = this.#workers.get(workerId);
-    return worker?.accountId === accountId && worker.concurrentJobs;
-  }
-
-  supportsStructuredReads(accountId: string, workerId: string): boolean {
-    this.#pruneStaleWorkers();
-    const worker = this.#workers.get(workerId);
-    return worker?.accountId === accountId && worker.structuredReads;
-  }
-
-  supportsStructuredMutations(accountId: string, workerId: string): boolean {
-    this.#pruneStaleWorkers();
-    const worker = this.#workers.get(workerId);
-    return worker?.accountId === accountId && worker.structuredMutations;
-  }
-
-  supportsCommandOutputRanges(accountId: string, workerId: string): boolean {
-    this.#pruneStaleWorkers();
-    const worker = this.#workers.get(workerId);
-    return worker?.accountId === accountId && worker.commandOutputRanges;
   }
 
   #pruneStaleWorkers(): void {

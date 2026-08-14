@@ -255,7 +255,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     byName.get("list_workspaces")?.description ?? "",
-    /no earlier Glossa result identifies.*required permission is unknown.*worker versions, access profiles, permissions, and negotiated capabilities.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
+    /no earlier Glossa result identifies.*required permission is unknown.*worker versions, access profiles, permissions, and protocol capabilities.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
   );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_workspaces")?.outputSchema),
@@ -399,11 +399,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         runCommands: true,
       },
       capabilities: {
-        commandProgress: false,
-        concurrentJobs: false,
-        structuredReads: false,
-        structuredMutations: false,
-        commandOutputRanges: false,
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
       },
     }],
     availability: "online",
@@ -460,11 +460,6 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     "Self-hosted PC",
     "00000000-0000-4000-8000-000000000005",
     {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      structuredMutations: true,
-      commandOutputRanges: true,
       accessProfile: "workspace",
       workerVersion: "1.0.0",
     },
@@ -547,11 +542,6 @@ test("returns actionable permission errors without dispatching forbidden work", 
     "Review PC",
     readOnlyWorkerId,
     {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      structuredMutations: true,
-      commandOutputRanges: true,
       accessProfile: "read-only",
     },
   );
@@ -561,11 +551,6 @@ test("returns actionable permission errors without dispatching forbidden work", 
     "Review PC",
     workspaceWorkerId,
     {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      structuredMutations: true,
-      commandOutputRanges: true,
       accessProfile: "workspace",
     },
   );
@@ -625,30 +610,14 @@ test("returns actionable permission errors without dispatching forbidden work", 
   assert.match(JSON.stringify(outputResult.content), /command_access_disabled/);
 });
 
-test("routes retained command output ranges and gates legacy workers", async (context) => {
+test("routes retained command output ranges", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000080";
   const workerId = "00000000-0000-4000-8000-000000000081";
-  const legacyDeviceId = "00000000-0000-4000-8000-000000000082";
-  const legacyWorkerId = "00000000-0000-4000-8000-000000000083";
   const commandId = "00000000-0000-4000-8000-000000000084";
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    commandOutputRanges: true,
     accessProfile: "system",
   });
-  const legacySession = state.register(
-    accountId,
-    legacyDeviceId,
-    "Legacy PC",
-    legacyWorkerId,
-    {
-      commandProgress: true,
-      concurrentJobs: true,
-      accessProfile: "system",
-    },
-  );
   const server = createMcpServer(testConfig(), state, accountId);
   const client = new Client({ name: "glossa-output-range-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -743,26 +712,6 @@ test("routes retained command output ranges and gates legacy workers", async (co
   assert.match(serializedError, /exceeds the retained stream length/);
   assert.doesNotMatch(serializedError, /private|worker details/);
 
-  const unavailable = await client.callTool({
-    name: "read_command_output",
-    arguments: {
-      workspaceId: legacyWorkerId,
-      commandId,
-      stream: "stdout",
-    },
-  });
-  assert.equal(unavailable.isError, true);
-  assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
-  assert.equal(
-    await state.poll(
-      accountId,
-      legacyDeviceId,
-      legacyWorkerId,
-      legacySession.generation,
-      1,
-    ),
-    null,
-  );
 });
 
 test("returns actionable guidance for Windows command shims", async (context) => {
@@ -770,9 +719,6 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   const deviceId = "00000000-0000-4000-8000-000000000034";
   const workerId = "00000000-0000-4000-8000-000000000035";
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
     accessProfile: "system",
   });
   const server = createMcpServer(testConfig(), state, accountId);
@@ -820,31 +766,13 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   assert.doesNotMatch(serialized, /private/);
 });
 
-test("routes structured path lifecycle jobs and gates legacy workers", async (context) => {
+test("routes structured path lifecycle jobs", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000070";
   const workerId = "00000000-0000-4000-8000-000000000071";
-  const legacyDeviceId = "00000000-0000-4000-8000-000000000072";
-  const legacyWorkerId = "00000000-0000-4000-8000-000000000073";
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    structuredMutations: true,
     accessProfile: "workspace",
   });
-  const legacySession = state.register(
-    accountId,
-    legacyDeviceId,
-    "Legacy PC",
-    legacyWorkerId,
-    {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      accessProfile: "workspace",
-    },
-  );
   const server = createMcpServer(testConfig(), state, accountId);
   const client = new Client({ name: "glossa-lifecycle-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -927,22 +855,6 @@ test("routes structured path lifecycle jobs and gates legacy workers", async (co
     deletedType: "directory",
   });
 
-  const unavailable = await client.callTool({
-    name: "make_directory",
-    arguments: { workspaceId: legacyWorkerId, path: "unsupported" },
-  });
-  assert.equal(unavailable.isError, true);
-  assert.match(JSON.stringify(unavailable.content), /worker_update_required/);
-  assert.equal(
-    await state.poll(
-      accountId,
-      legacyDeviceId,
-      legacyWorkerId,
-      legacySession.generation,
-      1,
-    ),
-    null,
-  );
 });
 
 test("blocks recognizable authentication data without dispatch or disclosure", async (context) => {
@@ -950,9 +862,6 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
   const deviceId = "00000000-0000-4000-8000-000000000040";
   const workerId = "00000000-0000-4000-8000-000000000041";
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
     accessProfile: "system",
   });
   const server = createMcpServer(testConfig(), state, accountId);
@@ -1041,9 +950,6 @@ test("returns safe actionable messages for public file-policy errors", async (co
   const deviceId = "00000000-0000-4000-8000-000000000050";
   const workerId = "00000000-0000-4000-8000-000000000051";
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
     accessProfile: "workspace",
   });
   const server = createMcpServer(testConfig(), state, accountId);
@@ -1120,7 +1026,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
 });
 
-test("redacts restricted legacy device metadata from list_workspaces", async (context) => {
+test("redacts restricted device metadata from list_workspaces", async (context) => {
   const state = new RouterState();
   const key = "sk-proj-" + "A".repeat(32);
   const workerId = "00000000-0000-4000-8000-000000000042";
@@ -1130,9 +1036,6 @@ test("redacts restricted legacy device metadata from list_workspaces", async (co
     key,
     workerId,
     {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
       accessProfile: "workspace",
       workspaceLabel: key,
     },
@@ -1158,11 +1061,7 @@ test("does not mirror large structured results into text content", async (contex
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000020";
   const workerId = "00000000-0000-4000-8000-000000000021";
-  const session = state.register(accountId, deviceId, "Test PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-  });
+  const session = state.register(accountId, deviceId, "Test PC", workerId);
   const server = createMcpServer(testConfig(), state, accountId);
   const client = new Client({ name: "glossa-large-result-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -1213,9 +1112,6 @@ test("reserves relay headroom for maximum command status waits", async (context)
   const workerId = "00000000-0000-4000-8000-000000000061";
   const commandId = "00000000-0000-4000-8000-000000000062";
   const session = state.register(accountId, deviceId, "Test PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
     accessProfile: "system",
   });
   const server = createMcpServer(testConfig(), state, accountId);
@@ -1275,19 +1171,12 @@ test("routes command follow-ups only by explicit workspaceId", async (context) =
   const canceledCommandId = "00000000-0000-4000-8000-000000000013";
   const otherDeviceId = "00000000-0000-4000-8000-000000000014";
   const otherWorkerId = "00000000-0000-4000-8000-000000000015";
-  const session = state.register(accountId, deviceId, "Test PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-  });
+  const session = state.register(accountId, deviceId, "Test PC", workerId);
   const otherSession = state.register(
     accountId,
     otherDeviceId,
     "Other PC",
     otherWorkerId,
-    {
-      commandProgress: true,
-      concurrentJobs: true,
-    },
   );
   const server = createMcpServer(testConfig(), state, accountId);
   const client = new Client({ name: "glossa-explicit-command-route-test", version: "1.0.0" });
@@ -1452,31 +1341,4 @@ test("routes command follow-ups only by explicit workspaceId", async (context) =
     status: "canceled",
     sequence: 2,
   });
-});
-
-test("structured repository tools require a current worker", async (context) => {
-  const accountId = "00000000-0000-4000-8000-000000000001";
-  const deviceId = "00000000-0000-4000-8000-000000000002";
-  const workerId = "00000000-0000-4000-8000-000000000003";
-  const state = new RouterState();
-  state.register(accountId, deviceId, "Test PC", workerId, {
-    commandProgress: true,
-    concurrentJobs: true,
-  });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-structured-read-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-
-  const result = await client.callTool({
-    name: "list_files",
-    arguments: { workspaceId: workerId },
-  });
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /worker_update_required/);
-  assert.match(JSON.stringify(result.content), /Update and reconnect/);
 });

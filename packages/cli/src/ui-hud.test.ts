@@ -244,7 +244,6 @@ test("devices keyboard navigation revokes the selected device", async () => {
           status: {
             state: "connected",
             reconnected: false,
-            legacyRelay: false,
           },
         });
         await new Promise<void>((resolve) => {
@@ -328,7 +327,6 @@ test("workspace access controls deescalate directly and confirm escalation", asy
             status: {
               state: "connected",
               reconnected: accessProfile !== "workspace",
-              legacyRelay: false,
             },
           });
         };
@@ -412,7 +410,6 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
           status: {
             state: "connected",
             reconnected: false,
-            legacyRelay: false,
           },
         });
         await new Promise<void>((resolve) => {

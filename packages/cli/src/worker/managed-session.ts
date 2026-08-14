@@ -235,49 +235,6 @@ export function accessProfileSummary(
   }
 }
 
-export function accessProfileNotice(
-  status: RemoteWorkerStatus,
-  requestedProfile: WorkerAccessProfile | undefined,
-): string | undefined {
-  if (
-    status.state !== "connected" ||
-    !requestedProfile ||
-    status.accessProfileAccepted !== false
-  ) {
-    return undefined;
-  }
-  return "The relay needs an update before this access profile can be shown to connected clients. Local profile enforcement remains active.";
-}
-
-export function workspaceLabelNotice(
-  status: RemoteWorkerStatus,
-  requestedLabel: string | undefined,
-): string | undefined {
-  if (
-    status.state !== "connected" ||
-    !requestedLabel ||
-    status.workspaceLabelAccepted !== false
-  ) {
-    return undefined;
-  }
-  return "The relay needs an update before workspace labels are available. This workspace is online without the requested label.";
-}
-
-const legacyRelayNotice = "The relay needs an update before this computer can expose several workspaces at once.";
-
-export function combinedCompatibilityNotice(
-  labelNotice: string | undefined,
-  profileNotice: string | undefined,
-  includeLegacyRelayNotice: boolean,
-): string | undefined {
-  const messages = [
-    labelNotice,
-    profileNotice,
-    includeLegacyRelayNotice ? legacyRelayNotice : undefined,
-  ].filter((message): message is string => Boolean(message));
-  return messages.length > 0 ? messages.join(" ") : undefined;
-}
-
 export function statusMessage(status: RemoteWorkerStatus, connectedBefore: boolean): string {
   if (status.state === "connecting") return "Connecting to Glossa...";
   if (status.state === "connected") {
@@ -300,15 +257,12 @@ async function connectRemoteWorker(
 ): Promise<void> {
   let connectionState: RemoteWorkerStatus["state"] | undefined;
   let connectedBefore = false;
-  let labelNoticeShown = false;
-  let profileNoticeShown = false;
-  let legacyNoticeShown = false;
   let connectHintTask: Promise<void> | undefined;
   const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
     ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
-    ...(options.accessProfile ? { accessProfile: options.accessProfile } : {}),
+    accessProfile: options.accessProfile ?? DEFAULT_WORKER_ACCESS_PROFILE,
     ...(options.workspaceLabel
       ? { workspaceLabel: options.workspaceLabel }
       : {}),
@@ -324,33 +278,9 @@ async function connectRemoteWorker(
       } else {
         options.onEvent?.({ type: "status", status });
       }
-      const labelNotice = labelNoticeShown
-        ? undefined
-        : workspaceLabelNotice(status, options.workspaceLabel);
-      const profileNotice = profileNoticeShown
-        ? undefined
-        : accessProfileNotice(status, options.accessProfile);
-      const includeLegacyNotice =
-        status.state === "connected" && status.legacyRelay && !legacyNoticeShown;
-      const compatibilityNotice = combinedCompatibilityNotice(
-        labelNotice,
-        profileNotice,
-        includeLegacyNotice,
-      );
-      if (labelNotice) labelNoticeShown = true;
-      if (profileNotice) profileNoticeShown = true;
-      if (includeLegacyNotice) legacyNoticeShown = true;
-      if (compatibilityNotice) {
-        report(
-          options,
-          { type: "notice", message: compatibilityNotice },
-          compatibilityNotice,
-        );
-      }
       if (
         status.state === "connected" &&
         !status.reconnected &&
-        !compatibilityNotice &&
         shouldShowConnectHint(endpoints.relayOrigin) &&
         !connectHintTask
       ) {

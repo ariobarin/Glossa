@@ -13,17 +13,17 @@ const DEFAULT_HEARTBEAT_MS = 15_000;
 const CAPACITY_REFRESH_POLL_MS = 1;
 const MAX_CONCURRENT_JOBS = 5;
 const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
+const WORKER_CAPABILITIES = {
+  commandProgress: true,
+  concurrentJobs: true,
+  structuredReads: true,
+  structuredMutations: true,
+  commandOutputRanges: true,
+} as const;
 
 interface RegisteredSession {
   generation: string;
-  legacyRelay: boolean;
-  concurrentJobs: boolean;
-  structuredReads: boolean;
-  structuredMutations: boolean;
-  commandOutputRanges: boolean;
-  accessProfileAccepted: boolean;
-  workspaceLabelAccepted: boolean;
-  workerToken?: string;
+  workerToken: string;
 }
 
 type JobLane = "status" | "cancel" | "read" | "mutation";
@@ -59,9 +59,6 @@ export type RemoteWorkerStatus =
   | {
       state: "connected";
       reconnected: boolean;
-      legacyRelay: boolean;
-      accessProfileAccepted?: boolean;
-      workspaceLabelAccepted?: boolean;
     }
   | { state: "retrying"; error: Error; retryInMs: number }
   | { state: "disconnected" };
@@ -73,12 +70,12 @@ export class DeviceRejectedError extends Error {
   }
 }
 
-export class RelayAccessProfileUnsupportedError extends Error {
-  constructor(profile: WorkerAccessProfile) {
+export class RelayProtocolUnsupportedError extends Error {
+  constructor() {
     super(
-      `The relay needs an update before it can represent ${profile} access. Update the relay before reconnecting this workspace.`,
+      "The relay does not support this Glossa worker protocol. Update the relay before reconnecting this workspace.",
     );
-    this.name = "RelayAccessProfileUnsupportedError";
+    this.name = "RelayProtocolUnsupportedError";
   }
 }
 
@@ -89,27 +86,22 @@ class RelayResponseError extends Error {
   }
 }
 
-function optionalWorkerToken(value: unknown): string | undefined {
-  if (value === undefined) return undefined;
+function requiredWorkerToken(value: unknown): string {
   if (typeof value !== "string" || !WORKER_TOKEN_PATTERN.test(value)) {
     throw new Error("The relay returned an invalid worker credential.");
   }
   return value;
 }
 
-function supportsCapability(
-  value: unknown,
-  capability:
-    | "concurrentJobs"
-    | "structuredReads"
-    | "structuredMutations"
-    | "commandOutputRanges",
-): boolean {
+function acceptsCurrentCapabilities(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
   const capabilities = value.capabilities;
   if (typeof capabilities !== "object" || capabilities === null) return false;
-  return (capabilities as Record<string, unknown>)[capability] === true;
+  return Object.keys(WORKER_CAPABILITIES).every(
+    (capability) =>
+      (capabilities as Record<string, unknown>)[capability] === true,
+  );
 }
 
 function jobLane(job: WorkerJob): JobLane {
@@ -137,28 +129,25 @@ function jobLane(job: WorkerJob): JobLane {
 function acceptedJobTypes(
   counts: LaneCounts,
   total: number,
-  structuredReads: boolean,
-  structuredMutations: boolean,
-  commandOutputRanges: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
   if (counts.status < 1) {
-    accepted.push("get_command");
-    if (commandOutputRanges) accepted.push("read_command_output");
+    accepted.push("get_command", "read_command_output");
   }
   if (counts.cancel < 1) accepted.push("cancel_command");
   if (counts.read < 2) {
-    accepted.push("read_file");
-    if (structuredReads) {
-      accepted.push("list_files", "search_text", "read_file_range");
-    }
+    accepted.push("read_file", "list_files", "search_text", "read_file_range");
   }
   if (counts.mutation < 1) {
-    accepted.push("write_file", "edit_file", "run_command");
-    if (structuredMutations) {
-      accepted.push("make_directory", "delete_path", "move_path");
-    }
+    accepted.push(
+      "write_file",
+      "edit_file",
+      "make_directory",
+      "delete_path",
+      "move_path",
+      "run_command",
+    );
   }
   return accepted;
 }
@@ -192,7 +181,7 @@ export function reconnectDelayMs(
 export class RemoteWorker {
   readonly #origin: URL;
   readonly #deviceToken: string;
-  readonly #accessProfile: WorkerAccessProfile | undefined;
+  readonly #accessProfile: WorkerAccessProfile;
   readonly #workspaceLabel: string | undefined;
   readonly #workerVersion: string | undefined;
   readonly #worker: WorkerHandler;
@@ -209,7 +198,7 @@ export class RemoteWorker {
   constructor(options: RemoteWorkerOptions) {
     this.#origin = new URL(options.origin);
     this.#deviceToken = options.deviceToken;
-    this.#accessProfile = options.accessProfile;
+    this.#accessProfile = options.accessProfile ?? "workspace";
     this.#workspaceLabel = options.workspaceLabel;
     this.#workerVersion = options.workerVersion;
     this.#worker = options.worker;
@@ -237,9 +226,6 @@ export class RemoteWorker {
           this.#onStatus({
             state: "connected",
             reconnected: connectedBefore,
-            legacyRelay: session.legacyRelay,
-            accessProfileAccepted: session.accessProfileAccepted,
-            workspaceLabelAccepted: session.workspaceLabelAccepted,
           });
           connectedBefore = true;
           failures = 0;
@@ -248,7 +234,7 @@ export class RemoteWorker {
           if (this.#signal.aborted) return;
           if (
             error instanceof DeviceRejectedError ||
-            error instanceof RelayAccessProfileUnsupportedError
+            error instanceof RelayProtocolUnsupportedError
           ) {
             throw error;
           }
@@ -279,199 +265,48 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
-    const currentBody = {
-      workerId: this.#workerId,
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-        structuredMutations: true,
-        commandOutputRanges: true,
-      },
-    };
-    const mutationBody = {
-      workerId: this.#workerId,
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-        structuredMutations: true,
-      },
-    };
-    const structuredBody = {
-      workerId: this.#workerId,
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-      },
-    };
-    const concurrentBody = {
-      workerId: this.#workerId,
-      capabilities: { commandProgress: true, concurrentJobs: true },
-    };
-    const capabilityBodies: Array<Record<string, unknown>> = [
-      currentBody,
-      mutationBody,
-      structuredBody,
-      concurrentBody,
-      {
+    let response: Response;
+    try {
+      response = await this.#post("/device/register", {
         workerId: this.#workerId,
-        capabilities: { commandProgress: true },
-      },
-      { workerId: this.#workerId },
-    ];
-    const metadataPhases = [
-      {
-        includeVersion: Boolean(this.#workerVersion),
-        includeLabel: Boolean(this.#workspaceLabel),
-      },
-      ...(this.#workspaceLabel
-        ? [{
-            includeVersion: Boolean(this.#workerVersion),
-            includeLabel: false,
-          }]
-        : []),
-      ...(this.#workerVersion && this.#workspaceLabel
-        ? [{ includeVersion: false, includeLabel: true }]
-        : []),
-      { includeVersion: false, includeLabel: false },
-    ];
-    const attempts: Array<{
-      body: Record<string, unknown>;
-      legacyRelay: boolean;
-    }> = [];
-    const seenAttempts = new Set<string>();
-    const pushAttempt = (
-      base: Record<string, unknown>,
-      includeProfile: boolean,
-      includeVersion: boolean,
-      includeLabel: boolean,
-      legacyRelay = false,
-    ): void => {
-      const body = {
-        ...base,
-        ...(includeProfile && this.#accessProfile
-          ? { accessProfile: this.#accessProfile }
-          : {}),
-        ...(includeVersion && this.#workerVersion
-          ? { workerVersion: this.#workerVersion }
-          : {}),
-        ...(includeLabel && this.#workspaceLabel
-          ? { workspaceLabel: this.#workspaceLabel }
-          : {}),
-      };
-      const key = JSON.stringify(body);
-      if (seenAttempts.has(key)) return;
-      seenAttempts.add(key);
-      attempts.push({ body, legacyRelay });
+        accessProfile: this.#accessProfile,
+        ...(this.#workerVersion ? { workerVersion: this.#workerVersion } : {}),
+        ...(this.#workspaceLabel ? { workspaceLabel: this.#workspaceLabel } : {}),
+        capabilities: WORKER_CAPABILITIES,
+      });
+    } catch (error) {
+      if (error instanceof RelayResponseError && error.status === 400) {
+        throw new RelayProtocolUnsupportedError();
+      }
+      throw error;
+    }
+
+    const value = (await response.json()) as unknown;
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("generation" in value) ||
+      typeof value.generation !== "string" ||
+      !("workerId" in value) ||
+      value.workerId !== this.#workerId ||
+      !("workerToken" in value) ||
+      !("accessProfile" in value) ||
+      value.accessProfile !== this.#accessProfile ||
+      !acceptsCurrentCapabilities(value) ||
+      (this.#workspaceLabel !== undefined &&
+        (!("workspaceLabel" in value) ||
+          value.workspaceLabel !== this.#workspaceLabel))
+    ) {
+      throw new RelayProtocolUnsupportedError();
+    }
+    return {
+      generation: value.generation,
+      workerToken: requiredWorkerToken(value.workerToken),
     };
-
-    if (this.#accessProfile) {
-      for (const metadata of metadataPhases) {
-        for (const body of capabilityBodies) {
-          pushAttempt(
-            body,
-            true,
-            metadata.includeVersion,
-            metadata.includeLabel,
-          );
-        }
-      }
-    }
-
-    if (this.#accessProfile === undefined || this.#accessProfile === "system") {
-      for (const metadata of metadataPhases) {
-        for (const body of capabilityBodies) {
-          pushAttempt(
-            body,
-            false,
-            metadata.includeVersion,
-            metadata.includeLabel,
-          );
-        }
-      }
-      attempts.push({ body: {}, legacyRelay: true });
-    }
-
-    for (const attempt of attempts) {
-      let response: Response;
-      try {
-        response = await this.#post("/device/register", attempt.body);
-      } catch (error) {
-        if (error instanceof RelayResponseError && error.status === 400) {
-          continue;
-        }
-        throw error;
-      }
-
-      const value = (await response.json()) as unknown;
-      if (
-        typeof value !== "object" ||
-        value === null ||
-        !("generation" in value) ||
-        typeof value.generation !== "string"
-      ) {
-        throw new Error("The relay returned an invalid registration response.");
-      }
-      if (
-        !attempt.legacyRelay &&
-        (!("workerId" in value) || value.workerId !== this.#workerId)
-      ) {
-        throw new Error("The relay returned an invalid registration response.");
-      }
-      const workerToken = "workerToken" in value
-        ? optionalWorkerToken(value.workerToken)
-        : undefined;
-      const accessProfileAccepted =
-        this.#accessProfile === undefined ||
-        this.#accessProfile === "system" ||
-        ("accessProfile" in value &&
-          value.accessProfile === this.#accessProfile);
-      const session: RegisteredSession = {
-        generation: value.generation,
-        legacyRelay: attempt.legacyRelay,
-        concurrentJobs:
-          !attempt.legacyRelay && supportsCapability(value, "concurrentJobs"),
-        structuredReads:
-          !attempt.legacyRelay && supportsCapability(value, "structuredReads"),
-        structuredMutations:
-          !attempt.legacyRelay && supportsCapability(value, "structuredMutations"),
-        commandOutputRanges:
-          !attempt.legacyRelay && supportsCapability(value, "commandOutputRanges"),
-        accessProfileAccepted,
-        workspaceLabelAccepted:
-          this.#workspaceLabel === undefined ||
-          ("workspaceLabel" in value &&
-            value.workspaceLabel === this.#workspaceLabel),
-        ...(workerToken ? { workerToken } : {}),
-      };
-      if (!accessProfileAccepted && this.#accessProfile) {
-        throw new RelayAccessProfileUnsupportedError(this.#accessProfile);
-      }
-      return session;
-    }
-
-    if (this.#accessProfile && this.#accessProfile !== "system") {
-      throw new RelayAccessProfileUnsupportedError(this.#accessProfile);
-    }
-    throw new Error("The relay rejected every supported registration shape.");
   }
 
   async #pollGeneration(session: RegisteredSession): Promise<void> {
-    if (session.legacyRelay || !session.concurrentJobs) {
-      await this.#pollSequentially(session);
-      return;
-    }
     await this.#pollConcurrently(session);
-  }
-
-  async #pollSequentially(session: RegisteredSession): Promise<void> {
-    while (!this.#signal.aborted) {
-      const job = await this.#pollForJob(session);
-      if (!job) continue;
-      await this.#handleAndPost(session, job, true);
-    }
   }
 
   async #pollConcurrently(session: RegisteredSession): Promise<void> {
@@ -532,7 +367,7 @@ export class RemoteWorker {
       counts[lane] += 1;
       ensureHeartbeat();
       let task!: Promise<void>;
-      task = this.#handleAndPost(session, job, false)
+      task = this.#handleAndPost(session, job)
         .catch((error: unknown) => {
           failure ??= error;
         })
@@ -548,13 +383,7 @@ export class RemoteWorker {
     try {
       while (!this.#signal.aborted) {
         if (failure !== undefined) throw failure;
-        const acceptedTypes = acceptedJobTypes(
-          counts,
-          inFlight.size,
-          session.structuredReads,
-          session.structuredMutations,
-          session.commandOutputRanges,
-        );
+        const acceptedTypes = acceptedJobTypes(counts, inFlight.size);
         if (acceptedTypes.length === 0) {
           await Promise.race(inFlight);
           continue;
@@ -581,13 +410,7 @@ export class RemoteWorker {
 
           if (failure !== undefined) throw failure;
           observedCapacityVersion = capacityVersion;
-          const refreshedTypes = acceptedJobTypes(
-            counts,
-            inFlight.size,
-            session.structuredReads,
-            session.structuredMutations,
-            session.commandOutputRanges,
-          );
+          const refreshedTypes = acceptedJobTypes(counts, inFlight.size);
           const newlyAcceptedTypes = refreshedTypes.filter(
             (type) => !acceptedTypes.includes(type),
           );
@@ -633,14 +456,12 @@ export class RemoteWorker {
   ): Promise<WorkerJob | null> {
     const response = await this.#post(
       "/device/poll",
-      session.legacyRelay
-        ? { generation: session.generation }
-        : {
-            workerId: this.#workerId,
-            generation: session.generation,
-            ...(acceptedTypes ? { acceptedTypes } : {}),
-            ...(waitMs === undefined ? {} : { waitMs }),
-          },
+      {
+        workerId: this.#workerId,
+        generation: session.generation,
+        ...(acceptedTypes ? { acceptedTypes } : {}),
+        ...(waitMs === undefined ? {} : { waitMs }),
+      },
       session.workerToken,
     );
     if (response.status === 204) return null;
@@ -659,28 +480,12 @@ export class RemoteWorker {
   async #handleAndPost(
     session: RegisteredSession,
     job: WorkerJob,
-    heartbeatWhileRunning: boolean,
   ): Promise<void> {
-    const heartbeat = heartbeatWhileRunning && !session.legacyRelay
-      ? setInterval(() => {
-          void this.#post(
-            "/device/heartbeat",
-            { workerId: this.#workerId, generation: session.generation },
-            session.workerToken,
-          ).catch(() => {});
-        }, this.#heartbeatMs)
-      : undefined;
-    heartbeat?.unref();
-    let result: WorkerResult;
-    try {
-      result = await this.#worker.handle(job);
-    } finally {
-      if (heartbeat) clearInterval(heartbeat);
-    }
+    const result: WorkerResult = await this.#worker.handle(job);
     try {
       await this.#post(
         "/device/result",
-        session.legacyRelay ? result : { workerId: this.#workerId, result },
+        { workerId: this.#workerId, result },
         session.workerToken,
       );
     } catch (error) {
@@ -690,40 +495,20 @@ export class RemoteWorker {
   }
 
   async #unregister(session?: RegisteredSession): Promise<void> {
-    const unregister = async (
-      authorization: string,
-    ): Promise<"accepted" | "rejected" | "unreachable"> => {
-      try {
-        const response = await this.#fetcher(
-          new URL("/device/unregister", this.#origin),
-          {
-            method: "POST",
-            headers: {
-              authorization,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({ workerId: this.#workerId }),
-            signal: AbortSignal.timeout(3_000),
-          },
-        );
-        if (response.ok) return "accepted";
-        return [400, 401, 404, 409].includes(response.status)
-          ? "rejected"
-          : "unreachable";
-      } catch {
-        return "unreachable";
-      }
-    };
-
-    if (!session?.workerToken) {
-      await unregister(`Device ${this.#deviceToken}`);
-      return;
+    if (!session) return;
+    try {
+      await this.#fetcher(new URL("/device/unregister", this.#origin), {
+        method: "POST",
+        headers: {
+          authorization: `Worker ${session.workerToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ workerId: this.#workerId }),
+        signal: AbortSignal.timeout(3_000),
+      });
+    } catch {
+      // Liveness expiry removes workers after abrupt or offline shutdowns.
     }
-    const result = await unregister(`Worker ${session.workerToken}`);
-    if (result === "rejected") {
-      await unregister(`Device ${this.#deviceToken}`);
-    }
-    // Liveness expiry removes workers after abrupt or offline shutdowns.
   }
 
   async #post(
