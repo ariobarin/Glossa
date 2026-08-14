@@ -94,7 +94,7 @@ glossa logout
 glossa unpair
 ```
 
-`status` shows the account, devices, and active workspaces. Revocation invalidates a device. `logout` signs out CLI account administration but does not unpair the computer. `unpair` revokes this computer and removes its local pairing. Disconnect Glossa in ChatGPT separately to revoke the client authorization.
+`status` shows the account, devices, and active workspaces. Revocation invalidates a device. `logout` signs out CLI account administration but does not unpair the computer; it offers the Auth0 browser sign-out URL for finishing the browser session, which is required to switch accounts. `unpair` revokes this computer and removes its local pairing. Disconnect Glossa in ChatGPT separately to revoke the client authorization.
 
 ## Verify a setup
 

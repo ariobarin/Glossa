@@ -44,7 +44,7 @@ ChatGPT or another connected MCP client receives the file contents, command deta
 - Choose `read-only`, `workspace`, or explicit `system` access for each worker.
 - Stop the worker with Ctrl+C or `q`.
 - Run `glossa unpair` to revoke this computer's device credential and remove its local copy.
-- Run `glossa logout` to remove locally stored OAuth credentials and open browser sign-out.
+- Run `glossa logout` to remove locally stored OAuth credentials and get a browser sign-out link.
 - Disconnect Glossa in ChatGPT to revoke the client's authorization.
 - Run `glossa devices revoke <id>` to invalidate an enrolled computer.
 - Request device or account deletion through [support](/support).

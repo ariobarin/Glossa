@@ -27,4 +27,4 @@ Open a minimal public issue titled `Account deletion request` without private id
 
 ## Disconnect immediately
 
-Press Ctrl+C or `q` in the worker terminal to end workspace access. Run `glossa unpair` to revoke this computer's device credential. Run `glossa logout` to remove local OAuth credentials used for CLI account administration and open browser sign-out. Disconnect Glossa in ChatGPT to revoke the client's authorization.
+Press Ctrl+C or `q` in the worker terminal to end workspace access. Run `glossa unpair` to revoke this computer's device credential. Run `glossa logout` to remove local OAuth credentials used for CLI account administration and get a browser sign-out link. Disconnect Glossa in ChatGPT to revoke the client's authorization.

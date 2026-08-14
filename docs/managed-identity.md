@@ -68,10 +68,10 @@ The review fixture contains only synthetic files and deterministic scripts. The 
 
 ## Account switching
 
-Running `glossa logout` deletes the CLI's local OAuth credentials and opens Auth0's browser logout endpoint. To switch accounts:
+Running `glossa logout` deletes the CLI's local OAuth credentials and offers Auth0's browser logout URL — press Enter to open it, or open it manually at any time. To switch accounts:
 
 1. Stop every Glossa worker with Ctrl+C or `q`.
-2. Run `glossa logout`.
+2. Run `glossa logout` and complete the offered browser sign-out.
 3. Disconnect Glossa under **Settings > Apps** in ChatGPT and connect it again.
 4. Choose or enter the intended account during ChatGPT authorization.
 5. Start Glossa and authorize the same identity in the CLI.

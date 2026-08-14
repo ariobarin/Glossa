@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { signedInSession } from "./auth-login.js";
+import { currentSession, signedInSession } from "./auth-login.js";
 import type { StoredCredentials } from "./config-store.js";
 import type { LoginOptions } from "./device-flow.js";
 
@@ -31,7 +31,46 @@ function loginOptions(signal: AbortSignal): LoginOptions {
   };
 }
 
-test("forwards cancellation while validating matching stored credentials", async () => {
+test("currentSession validates matching stored credentials without logging in", async () => {
+  const controller = new AbortController();
+  const stored = credentials({ expiresAt: "2099-01-01T00:00:00.000Z" });
+  const validated = { ...stored, accessToken: "validated" };
+  let loads = 0;
+
+  const result = await currentSession(loginOptions(controller.signal), {
+    loadCredentials: async () => {
+      loads += 1;
+      return { credentials: stored, backend: "file" };
+    },
+    validCredentials: async (received, dependencies) => {
+      assert.equal(received, stored);
+      assert.equal(dependencies?.signal, controller.signal);
+      return validated;
+    },
+    loginWithDeviceFlow: async () => {
+      throw new Error("login should not run");
+    },
+  });
+
+  assert.equal(loads, 1);
+  assert.equal(result, validated);
+});
+
+test("currentSession refuses to log in when no session is stored", async () => {
+  const controller = new AbortController();
+
+  await assert.rejects(
+    currentSession(loginOptions(controller.signal), {
+      loadCredentials: async () => null,
+      loginWithDeviceFlow: async () => {
+        throw new Error("login should not run");
+      },
+    }),
+    { name: "SessionExpiredError" },
+  );
+});
+
+test("signedInSession forwards cancellation while validating stored credentials", async () => {
   const controller = new AbortController();
   const stored = credentials();
   let loginCalled = false;
@@ -65,24 +104,20 @@ test("forwards cancellation while validating matching stored credentials", async
   assert.equal(loginCalled, false);
 });
 
-test("returns validated credentials without loading them twice", async () => {
+test("signedInSession falls back to login when the stored session is unusable", async () => {
   const controller = new AbortController();
   const stored = credentials({ expiresAt: "2099-01-01T00:00:00.000Z" });
-  const validated = { ...stored, accessToken: "validated" };
-  let loads = 0;
+  let logins = 0;
 
   const result = await signedInSession(loginOptions(controller.signal), {
-    loadCredentials: async () => {
-      loads += 1;
-      return { credentials: stored, backend: "file" };
-    },
-    validCredentials: async () => validated,
+    loadCredentials: async () =>
+      logins === 0 ? null : { credentials: stored, backend: "file" },
+    validCredentials: async (received) => received,
     loginWithDeviceFlow: async () => {
-      throw new Error("login should not run");
+      logins += 1;
     },
   });
 
-  assert.equal(loads, 1);
-  assert.equal(result.loginPerformed, false);
-  assert.equal(result.credentials, validated);
+  assert.equal(logins, 1);
+  assert.equal(result, stored);
 });

@@ -4,23 +4,17 @@ import {
   type StoredCredentials,
 } from "./config-store.js";
 import { grantedScopesSatisfyRequest } from "./auth-scopes.js";
+import {
+  isTokenResponse,
+  issuerEndpoint,
+  oauthErrorMessage,
+  type OAuthError,
+  type OAuthTokenResponse,
+} from "./oauth.js";
 
 const EXPIRY_BUFFER_MS = 60_000;
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-
-interface OAuthTokenResponse {
-  access_token: string;
-  refresh_token?: string;
-  expires_in: number;
-  token_type: string;
-  scope?: string;
-}
-
-interface OAuthError {
-  error: string;
-  error_description?: string;
-}
 
 export interface UserProfile {
   sub: string;
@@ -34,10 +28,6 @@ export interface AuthSessionDependencies {
   deleteCredentials?: typeof deleteCredentials;
   now?: () => number;
   signal?: AbortSignal;
-}
-
-function endpoint(issuer: string, pathname: string): string {
-  return new URL(pathname, issuer.endsWith("/") ? issuer : `${issuer}/`).toString();
 }
 
 export class SessionExpiredError extends Error {
@@ -67,14 +57,6 @@ function sessionExpiredError(): SessionExpiredError {
   return new SessionExpiredError();
 }
 
-function oauthMessage(data: OAuthError, status: number): string {
-  return data.error_description ?? data.error ?? `HTTP ${status}`;
-}
-
-function isTokenResponse(data: OAuthTokenResponse | OAuthError): data is OAuthTokenResponse {
-  return "access_token" in data;
-}
-
 export function accessTokenNeedsRefresh(
   credentials: StoredCredentials,
   now = Date.now(),
@@ -92,7 +74,7 @@ export async function refreshCredentials(
   const remove = dependencies.deleteCredentials ?? deleteCredentials;
   const save = dependencies.saveCredentials ?? saveCredentials;
   const now = dependencies.now ?? Date.now;
-  const response = await fetchRequest(endpoint(credentials.issuer, "oauth/token"), {
+  const response = await fetchRequest(issuerEndpoint(credentials.issuer, "oauth/token"), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -110,7 +92,7 @@ export async function refreshCredentials(
       await remove();
       throw sessionExpiredError();
     }
-    throw new Error(oauthMessage(oauth, response.status));
+    throw new Error(oauthErrorMessage(oauth, response.status));
   }
 
   const grantedScope = data.scope ?? credentials.scope;
@@ -167,7 +149,7 @@ async function requestProfile(
   fetchRequest: FetchLike,
   signal?: AbortSignal,
 ): Promise<Response> {
-  return await fetchRequest(endpoint(credentials.issuer, "userinfo"), {
+  return await fetchRequest(issuerEndpoint(credentials.issuer, "userinfo"), {
     headers: { authorization: `${credentials.tokenType} ${credentials.accessToken}` },
     ...(signal ? { signal } : {}),
   });

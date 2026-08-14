@@ -18,15 +18,20 @@ test("builds the Auth0 browser logout URL", () => {
     browserLogoutUrl("https://identity.glossa.test/"),
     "https://identity.glossa.test/v2/logout",
   );
+  assert.equal(
+    browserLogoutUrl("https://identity.glossa.test"),
+    "https://identity.glossa.test/v2/logout",
+  );
 });
 
-test("browser logout opens the Auth0 session endpoint", async () => {
+test("browser sign-out opens only after confirmation", async () => {
   let openedUrl: string | undefined;
   const messages: string[] = [];
 
   await logoutFromGlossa({
     peekCredentials: async () => stored,
     deleteCredentials: async () => undefined,
+    confirmBrowserSignOut: async () => true,
     openBrowser: async (url) => {
       openedUrl = url;
       return true;
@@ -37,9 +42,48 @@ test("browser logout opens the Auth0 session endpoint", async () => {
 
   assert.equal(openedUrl, "https://identity.glossa.test/v2/logout");
   assert.match(messages[0] ?? "", /Signed out/);
+  assert.equal(messages.at(-1), "Opened Glossa browser sign-out.");
 });
 
-test("browser logout uses the stored session issuer", async () => {
+test("browser sign-out prints the URL when skipped", async () => {
+  let openCalled = false;
+  const messages: string[] = [];
+
+  await logoutFromGlossa({
+    peekCredentials: async () => stored,
+    deleteCredentials: async () => undefined,
+    confirmBrowserSignOut: async () => false,
+    openBrowser: async () => {
+      openCalled = true;
+      return true;
+    },
+    issuer: "https://identity.glossa.test/",
+    log: (message) => messages.push(message),
+  });
+
+  assert.equal(openCalled, false);
+  assert.equal(
+    messages.at(-1),
+    "Finish signing out in the browser when needed: https://identity.glossa.test/v2/logout",
+  );
+});
+
+test("browser sign-out prints the URL when the browser cannot open", async () => {
+  const messages: string[] = [];
+
+  await logoutFromGlossa({
+    peekCredentials: async () => stored,
+    deleteCredentials: async () => undefined,
+    confirmBrowserSignOut: async () => true,
+    openBrowser: async () => false,
+    issuer: "https://identity.glossa.test/",
+    log: (message) => messages.push(message),
+  });
+
+  assert.match(messages.at(-1) ?? "", /https:\/\/identity\.glossa\.test\/v2\/logout$/);
+});
+
+test("browser sign-out uses the stored session issuer", async () => {
   let openedUrl: string | undefined;
 
   await logoutFromGlossa({
@@ -48,6 +92,7 @@ test("browser logout uses the stored session issuer", async () => {
       backend: "file",
     }),
     deleteCredentials: async () => undefined,
+    confirmBrowserSignOut: async () => true,
     openBrowser: async (url) => {
       openedUrl = url;
       return true;
@@ -58,8 +103,7 @@ test("browser logout uses the stored session issuer", async () => {
   assert.equal(openedUrl, "https://stored-identity.glossa.test/v2/logout");
 });
 
-test("browser logout still opens when already signed out locally", async () => {
-  let openedUrl: string | undefined;
+test("logout still deletes and reports when already signed out locally", async () => {
   let deleted = false;
   const messages: string[] = [];
 
@@ -68,15 +112,15 @@ test("browser logout still opens when already signed out locally", async () => {
     deleteCredentials: async () => {
       deleted = true;
     },
-    openBrowser: async (url) => {
-      openedUrl = url;
-      return false;
+    confirmBrowserSignOut: async () => false,
+    openBrowser: async () => {
+      throw new Error("browser should not open");
     },
     issuer: "https://identity.glossa.test/",
     log: (message) => messages.push(message),
   });
 
   assert.equal(deleted, true);
-  assert.equal(openedUrl, "https://identity.glossa.test/v2/logout");
-  assert.equal(messages.at(-1), openedUrl);
+  assert.match(messages[0] ?? "", /Already signed out/);
+  assert.match(messages.at(-1) ?? "", /v2\/logout$/);
 });
