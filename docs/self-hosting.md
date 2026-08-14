@@ -56,6 +56,20 @@ npm run start --workspace @glossa/relay
 
 Terminate TLS in front of the relay. Confirm `https://mcp.example.com/healthz` returns an object with `ok` set to `true`.
 
+## Control panel
+
+The relay can serve a small control panel at `/panel` for redeeming pairing codes in a browser and for listing and revoking the devices on your account, which is the recovery path when a computer is lost. The panel is disabled unless all three panel variables are set.
+
+Create an Auth0 Regular Web Application in the same tenant. Add `${GLOSSA_PUBLIC_ORIGIN}/panel/auth/callback` to its allowed callback URLs, for example `https://mcp.example.com/panel/auth/callback`. Then set:
+
+```dotenv
+GLOSSA_PANEL_CLIENT_ID=WEB_APPLICATION_CLIENT_ID
+GLOSSA_PANEL_CLIENT_SECRET=WEB_APPLICATION_CLIENT_SECRET
+GLOSSA_PANEL_SESSION_SECRET=LONG_RANDOM_VALUE_AT_LEAST_32_CHARACTERS
+```
+
+The session secret signs the panel's stateless session cookies. Keep it in the relay environment only; rotating it signs out every panel session. Panel sign-in uses the same issuer, audience, and subject allowlist as the rest of the relay.
+
 ## CLI
 
 Use the same issuer, audience, and Native application when running the repository build:
