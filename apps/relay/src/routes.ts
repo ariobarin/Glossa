@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   MAX_TEXT_BYTES,
@@ -12,6 +13,7 @@ import {
 import type { RelayConfig } from "./config.js";
 import { requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { parseDeviceToken } from "./device-token.js";
+import { generatePairingCode, pairingCodeHash } from "./pairing-code.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { handleMcpRequest } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
@@ -26,6 +28,7 @@ import {
 } from "./relay-timing.js";
 
 export const MAX_RELAY_JSON_BYTES = 16 * MAX_TEXT_BYTES;
+export const PAIRING_CODE_TTL_MS = 10 * 60_000;
 
 const enrollSchema = z
   .object({
@@ -35,6 +38,7 @@ const enrollSchema = z
   .strict();
 
 const renameSchema = z.object({ name: deviceNameSchema }).strict();
+const pairingRedeemSchema = z.object({ code: z.string() }).strict();
 const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
 const workerJobTypeSchema = z.enum([
@@ -319,6 +323,18 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+function requestPairingCodeHash(request: Request): Buffer | null {
+  const rawCode = request.params.code;
+  const code = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+  return code ? pairingCodeHash(code) : null;
+}
+
+function retriedDeviceName(name: string, attempt: number): string {
+  if (attempt === 0) return name;
+  const suffix = `-${attempt + 1}`;
+  return `${name.slice(0, 80 - suffix.length)}${suffix}`;
+}
+
 export function buildRoutes(
   config: RelayConfig,
   store: RelayStore,
@@ -492,6 +508,119 @@ export function buildRoutes(
       response.status(204).end();
     },
   );
+
+  router.post("/v1/pairings", async (request, response) => {
+    const source = request.ip || request.socket.remoteAddress || "unknown";
+    if (rejectRateLimit(response, enrollmentRateLimiter, source)) return;
+    const parsed = enrollSchema.safeParse(request.body);
+    if (!parsed.success) {
+      rejectInvalidInput(response);
+      return;
+    }
+    const generated = generatePairingCode();
+    const expiresAt = new Date(Date.now() + PAIRING_CODE_TTL_MS);
+    await store.createPairing(
+      randomUUID(),
+      generated.hash,
+      parsed.data.name,
+      parsed.data.platform ?? null,
+      expiresAt,
+    );
+    response
+      .status(201)
+      .json({ code: generated.code, expiresAt: expiresAt.toISOString() });
+  });
+
+  router.get(
+    "/v1/pairings/:code",
+    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
+    async (request: AuthenticatedRequest, response: Response) => {
+      const accountId = await activeAccountId(request, response, store);
+      if (!accountId) return;
+      const codeHash = requestPairingCodeHash(request);
+      const pairing = codeHash ? await store.findPairing(codeHash) : null;
+      if (!pairing) {
+        response.status(404).json({ error: "pairing_not_found" });
+        return;
+      }
+      response.json({
+        deviceName: pairing.deviceName,
+        platform: pairing.platform,
+        expiresAt: pairing.expiresAt.toISOString(),
+        claimed: pairing.accountId !== null,
+      });
+    },
+  );
+
+  router.post(
+    "/v1/pairings/:code/claim",
+    authFactory(config, config.GLOSSA_DEVICE_ENROLL_SCOPE),
+    async (request: AuthenticatedRequest, response: Response) => {
+      const accountId = await activeAccountId(request, response, store);
+      if (!accountId) return;
+      const codeHash = requestPairingCodeHash(request);
+      const pairing = codeHash ? await store.findPairing(codeHash) : null;
+      if (!pairing) {
+        response.status(404).json({ error: "pairing_not_found" });
+        return;
+      }
+      if (pairing.accountId) {
+        response.status(409).json({ error: "pairing_already_claimed" });
+        return;
+      }
+      const claimed = await store.claimPairing(codeHash!, accountId);
+      if (!claimed) {
+        response.status(409).json({ error: "pairing_already_claimed" });
+        return;
+      }
+      response.json({
+        deviceName: claimed.deviceName,
+        platform: claimed.platform,
+      });
+    },
+  );
+
+  router.post("/v1/pairings/redeem", async (request, response) => {
+    const source = request.ip || request.socket.remoteAddress || "unknown";
+    if (rejectRateLimit(response, deviceRateLimiter, source)) return;
+    const parsed = pairingRedeemSchema.safeParse(request.body);
+    if (!parsed.success) {
+      rejectInvalidInput(response);
+      return;
+    }
+    const codeHash = pairingCodeHash(parsed.data.code);
+    const pairing = codeHash ? await store.findPairing(codeHash) : null;
+    if (!pairing) {
+      response.status(404).json({ error: "pairing_not_found" });
+      return;
+    }
+    if (!pairing.accountId) {
+      response.status(202).json({ status: "pending" });
+      return;
+    }
+    const redeemed = await store.redeemPairing(codeHash!);
+    if (!redeemed?.accountId) {
+      response.status(404).json({ error: "pairing_not_found" });
+      return;
+    }
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const enrolled = await store.enrollDevice(
+          redeemed.accountId,
+          retriedDeviceName(redeemed.deviceName, attempt),
+          redeemed.platform,
+        );
+        response.json({
+          device: publicDevice(enrolled.device, state),
+          device_token: enrolled.token,
+        });
+        return;
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+      }
+    }
+    response.status(409).json({ error: "device_name_conflict" });
+  });
 
   router.delete("/device", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;

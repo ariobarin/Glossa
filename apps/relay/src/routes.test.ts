@@ -9,7 +9,7 @@ import { loadConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { RouterState } from "./router-state.js";
 import { buildRoutes, MAX_RELAY_JSON_BYTES } from "./routes.js";
-import type { DeviceRecord, RelayStore } from "./store.js";
+import type { DeviceRecord, PairingRecord, RelayStore } from "./store.js";
 
 const accountId = "00000000-0000-4000-8000-000000000001";
 const deviceId = "00000000-0000-4000-8000-000000000002";
@@ -47,6 +47,10 @@ test("enrolls a device with temporary browser authorization", async (context) =>
     revokeDevice: unused,
     touchDevice: unused,
     authenticateDevice: unused,
+    createPairing: unused,
+    findPairing: unused,
+    claimPairing: unused,
+    redeemPairing: unused,
   };
   const config = loadConfig({
     NODE_ENV: "test",
@@ -128,6 +132,10 @@ test("bounds coalesced presence writes by the relay deadline", async (context) =
       return true;
     },
     authenticateDevice: unused,
+    createPairing: unused,
+    findPairing: unused,
+    claimPairing: unused,
+    redeemPairing: unused,
   };
   const config = loadConfig({
     NODE_ENV: "test",
@@ -220,6 +228,10 @@ test("uses worker credentials without repeating device authentication", async (c
       deviceAuthentications += 1;
       return id === deviceId ? device : null;
     },
+    createPairing: unused,
+    findPairing: unused,
+    claimPairing: unused,
+    redeemPairing: unused,
   };
   const state = new RouterState();
   const config = loadConfig({
@@ -460,6 +472,10 @@ test("manages devices with a paired device credential", async (context) => {
     touchDevice: unused,
     authenticateDevice: async (receivedDeviceId, secret) =>
       receivedDeviceId === deviceId && secret === "a".repeat(43) ? device : null,
+    createPairing: unused,
+    findPairing: unused,
+    claimPairing: unused,
+    redeemPairing: unused,
   };
   const config = loadConfig({
     NODE_ENV: "test",
@@ -550,4 +566,320 @@ test("manages devices with a paired device credential", async (context) => {
     body: JSON.stringify({ name: "Sneaky", platform: null }),
   });
   assert.equal(enrolled.status, 401);
+});
+
+test("issues a pairing code and keeps redemption pending until claimed", async (context) => {
+  let codeHash: Buffer | null = null;
+  const pairing: PairingRecord = {
+    id: "00000000-0000-4000-8000-000000000010",
+    deviceName: "",
+    platform: null,
+    accountId: null,
+    expiresAt: new Date(0),
+  };
+  const store: RelayStore = {
+    accountIdForSubject: unused,
+    enrollDevice: unused,
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: unused,
+    touchDevice: unused,
+    authenticateDevice: unused,
+    createPairing: async (id, receivedHash, deviceName, platform, expiresAt) => {
+      pairing.id = id;
+      pairing.deviceName = deviceName;
+      pairing.platform = platform;
+      pairing.expiresAt = expiresAt;
+      codeHash = receivedHash;
+    },
+    findPairing: async (receivedHash) =>
+      codeHash && receivedHash.equals(codeHash) ? pairing : null,
+    claimPairing: unused,
+    redeemPairing: unused,
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: () => (_request, _response, next) => next(),
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  const created = await fetch(`${origin}/v1/pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Test PC", platform: "win32-x64" }),
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json();
+  assert.match(createdBody.code, /^[A-HJ-KM-NP-Z2-9]{4}-[A-HJ-KM-NP-Z2-9]{4}$/);
+  const expiresAt = Date.parse(createdBody.expiresAt);
+  assert.ok(expiresAt > Date.now() + 9 * 60_000);
+  assert.ok(expiresAt <= Date.now() + 10 * 60_000);
+  assert.equal(pairing.deviceName, "Test PC");
+  assert.equal(pairing.platform, "win32-x64");
+
+  const pending = await fetch(`${origin}/v1/pairings/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: createdBody.code.toLowerCase() }),
+  });
+  assert.equal(pending.status, 202);
+  assert.deepEqual(await pending.json(), { status: "pending" });
+
+  const unknown = await fetch(`${origin}/v1/pairings/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "ABCD-EFGH" }),
+  });
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await unknown.json(), { error: "pairing_not_found" });
+
+  const malformed = await fetch(`${origin}/v1/pairings/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "not-a-code" }),
+  });
+  assert.equal(malformed.status, 404);
+
+  const invalid = await fetch(`${origin}/v1/pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(invalid.status, 400);
+});
+
+test("claims a pairing and redeems it into an enrolled device", async (context) => {
+  const subject = "google-oauth2|panel-user";
+  let codeHash: Buffer | null = null;
+  let redeemed = false;
+  const pairing: PairingRecord = {
+    id: "00000000-0000-4000-8000-000000000010",
+    deviceName: "Test PC",
+    platform: null,
+    accountId: null,
+    expiresAt: new Date(0),
+  };
+  const store: RelayStore = {
+    accountIdForSubject: async (received) => {
+      assert.equal(received, subject);
+      return accountId;
+    },
+    enrollDevice: async (receivedAccountId, name, platform) => {
+      assert.equal(receivedAccountId, accountId);
+      assert.equal(name, "Test PC");
+      assert.equal(platform, null);
+      return { device: { ...device, name, platform }, token };
+    },
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: unused,
+    touchDevice: unused,
+    authenticateDevice: unused,
+    createPairing: async (_id, receivedHash, deviceName, platform, expiresAt) => {
+      pairing.deviceName = deviceName;
+      pairing.platform = platform;
+      pairing.expiresAt = expiresAt;
+      codeHash = receivedHash;
+    },
+    findPairing: async (receivedHash) =>
+      codeHash && receivedHash.equals(codeHash) ? { ...pairing } : null,
+    claimPairing: async (receivedHash, receivedAccountId) => {
+      assert.equal(receivedAccountId, accountId);
+      if (!codeHash || !receivedHash.equals(codeHash) || pairing.accountId) {
+        return null;
+      }
+      pairing.accountId = receivedAccountId;
+      return { ...pairing };
+    },
+    redeemPairing: async (receivedHash) => {
+      if (
+        !codeHash ||
+        !receivedHash.equals(codeHash) ||
+        !pairing.accountId ||
+        redeemed
+      ) {
+        return null;
+      }
+      redeemed = true;
+      return { ...pairing };
+    },
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: (_config, scope) => (request, _response, next) => {
+      (request as AuthenticatedRequest).auth = {
+        subject,
+        scopes: new Set(scope ? [scope] : []),
+        claims: {},
+      };
+      next();
+    },
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+  const origin = `http://127.0.0.1:${address.port}`;
+  const authorization = "Bearer panel-token";
+
+  const created = await fetch(`${origin}/v1/pairings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Test PC" }),
+  });
+  assert.equal(created.status, 201);
+  const { code } = await created.json();
+
+  const preview = await fetch(`${origin}/v1/pairings/${code}`, {
+    headers: { authorization },
+  });
+  assert.equal(preview.status, 200);
+  assert.deepEqual(await preview.json(), {
+    deviceName: "Test PC",
+    platform: null,
+    expiresAt: pairing.expiresAt.toISOString(),
+    claimed: false,
+  });
+
+  const claimed = await fetch(`${origin}/v1/pairings/${code}/claim`, {
+    method: "POST",
+    headers: { authorization },
+  });
+  assert.equal(claimed.status, 200);
+  assert.deepEqual(await claimed.json(), {
+    deviceName: "Test PC",
+    platform: null,
+  });
+
+  const previewAfter = await fetch(`${origin}/v1/pairings/${code}`, {
+    headers: { authorization },
+  });
+  assert.equal(previewAfter.status, 200);
+  assert.deepEqual(await previewAfter.json(), {
+    deviceName: "Test PC",
+    platform: null,
+    expiresAt: pairing.expiresAt.toISOString(),
+    claimed: true,
+  });
+
+  const doubleClaim = await fetch(`${origin}/v1/pairings/${code}/claim`, {
+    method: "POST",
+    headers: { authorization },
+  });
+  assert.equal(doubleClaim.status, 409);
+  assert.deepEqual(await doubleClaim.json(), {
+    error: "pairing_already_claimed",
+  });
+
+  const missingPreview = await fetch(`${origin}/v1/pairings/ABCD-EFGH`, {
+    headers: { authorization },
+  });
+  assert.equal(missingPreview.status, 404);
+  assert.deepEqual(await missingPreview.json(), { error: "pairing_not_found" });
+
+  const redeemedResponse = await fetch(`${origin}/v1/pairings/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  assert.equal(redeemedResponse.status, 200);
+  assert.deepEqual(await redeemedResponse.json(), {
+    device: {
+      id: deviceId,
+      name: "Test PC",
+      platform: null,
+      lastSeenAt: null,
+      revokedAt: null,
+      activeWorkers: 0,
+    },
+    device_token: token,
+  });
+
+  const secondRedeem = await fetch(`${origin}/v1/pairings/redeem`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  assert.equal(secondRedeem.status, 404);
+  assert.deepEqual(await secondRedeem.json(), { error: "pairing_not_found" });
+});
+
+test("retries device enrollment with a suffixed name after a conflict", async (context) => {
+  const pairing: PairingRecord = {
+    id: "00000000-0000-4000-8000-000000000011",
+    deviceName: "Test PC",
+    platform: "win32-x64",
+    accountId,
+    expiresAt: new Date(Date.now() + 600_000),
+  };
+  let enrollAttempts = 0;
+  const store: RelayStore = {
+    accountIdForSubject: unused,
+    enrollDevice: async (receivedAccountId, name, platform) => {
+      assert.equal(receivedAccountId, accountId);
+      enrollAttempts += 1;
+      if (enrollAttempts === 1) {
+        throw Object.assign(new Error("duplicate"), { code: "23505" });
+      }
+      return { device: { ...device, name, platform }, token };
+    },
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: unused,
+    touchDevice: unused,
+    authenticateDevice: unused,
+    createPairing: unused,
+    findPairing: async () => pairing,
+    claimPairing: unused,
+    redeemPairing: async () => pairing,
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState()));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const redeemedResponse = await fetch(
+    `http://127.0.0.1:${address.port}/v1/pairings/redeem`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: "WXYZ-2345" }),
+    },
+  );
+
+  assert.equal(redeemedResponse.status, 200);
+  const body = await redeemedResponse.json();
+  assert.equal(body.device.name, "Test PC-2");
+  assert.equal(body.device_token, token);
+  assert.equal(enrollAttempts, 2);
 });
