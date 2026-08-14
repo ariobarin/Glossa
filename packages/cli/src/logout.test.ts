@@ -29,7 +29,7 @@ test("browser sign-out opens only after confirmation", async () => {
   const messages: string[] = [];
 
   await logoutFromGlossa({
-    peekCredentials: async () => stored,
+    loadCredentials: async () => stored,
     deleteCredentials: async () => undefined,
     confirmBrowserSignOut: async () => true,
     openBrowser: async (url) => {
@@ -50,7 +50,7 @@ test("browser sign-out prints the URL when skipped", async () => {
   const messages: string[] = [];
 
   await logoutFromGlossa({
-    peekCredentials: async () => stored,
+    loadCredentials: async () => stored,
     deleteCredentials: async () => undefined,
     confirmBrowserSignOut: async () => false,
     openBrowser: async () => {
@@ -72,7 +72,7 @@ test("browser sign-out prints the URL when the browser cannot open", async () =>
   const messages: string[] = [];
 
   await logoutFromGlossa({
-    peekCredentials: async () => stored,
+    loadCredentials: async () => stored,
     deleteCredentials: async () => undefined,
     confirmBrowserSignOut: async () => true,
     openBrowser: async () => false,
@@ -87,7 +87,7 @@ test("browser sign-out uses the stored session issuer", async () => {
   let openedUrl: string | undefined;
 
   await logoutFromGlossa({
-    peekCredentials: async () => ({
+    loadCredentials: async () => ({
       credentials: { ...credentials, issuer: "https://stored-identity.glossa.test/" },
       backend: "file",
     }),
@@ -108,7 +108,7 @@ test("logout still deletes and reports when already signed out locally", async (
   const messages: string[] = [];
 
   await logoutFromGlossa({
-    peekCredentials: async () => null,
+    loadCredentials: async () => null,
     deleteCredentials: async () => {
       deleted = true;
     },

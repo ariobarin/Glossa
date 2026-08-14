@@ -2,7 +2,7 @@ import readline from "node:readline/promises";
 import { loadAuthConfig } from "./auth-config.js";
 import {
   deleteCredentials,
-  peekCredentials,
+  loadCredentials,
   type LoadedCredentials,
 } from "./config-store.js";
 import { issuerEndpoint } from "./oauth.js";
@@ -10,7 +10,7 @@ import { openBrowser } from "./open-browser.js";
 
 export interface LogoutDependencies {
   deleteCredentials?: typeof deleteCredentials;
-  peekCredentials?: typeof peekCredentials;
+  loadCredentials?: typeof loadCredentials;
   openBrowser?: typeof openBrowser;
   confirmBrowserSignOut?: () => Promise<boolean>;
   issuer?: string;
@@ -41,7 +41,7 @@ export async function logoutFromGlossa(
   dependencies: LogoutDependencies = {},
 ): Promise<void> {
   const remove = dependencies.deleteCredentials ?? deleteCredentials;
-  const peek = dependencies.peekCredentials ?? peekCredentials;
+  const load = dependencies.loadCredentials ?? loadCredentials;
   const browse = dependencies.openBrowser ?? openBrowser;
   const confirm = dependencies.confirmBrowserSignOut ?? promptBrowserSignOut;
   const log = dependencies.log ?? console.log;
@@ -49,10 +49,7 @@ export async function logoutFromGlossa(
   let stored: LoadedCredentials | null = null;
   let present = true;
   try {
-    // Use the non-migrating peek so a file-backed session is not moved into the
-    // keyring (and left behind if deletion then fails) as a side effect of the
-    // presence check.
-    stored = await peek();
+    stored = await load();
     present = stored !== null;
   } catch {
     // Corrupt credentials stay flagged as present so remove() can clean them up.
