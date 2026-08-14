@@ -55,14 +55,12 @@ The worker initiates the connection, so Glossa does not require an inbound port.
 
 ## Common controls
 
+Press `d` in the worker terminal to list and revoke the account's devices, and `q` or Ctrl+C to disconnect the workspace immediately.
+
 ```shell
-glossa status
-glossa devices revoke <id>
-glossa logout
+glossa unpair
 glossa update --check
 ```
-
-Press `q` or Ctrl+C in the worker terminal to disconnect the workspace immediately.
 
 ## Security boundary
 
@@ -80,6 +78,25 @@ npm run dev
 ```
 
 Stop local Postgres with `npm run dev:down`.
+
+### Local integration
+
+The full flow — pairing, device management, MCP, and a live worker — runs locally without touching the production tenant or relay:
+
+```powershell
+npm run integration:smoke
+```
+
+The harness starts a local development issuer, boots the relay against local Postgres, pairs a throwaway device, and round-trips an MCP `read_file` through a live worker before revoking the device.
+
+For manual end-to-end work, run the development issuer and the relay in separate terminals:
+
+```powershell
+npm run dev:auth   # prints the relay .env and CLI environment values
+npm run dev
+```
+
+Point the CLI at the local stack with the printed environment values. The development issuer signs any requested identity and auto-approves pairing; never deploy it.
 
 ## User documentation
 

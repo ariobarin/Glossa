@@ -870,7 +870,7 @@ function registerTools(
       const logoutUrl = browserLogoutUrl(config.GLOSSA_AUTH0_ISSUER);
       return structuredResult({
         logoutUrl,
-        instructions: `Run glossa logout to sign out the CLI account used for status and device administration. Stop any other Glossa sessions with Ctrl+C. If the CLI does not open a browser, open ${logoutUrl}. This does not unpair a computer. To move a computer to another Glossa account, run glossa unpair on that computer, start glossa there again, and select the intended account in the browser authorization flow. Then disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
+        instructions: `The Glossa CLI keeps no account session: a computer is either paired or not. To detach a computer, run glossa unpair on it. To switch the account a computer pairs to, end the Auth0 browser session by opening ${logoutUrl}, run glossa unpair on that computer, start glossa there again, and select the intended account in the browser authorization flow. Disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
       });
     },
   );

@@ -17,6 +17,7 @@
     "check": "npm run docs:check && npm run site:check && npm run review:check && npm run build && npm test",
     "clean": "node scripts/clean.mjs",
     "dev": "npm run build --workspace @glossa/protocol && npm run dev --workspace @glossa/relay",
+    "dev:auth": "node --import tsx scripts/dev-auth.ts",
     "dev:setup": "node scripts/dev-setup.mjs",
     "dev:down": "docker compose down",
     "docs:build": "node scripts/build-docs.mjs",
@@ -24,12 +25,15 @@
     "site:check": "node scripts/check-site-chrome.mjs",
     "cli:hud-demo": "npm run build --workspace @glossa/protocol && npm run hud:demo --workspace @ariobarin/glossa",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
+    "integration:smoke": "node --import tsx scripts/integration-smoke.ts",
     "test": "npm run test --workspace @glossa/relay && npm run test --workspace @ariobarin/glossa",
     "review:check": "node scripts/check-review-readiness.mjs && node --import tsx scripts/check-restricted-data-corpus.ts",
     "review:check:production": "node scripts/check-production-review-surface.mjs"
   },
   "license": "MIT",
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "jose": "6.2.3",
     "marked": "18.0.6"
   }
 }
