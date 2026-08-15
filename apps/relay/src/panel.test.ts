@@ -136,7 +136,45 @@ test("creates a session cookie through the login callback", async (context) => {
   });
   assert.equal(response.status, 200);
   const body = await response.text();
-  assert.ok(body.includes(`Signed in as ${subject}`));
+  assert.ok(body.includes('aria-label="Glossa home"'));
+  assert.ok(body.includes("No active devices yet."));
+  assert.ok(!body.includes(subject));
+});
+
+test("shows active devices without revoked history", async (context) => {
+  const harness = await startPanel(
+    context,
+    storeWith({
+      listDevices: async () => [
+        {
+          id: deviceId,
+          accountId,
+          name: "Current PC",
+          platform: "win32-x64",
+          revokedAt: null,
+          lastSeenAt: new Date("2026-08-15T12:00:00Z"),
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000005",
+          accountId,
+          name: "Old PC",
+          platform: "win32-x64",
+          revokedAt: new Date("2026-08-14T12:00:00Z"),
+          lastSeenAt: new Date("2026-08-14T11:00:00Z"),
+        },
+      ],
+    }),
+  );
+  const cookie = await signIn(harness.origin);
+  const response = await fetch(`${harness.origin}/panel`, {
+    headers: { cookie },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  assert.ok(body.includes("Current PC"));
+  assert.ok(body.includes("2026-08-15 12:00:00 UTC"));
+  assert.ok(!body.includes("Old PC"));
+  assert.ok(!body.includes("revoked"));
 });
 
 test("rejects a tampered session cookie", async (context) => {

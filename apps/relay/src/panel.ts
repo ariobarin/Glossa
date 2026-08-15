@@ -39,25 +39,74 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
+const brandSymbol = `<svg class="brand-symbol" viewBox="0 0 344.5 332" aria-hidden="true">
+<defs>
+<linearGradient id="purple-top" x1="0" y1="169" x2="310" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6d43f0"/><stop offset="1" stop-color="#8054ff"/></linearGradient>
+<linearGradient id="purple-left" x1="0" y1="230" x2="61" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="#6840eb"/><stop offset="1" stop-color="#784dfa"/></linearGradient>
+<linearGradient id="coral" x1="167" y1="169" x2="344.5" y2="332" gradientUnits="userSpaceOnUse"><stop stop-color="#ff665f"/><stop offset="1" stop-color="#fb5f59"/></linearGradient>
+</defs>
+<path fill="url(#purple-top)" d="M86 0H310V22C310 68 277 108 242 108H78C48 108 20 127 3 155L20 64C25 28 60 0 86 0Z"/>
+<path fill="url(#purple-left)" d="M61 124V237C28 237 0 217 0 184C0 171 1 162 4 155C15 140 35 127 61 124Z"/>
+<path fill="url(#coral)" d="M31.5 239.5L54 248H245L167 169H248C257 169 266 172 273 179L344.5 248.5V288C344.5 313 328 332 303 332H145C132 332 118 329 107 319Z"/>
+</svg>`;
+
 function page(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111016">
 <title>${escapeHtml(title)} - Glossa</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:44rem;margin:3rem auto;padding:0 1rem;color:#222;line-height:1.5}
-table{border-collapse:collapse;width:100%}
-th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #ddd}
-button,input{font:inherit;padding:.3rem .6rem}
-input[type=text]{min-width:12rem}
-.muted{color:#666;font-size:.9rem}
-nav{margin-bottom:1.5rem}
+:root{color-scheme:dark;--paper:#111016;--surface:#17151e;--ink:#f4f1fb;--muted:#aaa4b5;--purple:#8054ff;--purple-readable:#ad98ff;--coral:#ff665f;--coral-hover:#ff7b75;--line:#2e2a3b;--line-strong:#5c556e;--radius:12px;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;--sans:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--paper);scrollbar-color:var(--purple) var(--paper)}
+body{min-height:100vh;margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button,input{font:inherit}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--purple);outline-offset:3px}
+.site-header{display:flex;min-height:68px;align-items:center;border-bottom:1px solid var(--line);background:rgba(17,16,22,.92)}
+.header-inner,.panel-main{width:min(calc(100% - 48px),880px);margin-inline:auto}
+.brand{display:inline-flex;align-items:center;gap:10px;font-size:17px;font-weight:700;letter-spacing:-.025em}
+.brand-symbol{width:24px;height:24px}
+.panel-main{padding:clamp(42px,8vw,76px) 0 80px}
+.heading-row{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:30px}
+h1{margin:0;font-size:clamp(34px,6vw,48px);font-weight:700;letter-spacing:-.045em;line-height:1}
+h1+p{margin-top:22px}
+p{margin:0 0 22px;color:var(--muted)}
+p a{color:var(--purple-readable);text-decoration:underline;text-underline-offset:4px}
+strong{color:var(--ink)}
+.primary-action,.secondary-action,.danger-action{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer}
+.primary-action{padding:0 18px;border:0;background:var(--coral);color:#211011;box-shadow:0 8px 24px rgba(0,0,0,.26)}
+.primary-action:hover{background:var(--coral-hover)}
+.secondary-action,.danger-action{padding:0 15px;border:1px solid var(--line-strong);background:transparent;color:var(--ink)}
+.secondary-action:hover{border-color:var(--purple-readable);color:var(--purple-readable)}
+.danger-action{min-height:38px;color:var(--coral)}
+.danger-action:hover{border-color:var(--coral);background:rgba(255,102,95,.08)}
+.device-list{display:grid;margin:0;padding:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);list-style:none;overflow:hidden}
+.device-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(12rem,auto) auto;align-items:center;gap:24px;padding:20px 22px}
+.device-card+.device-card{border-top:1px solid var(--line)}
+.device-name{display:flex;min-width:0;align-items:center;gap:12px}
+.device-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.platform{padding:3px 7px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-family:var(--mono);font-size:11px;white-space:nowrap}
+.device-meta{display:grid;gap:2px;color:var(--muted);font-size:13px}
+.device-meta span{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.06em}
+.device-meta time{color:var(--ink);font-family:var(--mono);font-size:12px;white-space:nowrap}
+.empty-state{padding:34px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--muted);text-align:center}
+.account-actions{display:flex;align-items:center;justify-content:flex-end;margin-top:24px}
+.pair-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;max-width:560px}
+input[type=text]{width:100%;min-height:48px;padding:0 15px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface);color:var(--ink);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.back-link{display:inline-block;margin-top:24px;color:var(--muted);font-size:14px;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:4px}
+.back-link:hover{color:var(--ink);text-decoration-color:currentColor}
+.confirmation{max-width:580px;padding:26px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.confirmation p:last-child{margin-bottom:0}
+@media(max-width:680px){.header-inner,.panel-main{width:min(calc(100% - 28px),880px)}.panel-main{padding-top:38px}.heading-row{align-items:flex-start;flex-direction:column}.device-card{grid-template-columns:1fr auto;gap:18px}.device-meta{grid-column:1/-1;grid-row:2}.pair-form{grid-template-columns:1fr}.pair-form .primary-action{width:100%}}
 </style>
 </head>
 <body>
-${body}
+<header class="site-header"><div class="header-inner"><a class="brand" href="https://glossa.sh" aria-label="Glossa home">${brandSymbol}<span>Glossa</span></a></div></header>
+<main class="panel-main">${body}</main>
 </body>
 </html>`;
 }
@@ -171,25 +220,22 @@ function formatInstant(value: Date | null): string {
   return value ? value.toISOString().replace("T", " ").slice(0, 19) + " UTC" : "never";
 }
 
-function deviceRows(devices: DeviceRecord[]): string {
-  if (devices.length === 0) {
-    return "<p>No devices paired to this account.</p>";
+function deviceList(devices: DeviceRecord[]): string {
+  const activeDevices = devices.filter((device) => !device.revokedAt);
+  if (activeDevices.length === 0) {
+    return '<div class="empty-state">No active devices yet.</div>';
   }
-  const rows = devices
+  const rows = activeDevices
     .map((device) => {
-      const status = device.revokedAt ? "revoked" : "active";
-      const action = device.revokedAt
-        ? ""
-        : `<form method="post" action="/panel/devices/${escapeHtml(device.id)}/revoke"><button type="submit">Revoke</button></form>`;
-      return `<tr><td>${escapeHtml(device.name)}</td><td>${escapeHtml(device.platform ?? "unknown")}</td><td>${formatInstant(device.lastSeenAt)}</td><td>${status}</td><td>${action}</td></tr>`;
+      const lastSeen = formatInstant(device.lastSeenAt);
+      return `<li class="device-card">
+<div class="device-name"><strong>${escapeHtml(device.name)}</strong><span class="platform">${escapeHtml(device.platform ?? "unknown")}</span></div>
+<div class="device-meta"><span>Last seen</span><time>${lastSeen}</time></div>
+<form method="post" action="/panel/devices/${escapeHtml(device.id)}/revoke"><button class="danger-action" type="submit">Revoke</button></form>
+</li>`;
     })
     .join("\n");
-  return `<table>
-<thead><tr><th>Name</th><th>Platform</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
-<tbody>
-${rows}
-</tbody>
-</table>`;
+  return `<ul class="device-list">${rows}</ul>`;
 }
 
 function codeFromBody(request: Request): string | null {
@@ -305,23 +351,21 @@ export function buildPanel(
 
   router.get("/", async (request: PanelRequest, response) => {
     const devices = await store.listDevices(request.session!.accountId);
-    sendPage(response, 200, "Devices", `<h1>Glossa devices</h1>
-<nav><a href="/panel/pair">Pair a new device</a></nav>
-${deviceRows(devices)}
-<p class="muted">Signed in as ${escapeHtml(request.session!.subject)}</p>
-<form method="post" action="/panel/auth/logout"><button type="submit">Sign out</button></form>`);
+    sendPage(response, 200, "Devices", `<div class="heading-row"><h1>Devices</h1><a class="primary-action" href="/panel/pair">Pair a device</a></div>
+${deviceList(devices)}
+<div class="account-actions"><form method="post" action="/panel/auth/logout"><button class="secondary-action" type="submit">Sign out</button></form></div>`);
   });
 
   router.get("/pair", (request, response) => {
     const query = request.query as { code?: unknown };
     const code = typeof query.code === "string" ? query.code : "";
-    sendPage(response, 200, "Pair a device", `<h1>Pair a device</h1>
+    sendPage(response, 200, "Pair a device", `<div class="heading-row"><h1>Pair a device</h1></div>
 <p>Enter the pairing code shown by the Glossa CLI.</p>
-<form method="post" action="/panel/pair">
+<form class="pair-form" method="post" action="/panel/pair">
 <input type="text" name="code" value="${escapeHtml(code)}" placeholder="XXXX-XXXX" required>
-<button type="submit">Continue</button>
+<button class="primary-action" type="submit">Continue</button>
 </form>
-<p class="muted"><a href="/panel">Back to devices</a></p>`);
+<a class="back-link" href="/panel">Back to devices</a>`);
   });
 
   router.post("/pair", async (request: PanelRequest, response) => {
@@ -362,7 +406,7 @@ ${deviceRows(devices)}
     sendPage(response, 200, "Paired", `<h1>Paired</h1>
 <p><strong>${escapeHtml(claimed.deviceName)}</strong> is now paired to your account.</p>
 <p>Return to the terminal; Glossa will connect within a few seconds.</p>
-<p class="muted"><a href="/panel">Back to devices</a></p>`);
+<a class="back-link" href="/panel">Back to devices</a>`);
   });
 
   router.post("/devices/:deviceId/revoke", async (request: PanelRequest, response) => {
@@ -393,9 +437,9 @@ function sendPairingConfirmation(
 <p>Pair <strong>${escapeHtml(pairing.deviceName)}</strong> (${escapeHtml(pairing.platform ?? "unknown platform")}) to your account?</p>
 <form method="post" action="/panel/pair/confirm">
 <input type="hidden" name="code" value="${escapeHtml(code)}">
-<button type="submit">Pair this device</button>
+<button class="primary-action" type="submit">Pair this device</button>
 </form>
-<p class="muted"><a href="/panel/pair">Cancel</a></p>`);
+<a class="back-link" href="/panel/pair">Cancel</a>`);
 }
 
 function sendPairingConflict(response: Response): void {
