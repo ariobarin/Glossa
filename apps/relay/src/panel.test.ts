@@ -6,6 +6,7 @@ import express from "express";
 import { loadConfig } from "./config.js";
 import { pairingCodeHash } from "./pairing-code.js";
 import { buildPanel } from "./panel.js";
+import { RouterState } from "./router-state.js";
 import type { PairingRecord, RelayStore } from "./store.js";
 
 const accountId = "00000000-0000-4000-8000-000000000001";
@@ -39,6 +40,7 @@ function panelConfig() {
 
 interface PanelHarness {
   origin: string;
+  state: RouterState;
   close(): void;
 }
 
@@ -48,7 +50,8 @@ function startPanel(
   exchangeCode?: (code: string) => Promise<string>,
 ): Promise<PanelHarness> {
   const app = express();
-  const panel = buildPanel(panelConfig(), store, {
+  const state = new RouterState();
+  const panel = buildPanel(panelConfig(), store, state, {
     exchangeCode: exchangeCode ?? (async () => subject),
   });
   assert.ok(panel, "panel is configured");
@@ -59,6 +62,7 @@ function startPanel(
     const address = server.address() as AddressInfo;
     return {
       origin: `http://127.0.0.1:${address.port}`,
+      state,
       close: () => server.close(),
     };
   });
@@ -205,6 +209,13 @@ test("revokes a device for the session account", async (context) => {
       },
     }),
   );
+  harness.state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    "00000000-0000-4000-8000-000000000004",
+  );
+  assert.equal(harness.state.activeWorkerCount(accountId, deviceId), 1);
   const cookie = await signIn(harness.origin);
   const response = await fetch(
     `${harness.origin}/panel/devices/${deviceId}/revoke`,
@@ -218,6 +229,31 @@ test("revokes a device for the session account", async (context) => {
   assert.equal(response.headers.get("location"), "/panel");
   assert.equal(revokedAccount, accountId);
   assert.equal(revokedDevice, deviceId);
+  assert.equal(harness.state.activeWorkerCount(accountId, deviceId), 0);
+});
+
+test("keeps workers when panel revocation does not persist", async (context) => {
+  const harness = await startPanel(
+    context,
+    storeWith({ revokeDevice: async () => false }),
+  );
+  harness.state.register(
+    accountId,
+    deviceId,
+    "Test PC",
+    "00000000-0000-4000-8000-000000000004",
+  );
+  const cookie = await signIn(harness.origin);
+  const response = await fetch(
+    `${harness.origin}/panel/devices/${deviceId}/revoke`,
+    {
+      method: "POST",
+      headers: { cookie },
+      redirect: "manual",
+    },
+  );
+  assert.equal(response.status, 303);
+  assert.equal(harness.state.activeWorkerCount(accountId, deviceId), 1);
 });
 
 test("rejects a cross-origin POST", async (context) => {

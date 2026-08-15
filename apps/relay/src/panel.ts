@@ -9,6 +9,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { PanelConfig, RelayConfig } from "./config.js";
 import { subjectIsAllowedIdentity } from "./auth.js";
 import { pairingCodeHash } from "./pairing-code.js";
+import type { RouterState } from "./router-state.js";
 import type { DeviceRecord, PairingRecord, RelayStore } from "./store.js";
 
 const SESSION_COOKIE = "glossa_panel";
@@ -199,6 +200,7 @@ function codeFromBody(request: Request): string | null {
 export function buildPanel(
   config: RelayConfig,
   store: RelayStore,
+  state: RouterState,
   dependencies: PanelDependencies = {},
 ): Router | undefined {
   const panel = config.GLOSSA_PANEL;
@@ -371,7 +373,11 @@ ${deviceRows(devices)}
       sendPage(response, 404, "Unknown device", "<h1>Unknown device</h1><p><a href=\"/panel\">Back to devices</a></p>");
       return;
     }
-    await store.revokeDevice(request.session!.accountId, parsed.data);
+    const revoked = await store.revokeDevice(
+      request.session!.accountId,
+      parsed.data,
+    );
+    if (revoked) state.unregisterDevice(parsed.data);
     response.redirect(303, "/panel");
   });
 

@@ -63,6 +63,13 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
+export class RevokedDeviceRegistrationError extends Error {
+  constructor() {
+    super("device_revoked");
+    this.name = "RevokedDeviceRegistrationError";
+  }
+}
+
 function jobPermissionError(
   worker: ConnectedWorker,
   job: WorkerJob,
@@ -96,6 +103,7 @@ export class RouterState {
   readonly #workerSessions = new Map<string, string>();
   readonly #workerCountsByDevice = new Map<string, number>();
   readonly #deviceSeenPersistedAt = new Map<string, number>();
+  readonly #revokedDeviceIds = new Set<string>();
   readonly #results = new Map<string, ResultWaiter>();
   #lastPrunedAt = 0;
 
@@ -111,6 +119,9 @@ export class RouterState {
     } = { accessProfile: "system" },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
+    if (this.#revokedDeviceIds.has(deviceId)) {
+      throw new RevokedDeviceRegistrationError();
+    }
     const generation = randomUUID();
     const workerToken = `glw_${randomBytes(32).toString("base64url")}`;
     const sessionDigest = workerTokenDigest(workerToken);
@@ -213,6 +224,7 @@ export class RouterState {
   }
 
   unregisterDevice(deviceId: string): void {
+    this.#revokedDeviceIds.add(deviceId);
     for (const worker of [...this.#workers.values()]) {
       if (worker.deviceId === deviceId) {
         this.unregisterWorker(worker.accountId, worker.deviceId, worker.workerId);
