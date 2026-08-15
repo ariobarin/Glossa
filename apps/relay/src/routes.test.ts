@@ -445,6 +445,79 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(state.authenticateWorkerToken(String(current.workerToken)), null);
 });
 
+test("rejects a worker revoked during device authentication", async (context) => {
+  let authenticationStarted!: () => void;
+  let finishAuthentication!: () => void;
+  const started = new Promise<void>((resolve) => {
+    authenticationStarted = resolve;
+  });
+  const finish = new Promise<void>((resolve) => {
+    finishAuthentication = resolve;
+  });
+  const store: RelayStore = {
+    accountIdForSubject: unused,
+    enrollDevice: unused,
+    listDevices: unused,
+    renameDevice: unused,
+    revokeDevice: unused,
+    touchDevice: unused,
+    authenticateDevice: async () => {
+      authenticationStarted();
+      await finish;
+      return device;
+    },
+    createPairing: unused,
+    findPairing: unused,
+    claimPairing: unused,
+    redeemPairing: unused,
+  };
+  const state = new RouterState();
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, state));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const registration = fetch(
+    `http://127.0.0.1:${address.port}/device/register`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Device ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workerId,
+        accessProfile: "workspace",
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+          structuredMutations: true,
+          commandOutputRanges: true,
+        },
+      }),
+    },
+  );
+  await started;
+  state.unregisterDevice(deviceId);
+  finishAuthentication();
+
+  const response = await registration;
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "invalid_device" });
+  assert.equal(state.activeWorkerCount(accountId, deviceId), 0);
+});
+
 test("manages devices with a paired device credential", async (context) => {
   const otherDevice: DeviceRecord = {
     id: "00000000-0000-4000-8000-000000000009",

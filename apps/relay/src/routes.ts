@@ -19,6 +19,7 @@ import { handleMcpRequest } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import {
   CURRENT_WORKER_CAPABILITIES,
+  RevokedDeviceRegistrationError,
   type RouterState,
 } from "./router-state.js";
 import {
@@ -659,21 +660,28 @@ export function buildRoutes(
       return;
     }
     const workerId = parsed.data.workerId;
-    const session = state.register(
-      device.accountId,
-      device.id,
-      device.name,
-      workerId,
-      {
-        accessProfile: parsed.data.accessProfile,
-        ...(parsed.data.workerVersion
-          ? { workerVersion: parsed.data.workerVersion }
-          : {}),
-        ...(parsed.data.workspaceLabel
-          ? { workspaceLabel: parsed.data.workspaceLabel }
-          : {}),
-      },
-    );
+    let session: ReturnType<RouterState["register"]>;
+    try {
+      session = state.register(
+        device.accountId,
+        device.id,
+        device.name,
+        workerId,
+        {
+          accessProfile: parsed.data.accessProfile,
+          ...(parsed.data.workerVersion
+            ? { workerVersion: parsed.data.workerVersion }
+            : {}),
+          ...(parsed.data.workspaceLabel
+            ? { workspaceLabel: parsed.data.workspaceLabel }
+            : {}),
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof RevokedDeviceRegistrationError)) throw error;
+      response.status(401).json({ error: "invalid_device" });
+      return;
+    }
     response.json({
       deviceId: device.id,
       workerId,

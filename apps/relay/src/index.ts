@@ -13,7 +13,7 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(express.json({ limit: MAX_RELAY_JSON_BYTES }));
-const panel = buildPanel(config, store);
+const panel = buildPanel(config, store, state);
 if (panel) app.use("/panel", panel);
 app.use(buildRoutes(config, store, state));
 
