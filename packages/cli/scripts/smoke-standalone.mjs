@@ -29,9 +29,7 @@ assert.equal(help.status, 0, help.stderr);
 assert.match(help.stdout, /Usage:/);
 for (const usage of [
   "glossa [--access <read-only|workspace|system>] [--label <name>] [directory]",
-  "glossa status",
-  "glossa devices revoke <id>",
-  "glossa logout",
+  "glossa unpair",
   "glossa update [--check]",
   "glossa update --policy <notify|auto|off>",
   "glossa update --channel <beta|stable>",
