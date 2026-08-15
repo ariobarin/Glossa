@@ -137,6 +137,16 @@ test("creates a session cookie through the login callback", async (context) => {
   assert.equal(response.status, 200);
   const body = await response.text();
   assert.ok(body.includes('aria-label="Glossa home"'));
+  assert.ok(body.includes("<title>Devices | Glossa</title>"));
+  assert.ok(
+    body.includes(
+      '<link rel="icon" href="https://glossa.sh/glossa-symbol.svg" type="image/svg+xml">',
+    ),
+  );
+  assert.ok(body.includes('<header class="site-header page-width">'));
+  assert.ok(body.includes('aria-label="Site navigation"'));
+  assert.ok(body.includes('<footer class="site-footer">'));
+  assert.ok(body.includes('aria-label="Legal and support"'));
   assert.ok(body.includes("No active devices yet."));
   assert.ok(!body.includes(subject));
 });

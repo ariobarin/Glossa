@@ -39,17 +39,6 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-const brandSymbol = `<svg class="brand-symbol" viewBox="0 0 344.5 332" aria-hidden="true">
-<defs>
-<linearGradient id="purple-top" x1="0" y1="169" x2="310" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#6d43f0"/><stop offset="1" stop-color="#8054ff"/></linearGradient>
-<linearGradient id="purple-left" x1="0" y1="230" x2="61" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="#6840eb"/><stop offset="1" stop-color="#784dfa"/></linearGradient>
-<linearGradient id="coral" x1="167" y1="169" x2="344.5" y2="332" gradientUnits="userSpaceOnUse"><stop stop-color="#ff665f"/><stop offset="1" stop-color="#fb5f59"/></linearGradient>
-</defs>
-<path fill="url(#purple-top)" d="M86 0H310V22C310 68 277 108 242 108H78C48 108 20 127 3 155L20 64C25 28 60 0 86 0Z"/>
-<path fill="url(#purple-left)" d="M61 124V237C28 237 0 217 0 184C0 171 1 162 4 155C15 140 35 127 61 124Z"/>
-<path fill="url(#coral)" d="M31.5 239.5L54 248H245L167 169H248C257 169 266 172 273 179L344.5 248.5V288C344.5 313 328 332 303 332H145C132 332 118 329 107 319Z"/>
-</svg>`;
-
 function page(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -57,24 +46,30 @@ function page(title: string, body: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#111016">
-<title>${escapeHtml(title)} - Glossa</title>
+<title>${escapeHtml(title)} | Glossa</title>
+<link rel="icon" href="https://glossa.sh/glossa-symbol.svg" type="image/svg+xml">
 <style>
-:root{color-scheme:dark;--paper:#111016;--surface:#17151e;--ink:#f4f1fb;--muted:#aaa4b5;--purple:#8054ff;--purple-readable:#ad98ff;--coral:#ff665f;--coral-hover:#ff7b75;--line:#2e2a3b;--line-strong:#5c556e;--radius:12px;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;--sans:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
+:root{color-scheme:dark;--paper:#111016;--surface:#17151e;--ink:#f4f1fb;--muted:#aaa4b5;--purple:#8054ff;--purple-readable:#ad98ff;--coral:#ff665f;--coral-hover:#ff7b75;--line:#2e2a3b;--line-strong:#5c556e;--page-width:1180px;--page-gutter:24px;--page-gutter-mobile:14px;--radius:12px;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;--sans:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
 *{box-sizing:border-box}
-html{min-height:100%;background:var(--paper);scrollbar-color:var(--purple) var(--paper)}
-body{min-height:100vh;margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased}
+html{min-height:100%;background:var(--paper);scrollbar-color:var(--purple) var(--paper);scrollbar-gutter:stable;scrollbar-width:thin}
+body{min-height:100vh;margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
 button,input{font:inherit}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--purple);outline-offset:3px}
-.site-header{display:flex;min-height:68px;align-items:center;border-bottom:1px solid var(--line);background:rgba(17,16,22,.92)}
-.header-inner,.panel-main{width:min(calc(100% - 48px),880px);margin-inline:auto}
+.panel-shell{display:grid;min-height:max(100vh,100dvh);grid-template-rows:auto minmax(0,1fr) auto}
+.page-width{width:min(calc(100% - (2 * var(--page-gutter))),var(--page-width));margin-inline:auto}
+.site-header{position:sticky;z-index:50;top:0;width:100%;display:flex;min-height:68px;align-items:center;justify-content:space-between;padding-inline:max(24px,calc((100% - 1400px) / 2));border-bottom:1px solid var(--line);background:rgba(17,16,22,.92);backdrop-filter:blur(18px)}
 .brand{display:inline-flex;align-items:center;gap:10px;font-size:17px;font-weight:700;letter-spacing:-.025em}
-.brand-symbol{width:24px;height:24px}
+.brand-symbol{width:24px}
+.header-links,.site-footer-inner,.site-footer nav{display:flex;align-items:center}
+.header-links{gap:24px;color:var(--muted);font-size:13px;font-weight:600}
+.header-links a,.site-footer a{text-decoration:underline;text-decoration-color:transparent;text-underline-offset:4px;transition:text-decoration-color 140ms ease}
+.header-links a:hover,.site-footer a:hover{text-decoration-color:currentColor}
 .panel-main{padding:clamp(42px,8vw,76px) 0 80px}
 .heading-row{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:30px}
 h1{margin:0;font-size:clamp(34px,6vw,48px);font-weight:700;letter-spacing:-.045em;line-height:1}
 h1+p{margin-top:22px}
-p{margin:0 0 22px;color:var(--muted)}
+p{margin:0 0 22px;color:var(--muted);line-height:1.5}
 p a{color:var(--purple-readable);text-decoration:underline;text-underline-offset:4px}
 strong{color:var(--ink)}
 .primary-action,.secondary-action,.danger-action{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer}
@@ -101,12 +96,35 @@ input[type=text]{width:100%;min-height:48px;padding:0 15px;border:1px solid var(
 .back-link:hover{color:var(--ink);text-decoration-color:currentColor}
 .confirmation{max-width:580px;padding:26px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
 .confirmation p:last-child{margin-bottom:0}
-@media(max-width:680px){.header-inner,.panel-main{width:min(calc(100% - 28px),880px)}.panel-main{padding-top:38px}.heading-row{align-items:flex-start;flex-direction:column}.device-card{grid-template-columns:1fr auto;gap:18px}.device-meta{grid-column:1/-1;grid-row:2}.pair-form{grid-template-columns:1fr}.pair-form .primary-action{width:100%}}
+.site-footer{border-top:1px solid var(--line);background:#0d0c11;color:var(--muted);font-family:var(--mono);font-size:11px}
+.site-footer-inner{min-height:84px;justify-content:space-between;gap:24px}
+.site-footer nav{gap:18px}
+@media(max-width:680px){.panel-main{padding-top:38px}.heading-row{align-items:flex-start;flex-direction:column}.device-card{grid-template-columns:1fr auto;gap:18px}.device-meta{grid-column:1/-1;grid-row:2}.pair-form{grid-template-columns:1fr}.pair-form .primary-action{width:100%}}
+@media(max-width:600px){.page-width{width:min(calc(100% - (2 * var(--page-gutter-mobile))),var(--page-width))}.site-header{min-height:56px;padding-inline:14px}.header-links{display:none}.site-footer{font-size:9px}.site-footer-inner{min-height:84px;align-items:flex-start;flex-direction:column;justify-content:center;gap:10px}.site-footer nav{gap:10px}}
 </style>
 </head>
-<body>
-<header class="site-header"><div class="header-inner"><a class="brand" href="https://glossa.sh" aria-label="Glossa home">${brandSymbol}<span>Glossa</span></a></div></header>
-<main class="panel-main">${body}</main>
+<body class="panel-shell">
+<header class="site-header page-width">
+<a class="brand" href="https://glossa.sh/" aria-label="Glossa home"><img class="brand-symbol" src="https://glossa.sh/glossa-symbol.svg" alt=""><span>Glossa</span></a>
+<nav class="header-links" aria-label="Site navigation">
+<a href="https://glossa.sh/docs/quickstart">Quickstart</a>
+<a href="https://glossa.sh/security">Security</a>
+<a href="https://glossa.sh/support">Support</a>
+<a href="https://github.com/ariobarin/glossa">GitHub</a>
+</nav>
+</header>
+<main class="panel-main page-width">${body}</main>
+<footer class="site-footer">
+<div class="site-footer-inner page-width">
+<span>Need help? <a href="https://glossa.sh/support">Visit support.</a></span>
+<nav aria-label="Legal and support">
+<a href="https://glossa.sh/security">Security</a>
+<a href="https://glossa.sh/privacy">Privacy</a>
+<a href="https://glossa.sh/terms">Terms</a>
+<a href="https://glossa.sh/support">Support</a>
+</nav>
+</div>
+</footer>
 </body>
 </html>`;
 }
