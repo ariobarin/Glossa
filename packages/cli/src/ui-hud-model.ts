@@ -29,7 +29,7 @@ export interface HudDevice {
   id: string;
   name: string;
   platform: string;
-  lastSeen: string;
+  lastSeenAt: string | null;
   status: string;
 }
 

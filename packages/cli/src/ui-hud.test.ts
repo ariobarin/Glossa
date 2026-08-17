@@ -75,7 +75,7 @@ test("footer keeps navigation left and contextual controls right", () => {
           id: "device-1",
           name: "Laptop",
           platform: "win32-x64",
-          lastSeen: "just now",
+          lastSeenAt: null,
           status: "offline",
         }],
       },
@@ -230,7 +230,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
     id: `device-${index}`,
     name: `Device ${index}`,
     platform: "win32-x64",
-    lastSeen: "just now",
+    lastSeenAt: null,
     status: "offline",
   }));
   const revoked: string[] = [];

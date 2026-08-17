@@ -114,7 +114,7 @@ await runSessionHud({
             id: "demo-device",
             name: deviceName,
             platform: `${process.platform}-${process.arch}`,
-            lastSeen: "just now",
+            lastSeenAt: new Date().toISOString(),
             status: "1 active worker",
           }],
     };
