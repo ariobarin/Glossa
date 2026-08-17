@@ -27,6 +27,25 @@ async function commandFixture(
   return { root: policy.root, commands };
 }
 
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processIsAlive(pid)) return true;
+    await delay(25);
+  }
+  return !processIsAlive(pid);
+}
+
 test("normalizes unresolved direct commands as spawn failures", async (context) => {
   const { commands } = await commandFixture(context);
   await assert.rejects(
@@ -210,6 +229,40 @@ test("terminates a shell process after its timeout", async (context) => {
 
   assert.equal(completed.status, "timed_out");
 });
+
+test(
+  "times out after a Windows shell exits while a descendant keeps its pipes open",
+  { skip: process.platform !== "win32" },
+  async (context) => {
+    const { commands } = await commandFixture(context);
+    const started = await commands.start({
+      shellCommand:
+        `$process = Start-Process -FilePath "$env:ComSpec" ` +
+        `-ArgumentList '/d','/s','/c','ping -n 30 127.0.0.1' ` +
+        `-NoNewWindow -PassThru; Write-Output "PID=$($process.Id)"`,
+      timeoutMs: 100,
+      waitMs: 0,
+    });
+    const completed = await commands.get(started.commandId, 5_000);
+
+    assert.equal(completed.status, "timed_out");
+    const match = /PID=(\d+)/.exec(completed.stdout ?? "");
+    assert.ok(match);
+    const descendantPid = Number(match[1]);
+    const descendantExited = await waitForProcessExit(descendantPid);
+    try {
+      assert.equal(descendantExited, true);
+    } finally {
+      if (!descendantExited) {
+        try {
+          process.kill(descendantPid, "SIGKILL");
+        } catch {
+          // The descendant may have exited between the check and cleanup.
+        }
+      }
+    }
+  },
+);
 
 test("truncates command output at a complete UTF-8 character", async (context) => {
   const { commands } = await commandFixture(context);

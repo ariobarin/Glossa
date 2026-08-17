@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
@@ -83,6 +83,18 @@ const STREAM_TAIL_BYTES = MAX_COMMAND_OUTPUT_BYTES - STREAM_HEAD_BYTES;
 const RESTRICTED_SCAN_TAIL_BYTES = 1024;
 const COMMAND_RECORD_RETENTION_MS = 5 * 60 * 1000;
 const MAX_RETAINED_COMMAND_RECORDS = 8;
+const WINDOWS_DESCENDANT_SNAPSHOT_DELAY_MS = 25;
+const WINDOWS_PROCESS_QUERY_TIMEOUT_MS = 3_000;
+const WINDOWS_PROCESS_QUERY_MAX_BYTES = 256 * 1024;
+
+interface WindowsProcessIdentity {
+  pid: number;
+  createdAtFileTime: string;
+}
+
+interface WindowsProcessEntry extends WindowsProcessIdentity {
+  parentPid: number;
+}
 
 interface CommandRecord {
   id: string;
@@ -102,6 +114,7 @@ interface CommandRecord {
   completion: Promise<void>;
   complete: () => void;
   requestedTerminal?: "canceled" | "timed_out";
+  windowsDescendants?: Promise<WindowsProcessIdentity[]>;
   timeout?: NodeJS.Timeout;
 }
 
@@ -139,7 +152,7 @@ function markRestrictedData(record: CommandRecord): void {
   record.stderrScanTail = Buffer.alloc(0);
   if (record.status === "running") {
     record.requestedTerminal = "canceled";
-    void terminateProcessTree(record.child).catch(() => undefined);
+    void terminateProcessTree(record).catch(() => undefined);
   }
   markChanged(record);
 }
@@ -426,33 +439,134 @@ function shellInvocation(command: string): { file: string; args: string[] } {
   return { file: process.env.SHELL ?? "/bin/sh", args: ["-lc", command] };
 }
 
-async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (!child.pid || child.exitCode !== null) return;
-  if (process.platform === "win32") {
-    await new Promise<void>((resolve) => {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
-        stdio: "ignore",
+const WINDOWS_PROCESS_TABLE_SCRIPT =
+  'Get-CimInstance Win32_Process | Where-Object { $_.CreationDate } | ForEach-Object { "{0},{1},{2}" -f $_.ProcessId,$_.ParentProcessId,$_.CreationDate.ToFileTimeUtc() }';
+
+async function readWindowsProcessTable(): Promise<WindowsProcessEntry[]> {
+  if (process.platform !== "win32") return [];
+  const stdout = await new Promise<string>((resolve) => {
+    execFile(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_PROCESS_TABLE_SCRIPT],
+      {
+        encoding: "utf8",
+        maxBuffer: WINDOWS_PROCESS_QUERY_MAX_BYTES,
+        timeout: WINDOWS_PROCESS_QUERY_TIMEOUT_MS,
         windowsHide: true,
-      });
-      killer.once("error", () => resolve());
-      killer.once("close", () => resolve());
+      },
+      (error, output) => resolve(error ? "" : output),
+    );
+  });
+  const entries: WindowsProcessEntry[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const [pidValue, parentPidValue, createdAtFileTime] = line.trim().split(",");
+    const pid = Number(pidValue);
+    const parentPid = Number(parentPidValue);
+    if (
+      !Number.isInteger(pid) ||
+      pid <= 0 ||
+      !Number.isInteger(parentPid) ||
+      parentPid < 0 ||
+      !createdAtFileTime ||
+      !/^\d+$/.test(createdAtFileTime)
+    ) {
+      continue;
+    }
+    entries.push({ pid, parentPid, createdAtFileTime });
+  }
+  return entries;
+}
+
+function windowsDescendants(
+  rootPid: number,
+  entries: WindowsProcessEntry[],
+): WindowsProcessEntry[] {
+  const byParent = new Map<number, WindowsProcessEntry[]>();
+  for (const entry of entries) {
+    const children = byParent.get(entry.parentPid) ?? [];
+    children.push(entry);
+    byParent.set(entry.parentPid, children);
+  }
+  const descendants: WindowsProcessEntry[] = [];
+  const pending = [rootPid];
+  const seen = new Set<number>([rootPid]);
+  while (pending.length > 0) {
+    const parentPid = pending.shift()!;
+    for (const child of byParent.get(parentPid) ?? []) {
+      if (seen.has(child.pid)) continue;
+      seen.add(child.pid);
+      descendants.push(child);
+      pending.push(child.pid);
+    }
+  }
+  return descendants;
+}
+
+async function taskkill(pid: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
     });
+    killer.once("error", () => resolve());
+    killer.once("close", () => resolve());
+  });
+}
+
+async function terminateWindowsProcessTree(record: CommandRecord): Promise<void> {
+  const child = record.child;
+  if (!child.pid) return;
+  let tracked = record.windowsDescendants
+    ? await record.windowsDescendants
+    : [];
+  const current = await readWindowsProcessTable();
+  if (tracked.length === 0 && record.windowsDescendants) {
+    tracked = await record.windowsDescendants;
+  }
+  const currentByPid = new Map(current.map((entry) => [entry.pid, entry]));
+  const targets = new Map<number, WindowsProcessEntry>();
+
+  if (child.exitCode === null) {
+    const root = currentByPid.get(child.pid);
+    if (root) targets.set(root.pid, root);
+  }
+  for (const identity of tracked) {
+    const entry = currentByPid.get(identity.pid);
+    if (entry?.createdAtFileTime === identity.createdAtFileTime) {
+      targets.set(entry.pid, entry);
+    }
+  }
+  for (const target of [...targets.values()]) {
+    for (const descendant of windowsDescendants(target.pid, current)) {
+      targets.set(descendant.pid, descendant);
+    }
+  }
+  for (const target of targets.values()) await taskkill(target.pid);
+  child.stdout.destroy();
+  child.stderr.destroy();
+}
+
+async function terminateProcessTree(record: CommandRecord): Promise<void> {
+  const child = record.child;
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    await terminateWindowsProcessTree(record);
     return;
   }
 
   try {
     process.kill(-child.pid, "SIGTERM");
   } catch {
-    child.kill("SIGTERM");
+    if (child.exitCode === null) child.kill("SIGTERM");
   }
   await delay(2_000);
-  if (child.exitCode === null) {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      child.kill("SIGKILL");
-    }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    if (child.exitCode === null) child.kill("SIGKILL");
   }
+  child.stdout.destroy();
+  child.stderr.destroy();
 }
 
 export class CommandService {
@@ -568,7 +682,7 @@ export class CommandService {
     record.timeout = setTimeout(() => {
       if (record.status !== "running") return;
       record.requestedTerminal = "timed_out";
-      void terminateProcessTree(child);
+      void terminateProcessTree(record);
     }, timeoutMs);
     record.timeout.unref();
     this.#pruneRetainedCommands();
@@ -580,6 +694,16 @@ export class CommandService {
     });
     child.stderr.on("data", (chunk: Buffer) => {
       recordCommandOutput(record, "stderr", chunk);
+    });
+    child.once("exit", () => {
+      if (process.platform !== "win32" || !child.pid) return;
+      const rootPid = child.pid;
+      record.windowsDescendants = delay(WINDOWS_DESCENDANT_SNAPSHOT_DELAY_MS)
+        .then(async () => {
+          if (record.status !== "running") return [];
+          return windowsDescendants(rootPid, await readWindowsProcessTable());
+        })
+        .catch(() => []);
     });
     child.once("error", (error) => {
       if (record.status !== "running") return;
@@ -733,7 +857,7 @@ export class CommandService {
     if (!record) throw new WorkerError("command_not_found", "The command was not found.");
     if (record.status !== "running") return this.snapshot(record);
     record.requestedTerminal = "canceled";
-    await terminateProcessTree(record.child);
+    await terminateProcessTree(record);
     await record.completion;
     return this.snapshot(record);
   }
@@ -743,7 +867,7 @@ export class CommandService {
     const record = this.#commands.get(this.#activeCommandId);
     if (!record || record.status !== "running") return;
     record.requestedTerminal = "canceled";
-    await terminateProcessTree(record.child);
+    await terminateProcessTree(record);
     await record.completion;
   }
 
