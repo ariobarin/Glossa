@@ -77,6 +77,14 @@ glossa --access system --label openai-review .review-workspace
 - [ ] The required demo recording URL is populated and demonstrates the main installed-plugin workflows across supported ChatGPT and Codex surfaces.
 - [ ] The exact five-positive/three-negative portal cases from `docs/app-submission-packet.md` are entered into the portal.
 
+## Metadata quality gates
+
+- [ ] `npm run review:metadata:check` passes and `review/metadata-golden.json` still contains direct, indirect, negative, follow-up, and boundary coverage.
+- [ ] The complete golden corpus is replayed after the final metadata deploy/Refresh or Scan Tools, with selected tools, material arguments, confirmation behavior, and pass/fail results recorded.
+- [ ] Negative prompts have no unexpected Glossa activation before optimizing for marginal positive recall.
+- [ ] The managed production relay has `GLOSSA_TIMING_LOGS=1` or equivalent privacy-safe tool-call metrics enabled so operation counts/error rates can be reviewed without logging user content or identifiers.
+- [ ] A weekly post-launch review owner is assigned for tool-call analytics, user feedback, and periodic golden-prompt replay after metadata or schema changes.
+
 ## Plugin package and product-surface gates
 
 - [ ] The production MCP connection is registered in Developer Mode and its generated `plugin_asdk_app...` technical ID is recorded.
@@ -108,4 +116,4 @@ Do not mark this gate complete based on metadata, user attestations, confirmatio
 
 ## GO rule
 
-**GO** only when every source/deployment, reviewer-environment, portal, plugin-package/product-surface, ChatGPT/Codex-behavior, and policy gate above is checked on the exact deployed submission version. Until then, use the marketplace draft for integration and reviewer testing but do not make the final public-review submission.
+**GO** only when every source/deployment, reviewer-environment, portal, metadata-quality, plugin-package/product-surface, ChatGPT/Codex-behavior, and policy gate above is checked on the exact deployed submission version. Until then, use the marketplace draft for integration and reviewer testing but do not make the final public-review submission.
