@@ -288,6 +288,7 @@ await check("OAuth protected resource metadata", async () => {
   assert.ok(metadata.authorization_servers.length >= 1);
   assert.deepEqual(metadata.scopes_supported, ["glossa:access"]);
   assert.deepEqual(metadata.bearer_methods_supported, ["header"]);
+  assert.equal(metadata.resource_documentation, "https://glossa.sh/security");
 });
 
 await check("OAuth authorization server metadata", async () => {

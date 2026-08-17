@@ -41,6 +41,35 @@ const unusedStore: RelayStore = {
   redeemPairing: unused,
 };
 
+test("publishes protected-resource documentation for MCP OAuth clients", async (context) => {
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(buildRoutes(config, unusedStore, new RouterState()));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/.well-known/oauth-protected-resource`,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    resource: "https://relay.glossa.test/",
+    authorization_servers: ["https://identity.glossa.test/"],
+    scopes_supported: ["glossa:access"],
+    bearer_methods_supported: ["header"],
+    resource_documentation: "https://glossa.sh/security",
+  });
+});
+
 test("serves the exact OpenAI apps challenge only when configured", async (context) => {
   const challenge = "openai-plugin-domain-challenge-test";
   const config = loadConfig({
