@@ -327,6 +327,23 @@ await check("OAuth authorization server metadata", async () => {
       ),
     "authorization server must advertise a ChatGPT-compatible token endpoint auth method",
   );
+  assert.ok(
+    Array.isArray(metadata.scopes_supported) &&
+      metadata.scopes_supported.includes("openid") &&
+      metadata.scopes_supported.includes("email"),
+    "authorization server must advertise openid and email for enterprise workspace domain restrictions",
+  );
+  assert.equal(
+    new URL(metadata.userinfo_endpoint).protocol,
+    "https:",
+    "authorization server must publish an HTTPS UserInfo endpoint",
+  );
+  assert.ok(
+    Array.isArray(metadata.claims_supported) &&
+      metadata.claims_supported.includes("email") &&
+      metadata.claims_supported.includes("email_verified"),
+    "authorization server must advertise email and email_verified claims",
+  );
 });
 
 await check("unauthenticated MCP challenge", async () => {
