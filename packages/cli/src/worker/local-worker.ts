@@ -23,6 +23,7 @@ function restrictedDataError(): WorkerError {
 function jobInputContainsRestrictedData(job: WorkerJob): boolean {
   switch (job.type) {
     case "read_file":
+    case "view_image":
       return containsRestrictedAuthenticationData(job.path);
     case "list_files":
       return containsRestrictedAuthenticationData({
@@ -71,6 +72,8 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
 }
 
 function resultMayContainRestrictedData(job: WorkerJob): boolean {
+  // view_image is intentionally absent: its base64 payload represents opaque media,
+  // not text that the authentication-secret detector can meaningfully classify.
   return (
     job.type === "read_file" ||
     job.type === "list_files" ||
@@ -140,6 +143,9 @@ export class LocalWorker {
       switch (job.type) {
         case "read_file":
           value = await this.files.readText(job.path);
+          break;
+        case "view_image":
+          value = await this.files.readImage(job.path);
           break;
         case "list_files":
           value = await this.files.listFiles({

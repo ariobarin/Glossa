@@ -17,6 +17,11 @@ async function temporaryDirectory(context: test.TestContext): Promise<string> {
 test("enforces read-only access inside the local worker", async (context) => {
   const root = await temporaryDirectory(context);
   await writeFile(path.join(root, "note.txt"), "original", "utf8");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZfKkAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await writeFile(path.join(root, "preview.png"), png);
   const worker = await LocalWorker.create(root, "read-only");
   context.after(async () => await worker.shutdown());
 
@@ -27,6 +32,19 @@ test("enforces read-only access inside the local worker", async (context) => {
   });
   assert.equal(readResult.ok, true);
   assert.equal((readResult.value as { content?: unknown }).content, "original");
+
+  const imageResult = await worker.handle({
+    type: "view_image",
+    requestId: "00000000-0000-4000-8000-000000000044",
+    path: "preview.png",
+  });
+  assert.equal(imageResult.ok, true);
+  assert.deepEqual(imageResult.value, {
+    data: png.toString("base64"),
+    mimeType: "image/png",
+    sha256: "35fe4b5574eb5f6e274585b202843c030a25bba888a52236d0cdd1ae7dfea7f9",
+    bytes: png.byteLength,
+  });
 
   const writeResult = await worker.handle({
     type: "write_file",
@@ -160,6 +178,13 @@ test("blocks recognizable authentication data before it leaves the worker", asyn
   });
   assert.equal(restrictedPathResult.ok, false);
   assert.equal(restrictedPathResult.error?.code, "restricted_data_blocked");
+  const restrictedImagePathResult = await worker.handle({
+    type: "view_image",
+    requestId: "00000000-0000-4000-8000-000000000045",
+    path: key,
+  });
+  assert.equal(restrictedImagePathResult.ok, false);
+  assert.equal(restrictedImagePathResult.error?.code, "restricted_data_blocked");
 
   const listResult = await worker.handle({
     type: "list_files",

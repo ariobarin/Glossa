@@ -134,12 +134,13 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "3.0.0", "MCP public contract must be 3.0.0");
+assert.equal(contractVersion, "3.1.0", "MCP public contract must be 3.1.0");
 
 const expectedTools = [
   "list_workspaces",
   "get_logout_instructions",
   "read_file",
+  "view_image",
   "list_files",
   "search_text",
   "read_file_range",
@@ -157,6 +158,7 @@ const expectedToolAnnotations = {
   list_workspaces: [true, false, true, false],
   get_logout_instructions: [true, false, true, false],
   read_file: [true, false, true, false],
+  view_image: [true, false, true, false],
   list_files: [true, false, true, false],
   search_text: [true, false, true, false],
   read_file_range: [true, false, true, false],
@@ -270,12 +272,12 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `3.0.0`",
+  "MCP tool contract: `3.1.0`",
   "Portal-ready MCP values",
   "MCP Server URL type: Universal",
   "global data residency",
   "Recommended portal test subset",
-  "Eleven positive reviewer tests",
+  "Twelve positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",
   "dedicated reviewer account",
@@ -296,8 +298,8 @@ await requiredText("docs/submission-readiness.md", [
   "only when every source/deployment",
 ]);
 assert.ok(
-  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 11,
-  "submission packet must retain at least eleven explicit positive prompt cases",
+  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 12,
+  "submission packet must retain at least twelve explicit positive prompt cases",
 );
 assert.ok(
   (submissionPacket.match(/^\| \d+ \|/gm) ?? []).length >= 8,

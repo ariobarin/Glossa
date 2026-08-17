@@ -19,6 +19,7 @@ import { performance } from "node:perf_hooks";
 import { StringDecoder } from "node:string_decoder";
 import {
   MAX_EDIT_DIFF_BYTES,
+  MAX_IMAGE_BYTES,
   MAX_LIST_FILES_RESULTS,
   MAX_READ_FILE_RANGE_BYTES,
   MAX_READ_FILE_RANGE_LINES,
@@ -32,6 +33,46 @@ import { samePath, type PathPolicy } from "./path-policy.js";
 
 function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+export type ImageMimeType = "image/png" | "image/jpeg" | "image/webp";
+
+function imageMimeType(content: Uint8Array): ImageMimeType | undefined {
+  if (
+    content.byteLength >= 8 &&
+    content[0] === 0x89 &&
+    content[1] === 0x50 &&
+    content[2] === 0x4e &&
+    content[3] === 0x47 &&
+    content[4] === 0x0d &&
+    content[5] === 0x0a &&
+    content[6] === 0x1a &&
+    content[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    content.byteLength >= 3 &&
+    content[0] === 0xff &&
+    content[1] === 0xd8 &&
+    content[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+  if (
+    content.byteLength >= 12 &&
+    content[0] === 0x52 &&
+    content[1] === 0x49 &&
+    content[2] === 0x46 &&
+    content[3] === 0x46 &&
+    content[8] === 0x57 &&
+    content[9] === 0x45 &&
+    content[10] === 0x42 &&
+    content[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return undefined;
 }
 
 function isPathWithin(root: string, candidate: string): boolean {
@@ -95,6 +136,13 @@ async function requireRevision(target: string, expectedSha256: string): Promise<
 
 export interface ReadTextResult {
   content: string;
+  sha256: string;
+  bytes: number;
+}
+
+export interface ReadImageResult {
+  data: string;
+  mimeType: ImageMimeType;
   sha256: string;
   bytes: number;
 }
@@ -679,6 +727,44 @@ export class FileService {
   async readText(relativePath: string): Promise<ReadTextResult> {
     const target = await this.policy.resolveExisting(relativePath);
     return await this.#readResolvedText(target);
+  }
+
+  async readImage(relativePath: string): Promise<ReadImageResult> {
+    const target = await this.policy.resolveExisting(relativePath);
+    const targetStat = await stat(target);
+    if (!targetStat.isFile()) {
+      throw new WorkerError("not_file", "The requested path is not a file.");
+    }
+    if (targetStat.size > MAX_IMAGE_BYTES) {
+      throw new WorkerError(
+        "image_too_large",
+        "The image exceeds the 4 MiB image limit.",
+      );
+    }
+    const content = await this.#readFileBytes(
+      target,
+      MAX_IMAGE_BYTES,
+      targetStat.size,
+    );
+    if (content.byteLength > MAX_IMAGE_BYTES) {
+      throw new WorkerError(
+        "image_too_large",
+        "The image exceeds the 4 MiB image limit.",
+      );
+    }
+    const mimeType = imageMimeType(content);
+    if (!mimeType) {
+      throw new WorkerError(
+        "unsupported_image",
+        "Only PNG, JPEG, and WebP images are supported.",
+      );
+    }
+    return {
+      data: content.toString("base64"),
+      mimeType,
+      sha256: sha256(content),
+      bytes: content.byteLength,
+    };
   }
 
   async listFiles(options: {

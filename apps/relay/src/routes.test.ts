@@ -348,6 +348,7 @@ test("uses worker credentials without repeating device authentication", async (c
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      imageReads: true,
       structuredMutations: true,
       commandOutputRanges: true,
     },
@@ -369,6 +370,7 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    imageReads: true,
     structuredMutations: true,
     commandOutputRanges: true,
   });
@@ -381,6 +383,7 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    imageReads: true,
     structuredMutations: true,
     commandOutputRanges: true,
   });
@@ -565,6 +568,7 @@ test("rejects a worker revoked during device authentication", async (context) =>
           commandProgress: true,
           concurrentJobs: true,
           structuredReads: true,
+          imageReads: true,
           structuredMutations: true,
           commandOutputRanges: true,
         },

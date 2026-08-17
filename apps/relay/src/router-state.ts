@@ -15,6 +15,7 @@ export const CURRENT_WORKER_CAPABILITIES = {
   commandProgress: true,
   concurrentJobs: true,
   structuredReads: true,
+  imageReads: true,
   structuredMutations: true,
   commandOutputRanges: true,
 } as const;

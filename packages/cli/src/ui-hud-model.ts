@@ -210,6 +210,7 @@ function assertNever(_value: never): never {
 function summarizeJob(job: WorkerJob): HudActivitySummary {
   switch (job.type) {
     case "read_file":
+    case "view_image":
       return pathSummary(job.path);
     case "list_files":
       return pathSummary(workspacePath(job.path), [

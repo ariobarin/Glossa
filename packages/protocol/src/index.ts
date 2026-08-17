@@ -9,6 +9,7 @@ export {
 } from "./restricted-data.js";
 
 export const MAX_TEXT_BYTES = 1024 * 1024;
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const MAX_EDIT_DIFF_BYTES = 128 * 1024;
 export const MAX_EDIT_OPERATIONS = 100;
 export const MAX_COMMAND_OUTPUT_BYTES = 12 * 1024;
@@ -97,6 +98,15 @@ export const readFileRequestSchema = z.object({
 
 export const readFileJobSchema = readFileRequestSchema.extend({
   type: z.literal("read_file"),
+  requestId: z.string().uuid(),
+});
+
+export const viewImageRequestSchema = z.object({
+  path: relativePathSchema,
+}).strict();
+
+export const viewImageJobSchema = viewImageRequestSchema.extend({
+  type: z.literal("view_image"),
   requestId: z.string().uuid(),
 });
 
@@ -468,6 +478,7 @@ export const cancelCommandJobSchema = cancelCommandRequestSchema.extend({
 
 export const workerJobSchema = z.discriminatedUnion("type", [
   readFileJobSchema,
+  viewImageJobSchema,
   listFilesJobSchema,
   searchTextJobSchema,
   readFileRangeJobSchema,

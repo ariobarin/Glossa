@@ -17,6 +17,7 @@ const WORKER_CAPABILITIES = {
   commandProgress: true,
   concurrentJobs: true,
   structuredReads: true,
+  imageReads: true,
   structuredMutations: true,
   commandOutputRanges: true,
 } as const;
@@ -112,6 +113,7 @@ function jobLane(job: WorkerJob): JobLane {
     case "cancel_command":
       return "cancel";
     case "read_file":
+    case "view_image":
     case "list_files":
     case "search_text":
     case "read_file_range":
@@ -137,7 +139,13 @@ function acceptedJobTypes(
   }
   if (counts.cancel < 1) accepted.push("cancel_command");
   if (counts.read < 2) {
-    accepted.push("read_file", "list_files", "search_text", "read_file_range");
+    accepted.push(
+      "read_file",
+      "view_image",
+      "list_files",
+      "search_text",
+      "read_file_range",
+    );
   }
   if (counts.mutation < 1) {
     accepted.push(

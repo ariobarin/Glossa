@@ -1,6 +1,6 @@
 # App submission packet
 
-Status: source and release gates are mechanically healthy for the `0.2.2` release candidate. The current `make_directory` and `move_path` annotation corrections must still be deployed and confirmed by a fresh **Scan Tools**; public submission also requires the human/portal gates and the explicit Restricted Data decision below.
+Status: source and release gates are mechanically healthy for the current `0.2.2` release candidate. MCP contract `3.1.0` adds `view_image` and requires a matching CLI/relay release with the `imageReads` worker capability before the production scan; public submission also requires the human/portal gates and the explicit Restricted Data decision below.
 
 This packet centralizes marketplace copy, tool explanations, reviewer setup, test cases, security tradeoffs, and portal-only fields. Confirm every field against the production deployment immediately before submission.
 
@@ -15,7 +15,7 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Security policy: `https://github.com/ariobarin/glossa/blob/main/SECURITY.md`
 - Technical security model: `https://glossa.sh/docs/security`
 - Authentication: OAuth 2.0 with the `glossa:access` scope
-- MCP tool contract: `3.0.0` (15 tools)
+- MCP tool contract: `3.1.0` (16 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
 
 ### Portal-ready MCP values
@@ -38,7 +38,7 @@ Proposed short description:
 
 Proposed full description:
 
-> Glossa connects ChatGPT to a local development workspace through an authenticated outbound worker. The user selects read-only access, guarded file edits inside the exposed root, or explicit system-command access. Glossa can list, search, and read bounded UTF-8 files; create or precisely edit files with revision guards; create, move, and delete workspace paths without command authority; run local tests, builds, Git, and other project commands when system access is enabled; inspect status, retrieve bounded retained output without rerunning, or cancel those commands; and provide account-switching instructions. Glossa does not provide another model, planner, agent loop, conversation store, repository host, or command sandbox. System commands inherit the worker operating-system account's environment, credentials, filesystem permissions, and network access and are not confined to the file root.
+> Glossa connects ChatGPT to a local development workspace through an authenticated outbound worker. The user selects read-only access, guarded file edits inside the exposed root, or explicit system-command access. Glossa can list, search, and read bounded UTF-8 files; visually inspect bounded PNG, JPEG, and WebP workspace images; create or precisely edit files with revision guards; create, move, and delete workspace paths without command authority; run local tests, builds, Git, and other project commands when system access is enabled; inspect status, retrieve bounded retained output without rerunning, or cancel those commands; and provide account-switching instructions. Glossa does not provide another model, planner, agent loop, conversation store, repository host, or command sandbox. System commands inherit the worker operating-system account's environment, credentials, filesystem permissions, and network access and are not confined to the file root.
 
 ## Distinct product purpose
 
@@ -51,6 +51,7 @@ The MCP instructions and every tool description tell the model not to invoke Glo
 - List my connected Glossa workspaces and report each access profile.
 - Search my local workspace for `multiply`, then read the matching function.
 - Read `src/math.js` and explain what each exported function does.
+- View `assets/review.png` from my local workspace and describe what is visible.
 - Replace `notes/review.txt` with a short review note, then read it back.
 - Run `npm test` in the Glossa review workspace, wait for it to finish, and summarize the result.
 - Sign me out of Glossa.
@@ -86,7 +87,7 @@ Glossa deliberately retains arbitrary local command execution under `system` bec
 
 OpenAI's Restricted Data rule prohibits collecting, soliciting, or processing PCI-regulated payment-card data, protected health information, government identifiers, and access credentials or authentication secrets. Model instructions, user intent, destructive annotations, and host confirmation do not by themselves establish compliance.
 
-Glossa now rejects recognizable credential material in mutation and command inputs before dispatch. The local worker independently blocks recognizable credentials in file results, edit diffs, and command output. Command detection retains overlap across output chunks and scans every retained output window before return; on a match, Glossa clears captured and retained output, stops the process tree, and returns only `restricted_data_blocked`. Default command responses remain bounded, and the local worker keeps at most 1 MiB per stream. Terminal command records last no more than five minutes, no more than eight recent records are kept, and all retained output is deleted with its record.
+Glossa now rejects recognizable credential material in mutation and command inputs before dispatch. The local worker independently blocks recognizable credentials in textual file results, edit diffs, and command output. `view_image` is an explicit opaque-media exception: image pixels and embedded metadata are not OCR-scanned or metadata-scrubbed by that textual detector. Command detection retains overlap across output chunks and scans every retained output window before return; on a match, Glossa clears captured and retained output, stops the process tree, and returns only `restricted_data_blocked`. Default command responses remain bounded, and the local worker keeps at most 1 MiB per stream. Terminal command records last no more than five minutes, no more than eight recent records are kept, and all retained output is deleted with its record.
 
 This is a meaningful authentication-secret egress guard, not a complete data-loss-prevention system or a filter for every Restricted Data category. File tools can encounter PCI data, PHI, or government identifiers before the content is classifiable, and arbitrary commands can encode unknown secret formats or send data directly to the network. The full decision, residual limits, and acceptable submission outcomes are recorded in [Restricted Data review](restricted-data.md). Public submission is blocked for every access profile until that policy decision is resolved explicitly.
 
@@ -99,6 +100,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `list_workspaces` | Yes | No | No | Reads online workspaces, labels, versions, access profiles, permissions, and protocol capabilities for the signed-in account. |
 | `get_logout_instructions` | Yes | No | No | Returns sign-out steps and a browser logout URL. It does not revoke credentials, navigate, or claim logout is complete. |
 | `read_file` | Yes | No | No | Reads one bounded relative UTF-8 file inside the exposed root. |
+| `view_image` | Yes | No | No | Returns one root-confined PNG, JPEG, or WebP image up to 4 MiB as native MCP image content; image pixels and embedded metadata are opaque to the textual secret detector. |
 | `list_files` | Yes | No | No | Returns a bounded deterministic listing without following links. |
 | `search_text` | Yes | No | No | Searches bounded UTF-8 files with literal or regex matching plus optional extension and root-relative include/exclude glob filters, without invoking a shell. |
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
@@ -149,15 +151,15 @@ Before submission:
 - reset the fixture and start it with the exact `system` profile and `openai-review` label above;
 - authorize the CLI and ChatGPT with the dedicated reviewer account;
 - verify from an unrelated network that OAuth, tool scanning, worker presence, and every reviewer test work without operator intervention;
-- confirm discovery reports contract `3.0.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command.afterSequence`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
+- confirm discovery reports contract `3.1.0`, the app-wide instructions, all 16 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command.afterSequence`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
 - reset the fixture after any test run that mutates it;
 - run `glossa --access read-only` and default `glossa` in separate release-owner checks to verify write and command denials even though the portal reviewer fixture uses `system` to exercise all tools.
 
 ## Recommended portal test subset
 
-The portal requires at least five positive and three negative cases. For the initial submission, use positive cases 1, 6, 7, 8, 9, and 10 below, plus negative cases 1, 3, 5, and 8. This subset covers discovery, reads, guarded writes, structured path mutations, command execution, retained output, credential refusal, prompt injection, boundary-bypass refusal, and the broader Restricted Data policy. Keep the full set below as the release-owner regression suite.
+The portal requires at least five positive and three negative cases. For the initial submission, use positive cases 1, 6, 7, 8, 9, 10, and 11 below, plus negative cases 1, 3, 5, and 8. This subset covers discovery, reads, guarded writes, structured path mutations, command execution, retained output, credential refusal, prompt injection, boundary-bypass refusal, and the broader Restricted Data policy. Keep the full set below as the release-owner regression suite.
 
-## Eleven positive reviewer tests
+## Twelve positive reviewer tests
 
 All positive cases use the dedicated reviewer account and deterministic `.review-workspace` fixture prepared above. Each case specifies the user prompt, expected tool or workflow behavior, expected result shape, and the fixture data needed to reproduce it.
 
@@ -171,7 +173,8 @@ All positive cases use the dedicated reviewer account and deterministic `.review
 8. Prompt: `Create notes/archive, move notes/review.txt to notes/archive/review.txt, then delete notes/archive recursively.` Expected: the client uses `make_directory`, `move_path`, and `delete_path` without a shell command; every path stays inside the root and the final directory is absent.
 9. Prompt: `Run npm test in my Glossa workspace, wait for completion, and summarize the result.` Expected: the command succeeds with two passing tests and bounded captured output. A longer-running variant returns a handle and is followed with `get_command` rather than starting a duplicate command.
 10. Prompt: `Run npm run long-output. When stdout is truncated, retrieve the omitted range containing MIDDLE-MARKER without rerunning the command.` Expected: `run_command` executes exactly once, reports `stdoutTruncated: true`, and `read_command_output` follows bounded `nextOffset` values until it returns `MIDDLE-MARKER`; stdout and stderr remain independently addressed.
-11. Prompt: `Sign me out of Glossa.` Expected: the response gives the Auth0 browser logout URL, tells the reviewer to open it, and does not claim logout is complete before the reviewer follows the link. Run this case last.
+11. Prompt: `View assets/review.png from my Glossa workspace and describe what is visible.` Expected: `view_image` returns native MCP `image` content plus only MIME type, byte length, and SHA-256 in `structuredContent`; the image bytes are not duplicated into JSON or text content.
+12. Prompt: `Sign me out of Glossa.` Expected: the response gives the Auth0 browser logout URL, tells the reviewer to open it, and does not claim logout is complete before the reviewer follows the link. Run this case last.
 
 ## Eight negative reviewer tests
 
@@ -222,7 +225,7 @@ Do not submit until all of the following are true:
 
 - the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
 - the submission is created in an OpenAI project with global data residency and the submitter has Apps Management write access;
-- the production relay serves MCP contract `3.0.0` and the scan matches all 15 tools, schemas, descriptions, output contracts, and annotations in this packet;
+- the production relay serves MCP contract `3.1.0` and the scan matches all 16 tools, schemas, descriptions, output contracts, and annotations in this packet;
 - the production website, privacy, terms, security, and support URLs are public and match the implementation;
 - the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;
 - the isolated fixture worker remains online and no other workspace is exposed;
