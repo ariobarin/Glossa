@@ -46,6 +46,8 @@ function Text({ color, ...props }: HudTextProps): React.ReactNode {
 }
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
+const MIN_TERMINAL_COLUMNS = 24;
+const MIN_TERMINAL_ROWS = 6;
 const ACTIVITY_STATUS_COLUMN_WIDTH = 2;
 const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
 const ACTIVITY_AGE_COLUMN_WIDTH = 10;
@@ -99,6 +101,10 @@ class HudStore {
 function terminalTitleSequence(label: string | undefined): string {
   const safeLabel = label?.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
   return `\u001b]0;${safeLabel ? `Glossa | ${safeLabel}` : "Glossa"}\u0007`;
+}
+
+export function shouldUseHudColor(noColor: string | undefined): boolean {
+  return noColor === undefined;
 }
 
 function connectionLabel(state: HudState): string {
@@ -278,8 +284,8 @@ function promptText(
 
 function screenMetrics(state: HudState, columns: number, rows: number): HudScreenMetrics {
   const margin = columns >= 24 ? 2 : 0;
-  const usable = Math.max(8, columns - margin * 2);
-  const terminalRows = Math.max(6, rows);
+  const usable = Math.max(1, columns - margin * 2);
+  const terminalRows = Math.max(1, rows);
   const footerRows = buildFooterRows(state, usable);
   const prompt = promptText(state);
   const overlayRows = prompt || state.notice
@@ -872,6 +878,25 @@ function Footer({ rows, usable, color }: {
   );
 }
 
+function TinyTerminal({ columns, rows, color }: {
+  columns: number;
+  rows: number;
+  color: boolean;
+}): React.ReactNode {
+  const width = Math.max(1, columns);
+  const height = Math.max(1, rows);
+  const message = width >= 18 ? "Terminal too small" : width >= 6 ? "Resize" : "";
+  return (
+    <Box width={width} height={height} flexDirection="column">
+      {message ? (
+        <Text bold color={color ? COLORS.coral : undefined} wrap="truncate">
+          {message}
+        </Text>
+      ) : null}
+    </Box>
+  );
+}
+
 export function HudScreen({ state, columns, rows, color = true, now = Date.now() }: {
   state: HudState;
   columns: number;
@@ -879,10 +904,13 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
   color?: boolean;
   now?: number;
 }): React.ReactNode {
+  if (columns < MIN_TERMINAL_COLUMNS || rows < MIN_TERMINAL_ROWS) {
+    return <TinyTerminal columns={columns} rows={rows} color={color} />;
+  }
   const margin = columns >= 24 ? 2 : 0;
   const metrics = screenMetrics(state, columns, rows);
   const inner = (
-    <Box width={metrics.usable} height={Math.max(6, rows)} flexDirection="column">
+    <Box width={metrics.usable} height={rows} flexDirection="column">
       <Header
         state={state}
         usable={metrics.usable}
@@ -920,7 +948,7 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
     </Box>
   );
   return (
-    <Box width={Math.max(8, columns)} height={Math.max(6, rows)} flexDirection="column">
+    <Box width={columns} height={rows} flexDirection="column">
       {margin > 0 ? <Box marginLeft={margin}>{inner}</Box> : inner}
     </Box>
   );
@@ -935,7 +963,7 @@ export function renderHud(
 ): string {
   const output = renderToString(
     <HudScreen state={state} columns={width} rows={height} color={color} now={now} />,
-    { columns: width },
+    { columns: Math.max(1, width) },
   );
   return color ? output : stripVTControlCharacters(output);
 }
@@ -1203,7 +1231,7 @@ function HudRuntime({ store, actions, signal, stop }: {
       state={state}
       columns={columns}
       rows={rows}
-      color={!process.env.NO_COLOR}
+      color={shouldUseHudColor(process.env.NO_COLOR)}
       now={Date.now()}
     />
   );

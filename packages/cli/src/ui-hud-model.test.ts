@@ -907,6 +907,22 @@ test("every view stays within a narrow terminal and retains its footer", () => {
   }
 });
 
+test("tiny terminal fallback stays within the actual viewport", () => {
+  const state = connectedState();
+  const cases = [
+    { width: 8, height: 12, message: "Resize" },
+    { width: 20, height: 4, message: "Terminal too small" },
+  ];
+
+  for (const { width, height, message } of cases) {
+    const output = renderHud(state, width, false, height);
+    const lines = output.split("\n");
+    assert.ok(lines.length <= height);
+    assert.ok(lines.every((line) => line.length <= width));
+    assert.match(output, new RegExp(message));
+  }
+});
+
 test("help keeps the useful navigation without removed commands", () => {
   const output = renderHud(
     { ...connectedState(), view: "help" },
