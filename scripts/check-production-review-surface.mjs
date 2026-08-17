@@ -34,6 +34,19 @@ async function publicText(url) {
   return await response.text();
 }
 
+async function oauthAuthorizationServerMetadata(issuer) {
+  const base = issuer.endsWith("/") ? issuer : `${issuer}/`;
+  const candidates = [
+    new URL(".well-known/oauth-authorization-server", base),
+    new URL(".well-known/openid-configuration", base),
+  ];
+  for (const url of candidates) {
+    const response = await request(url);
+    if (response.status === 200) return await response.json();
+  }
+  throw new Error(`authorization server metadata unavailable for ${issuer}`);
+}
+
 function requireMatch(source, pattern, message) {
   if (!pattern.test(source)) throw new Error(message);
 }
@@ -275,6 +288,44 @@ await check("OAuth protected resource metadata", async () => {
   assert.ok(metadata.authorization_servers.length >= 1);
   assert.deepEqual(metadata.scopes_supported, ["glossa:access"]);
   assert.deepEqual(metadata.bearer_methods_supported, ["header"]);
+});
+
+await check("OAuth authorization server metadata", async () => {
+  const protectedResponse = await request(
+    "https://mcp.glossa.sh/.well-known/oauth-protected-resource",
+  );
+  assert.equal(protectedResponse.status, 200);
+  const protectedMetadata = await protectedResponse.json();
+  const issuer = protectedMetadata.authorization_servers?.[0];
+  assert.equal(typeof issuer, "string", "protected resource metadata has no authorization server");
+
+  const metadata = await oauthAuthorizationServerMetadata(issuer);
+  assert.equal(metadata.issuer, issuer);
+  for (const field of ["authorization_endpoint", "token_endpoint"]) {
+    const value = metadata[field];
+    assert.equal(typeof value, "string", `${field} is missing`);
+    assert.equal(new URL(value).protocol, "https:", `${field} must use HTTPS`);
+  }
+  assert.ok(
+    Array.isArray(metadata.code_challenge_methods_supported) &&
+      metadata.code_challenge_methods_supported.includes("S256"),
+    "authorization server must advertise PKCE S256",
+  );
+  assert.ok(
+    metadata.client_id_metadata_document_supported === true ||
+      typeof metadata.registration_endpoint === "string",
+    "authorization server must support CIMD or DCR",
+  );
+  if (metadata.registration_endpoint !== undefined) {
+    assert.equal(new URL(metadata.registration_endpoint).protocol, "https:");
+  }
+  assert.ok(
+    Array.isArray(metadata.token_endpoint_auth_methods_supported) &&
+      metadata.token_endpoint_auth_methods_supported.some((method) =>
+        method === "none" || method === "private_key_jwt"
+      ),
+    "authorization server must advertise a ChatGPT-compatible token endpoint auth method",
+  );
 });
 
 await check("unauthenticated MCP challenge", async () => {
