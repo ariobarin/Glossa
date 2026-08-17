@@ -121,4 +121,5 @@ These documents are not needed for normal use:
 
 - [Managed identity and reviewer access](docs/managed-identity.md)
 - [Restricted Data review](docs/restricted-data.md)
+- [Submission readiness](docs/submission-readiness.md)
 - [App submission packet](docs/app-submission-packet.md)

@@ -21,6 +21,7 @@ const MCP_TOOL_NAMES = new Set([
 
 const FIXED_PATHS = new Set([
   "/healthz",
+  "/.well-known/openai-apps-challenge",
   "/.well-known/oauth-protected-resource",
   "/device/register",
   "/device/poll",

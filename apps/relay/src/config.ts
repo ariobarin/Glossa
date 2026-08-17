@@ -68,6 +68,9 @@ const environmentSchema = z
       .enum(["0", "1"])
       .default("0")
       .transform((value) => value === "1"),
+    // Optional OpenAI plugin-domain verification token. The public route is
+    // absent unless this is configured, and returns only this exact value.
+    GLOSSA_OPENAI_APPS_CHALLENGE: z.string().trim().min(1).max(4096).optional(),
     // The control panel is enabled only when all three values are set.
     GLOSSA_PANEL_CLIENT_ID: z.string().trim().min(1).max(255).optional(),
     GLOSSA_PANEL_CLIENT_SECRET: z

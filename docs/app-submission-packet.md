@@ -1,6 +1,6 @@
 # App submission packet
 
-Status: implementation-ready candidate. Complete the deployment and credential checks in the submission gate before sending this packet to OpenAI.
+Status: source and release gates are mechanically healthy for the `0.2.2` release candidate. The current `make_directory` and `move_path` annotation corrections must still be deployed and confirmed by a fresh **Scan Tools**; public submission also requires the human/portal gates and the explicit Restricted Data decision below.
 
 This packet centralizes marketplace copy, tool explanations, reviewer setup, test cases, security tradeoffs, and portal-only fields. Confirm every field against the production deployment immediately before submission.
 
@@ -17,6 +17,20 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Authentication: OAuth 2.0 with the `glossa:access` scope
 - MCP tool contract: `3.0.0` (15 tools)
 - Suggested category: Developer Tools, or the closest category offered by the portal
+
+### Portal-ready MCP values
+
+- Submission type: MCP only
+- MCP Server URL type: Universal
+- Production MCP Server URL: `https://mcp.glossa.sh/mcp`
+- Authentication: OAuth 2.0
+- Required scope: `glossa:access`
+- UI: none; do not upload screenshots and no UI CSP is required
+- Skills: none
+- Domain challenge base: `https://mcp.glossa.sh` unless the submission owner deliberately uses an allowed parent origin. Set the generated token only in deployment configuration as `GLOSSA_OPENAI_APPS_CHALLENGE`; the relay then serves that exact value at `/.well-known/openai-apps-challenge` and otherwise returns 404
+- Reviewer credentials: dedicated reviewer username and password entered only in the portal's protected reviewer fields
+- OpenAI project: use a project with global data residency; OpenAI currently does not accept MCP plugin submissions from projects with EU data residency
+- Developer identity: select the verified individual or business identity that should appear as publisher
 
 Proposed short description:
 
@@ -90,15 +104,15 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `read_file_range` | Yes | No | No | Returns a bounded range of complete lines with continuation metadata. |
 | `write_file` | No | Yes | No | Creates one new file when `expectedSha256` is omitted, or replaces exactly the supplied existing revision when it is present. Blind overwrite of an existing path is rejected. |
 | `edit_file` | No | Yes | No | Applies exact guarded replacements inside the root when `writeFiles` is true and returns a bounded unified diff. |
-| `make_directory` | No | Yes | No | Creates a relative directory inside the root, optionally including missing parents, when `writeFiles` and `structuredMutations` are true. |
+| `make_directory` | No | No | No | Creates a relative directory inside the root, optionally including missing parents, when `writeFiles` and `structuredMutations` are true. It does not delete or overwrite existing data and is normally reversible. |
 | `delete_path` | No | Yes | No | Deletes a relative regular file or directory inside the root, refuses the root itself, and requires an explicit recursive flag for non-empty directories. |
-| `move_path` | No | Yes | No | Renames or moves a relative regular file or directory inside the root, rejects links and existing destinations, and prevents self-nesting moves. |
+| `move_path` | No | No | No | Renames or moves a relative regular file or directory inside the root, rejects links and existing destinations, and prevents self-nesting moves. Because it cannot overwrite the destination, the move is normally reversible. |
 | `run_command` | No | Yes | Yes | Starts a local process only when `runCommands` is true. Its public `command` field is a schema-level union of direct `argv` and `shellCommand`, so both/neither forms are invalid. It inherits operating-system authority, credentials, environment, and network access, is not root-confined, and can affect external systems. |
 | `get_command` | Yes | No | No | Reads status and bounded captured output for a command previously started through Glossa. |
 | `read_command_output` | Yes | No | No | Reads one bounded retained stdout or stderr range without rerunning the command when `commandOutputRanges` is true; output remains transient and capped per stream. |
 | `cancel_command` | No | Yes | No | Terminates a running process tree but does not reverse effects already caused. |
 
-The deployed tool scan must match this table exactly. In particular, `run_command` must advertise `readOnlyHint: false`, `destructiveHint: true`, and `openWorldHint: true`; `cancel_command` must be destructive; and the other listed read tools must remain read-only and closed-world.
+The deployed tool scan must match this table exactly. In particular, `run_command` must advertise `readOnlyHint: false`, `destructiveHint: true`, and `openWorldHint: true`; `write_file`, `edit_file`, `delete_path`, `run_command`, and `cancel_command` are destructive; `make_directory` and `move_path` are writes but not destructive; and the listed read tools remain read-only and closed-world.
 
 ## Reviewer account
 
@@ -138,6 +152,10 @@ Before submission:
 - confirm discovery reports contract `3.0.0`, the app-wide instructions, all 15 tools, exact annotations, access-profile output, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command.afterSequence`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
 - reset the fixture after any test run that mutates it;
 - run `glossa --access read-only` and default `glossa` in separate release-owner checks to verify write and command denials even though the portal reviewer fixture uses `system` to exercise all tools.
+
+## Recommended portal test subset
+
+The portal requires at least five positive and three negative cases. For the initial submission, use positive cases 1, 6, 7, 8, 9, and 10 below, plus negative cases 1, 3, 5, and 8. This subset covers discovery, reads, guarded writes, structured path mutations, command execution, retained output, credential refusal, prompt injection, boundary-bypass refusal, and the broader Restricted Data policy. Keep the full set below as the release-owner regression suite.
 
 ## Eleven positive reviewer tests
 
@@ -185,7 +203,8 @@ These checks verify profile behavior before the reviewer worker is returned to `
 
 Complete these at submission time because they cannot be safely or accurately stored in this repository:
 
-- verified publisher organization and submitter permissions;
+- verified publisher organization and submitter permissions, including Apps Management write access;
+- an OpenAI project with global data residency rather than EU data residency;
 - reviewer username and password;
 - domain-verification challenge token;
 - final logo and other portal assets;
@@ -202,6 +221,7 @@ Suggested release note:
 Do not submit until all of the following are true:
 
 - the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
+- the submission is created in an OpenAI project with global data residency and the submitter has Apps Management write access;
 - the production relay serves MCP contract `3.0.0` and the scan matches all 15 tools, schemas, descriptions, output contracts, and annotations in this packet;
 - the production website, privacy, terms, security, and support URLs are public and match the implementation;
 - the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;
@@ -209,4 +229,4 @@ Do not submit until all of the following are true:
 - every routing, positive, negative, permission-boundary, Restricted Data, and actual ChatGPT confirmation test passes after a fresh fixture reset;
 - the Restricted Data decision in `docs/restricted-data.md` is resolved through explicit OpenAI acceptance, removal of public `system` tools, or enforceable credential-free managed execution; metadata and the detector alone are not treated as approval;
 - repository, logs, site output, and submission materials contain no reviewer subject, password, token, private key, local absolute path, customer data, or operator credential; the exact reviewer subject exists only in protected deployment configuration;
-- `npm run check`, `npm run review:check:production`, package dry-run, and final diff review all pass on the exact submitted commit and deployed release.
+- `npm run review:check:submission` passes on the exact submitted commit and deployed release; this runs the local suite, production-surface checks, package dry-run, and `git diff --check`.

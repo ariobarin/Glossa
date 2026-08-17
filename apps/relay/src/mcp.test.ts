@@ -44,6 +44,28 @@ const expectedToolTitles: Record<string, string> = {
   search_text: "Search Workspace Text",
   write_file: "Create or Replace Workspace File",
 };
+const expectedToolAnnotations: Record<string, {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}> = {
+  cancel_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  delete_path: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  edit_file: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  get_command: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  get_logout_instructions: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  list_files: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  list_workspaces: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  make_directory: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  move_path: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  read_command_output: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  read_file: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  read_file_range: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  run_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  search_text: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  write_file: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+};
 const accountId = "00000000-0000-4000-8000-000000000001";
 const product = {
   name: "Glossa",
@@ -150,10 +172,12 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     assert.deepEqual(tool._meta?.securitySchemes, [
       { type: "oauth2", scopes: ["glossa:access"] },
     ]);
-    assert.equal(typeof tool.annotations?.readOnlyHint, "boolean");
-    assert.equal(typeof tool.annotations?.destructiveHint, "boolean");
-    assert.equal(typeof tool.annotations?.idempotentHint, "boolean");
-    assert.equal(typeof tool.annotations?.openWorldHint, "boolean");
+    const expectedAnnotations = expectedToolAnnotations[tool.name];
+    assert.ok(expectedAnnotations, `${tool.name} must have expected annotations`);
+    assert.equal(tool.annotations?.readOnlyHint, expectedAnnotations.readOnlyHint);
+    assert.equal(tool.annotations?.destructiveHint, expectedAnnotations.destructiveHint);
+    assert.equal(tool.annotations?.idempotentHint, expectedAnnotations.idempotentHint);
+    assert.equal(tool.annotations?.openWorldHint, expectedAnnotations.openWorldHint);
   }
 
   const byName = new Map(tools.map((tool) => [tool.name, tool]));

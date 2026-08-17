@@ -25,6 +25,10 @@ test("classifies only bounded relay metadata", () => {
     relayOperation({ path: "/v1/devices", body: {} } as Request),
     "http:/v1/devices",
   );
+  assert.equal(
+    relayOperation({ path: "/.well-known/openai-apps-challenge", body: {} } as Request),
+    "http:/.well-known/openai-apps-challenge",
+  );
   assert.equal(relayOperation({ path: "/unknown/private/path", body: {} } as Request), "http:other");
 });
 
