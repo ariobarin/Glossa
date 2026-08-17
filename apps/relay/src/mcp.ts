@@ -1109,7 +1109,7 @@ function registerTools(
       _meta: toolMetadata,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: true,
+        destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false,
       },
@@ -1175,7 +1175,7 @@ function registerTools(
       _meta: toolMetadata,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: true,
+        destructiveHint: false,
         idempotentHint: false,
         openWorldHint: false,
       },

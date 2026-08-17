@@ -153,11 +153,38 @@ const expectedTools = [
   "read_command_output",
   "cancel_command",
 ];
+const expectedToolAnnotations = {
+  list_workspaces: [true, false, true, false],
+  get_logout_instructions: [true, false, true, false],
+  read_file: [true, false, true, false],
+  list_files: [true, false, true, false],
+  search_text: [true, false, true, false],
+  read_file_range: [true, false, true, false],
+  write_file: [false, true, false, false],
+  edit_file: [false, true, false, false],
+  make_directory: [false, false, true, false],
+  delete_path: [false, true, false, false],
+  move_path: [false, false, false, false],
+  run_command: [false, true, false, true],
+  get_command: [true, false, true, false],
+  read_command_output: [true, false, true, false],
+  cancel_command: [false, true, true, false],
+};
 for (const tool of expectedTools) {
   assert.ok(
     new RegExp(`\\n  ${tool}: \\{[\\s\\S]*?description: "Use this `).test(mcpSource),
     `${tool} must publish a when-to-use description`,
   );
+  const registration = mcpSource.match(
+    new RegExp(`server\\.registerTool\\(\\s*"${tool}",[\\s\\S]*?\\n\\s*async`),
+  )?.[0];
+  assert.ok(registration, `${tool} must have one MCP registration`);
+  const [readOnlyHint, destructiveHint, idempotentHint, openWorldHint] =
+    expectedToolAnnotations[tool];
+  assert.match(registration, new RegExp(`readOnlyHint: ${readOnlyHint}`));
+  assert.match(registration, new RegExp(`destructiveHint: ${destructiveHint}`));
+  assert.match(registration, new RegExp(`idempotentHint: ${idempotentHint}`));
+  assert.match(registration, new RegExp(`openWorldHint: ${openWorldHint}`));
 }
 assert.ok(
   mcpSource.includes("accessProfile") && mcpSource.includes("permissions"),
@@ -236,11 +263,18 @@ await requiredText("docs/restricted-data.md", [
   "metadata, a user checkbox, or the detector",
   "narrow the public product",
   "credential-free runtime",
+  "Tool-surface policy analysis",
+  "removing `system` does not solve it",
+  "OpenAI policy determination request",
   "ChatGPT confirmation verification",
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "MCP tool contract: `3.0.0`",
+  "Portal-ready MCP values",
+  "MCP Server URL type: Universal",
+  "global data residency",
+  "Recommended portal test subset",
   "Eleven positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",
@@ -250,6 +284,16 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "use a shell command instead",
   "npm run restricted-output",
   "actual ChatGPT confirmation test",
+  "`make_directory` and `move_path` are writes but not destructive",
+]);
+await requiredText("docs/submission-readiness.md", [
+  "# Plugin submission readiness",
+  "NO-GO for final public submission",
+  "npm run review:check:submission",
+  "global data residency",
+  "make_directory` scans as `readOnlyHint: false`, `destructiveHint: false",
+  "Restricted Data decision",
+  "only when every source/deployment",
 ]);
 assert.ok(
   (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 11,

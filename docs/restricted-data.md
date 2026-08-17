@@ -30,6 +30,29 @@ The authentication-secret guard below is not a detector for payment-card data, p
 
 Public product language, server instructions, terms, and reviewer tests prohibit using Glossa with these categories. That reduces intentional misuse but does not prevent accidental presence in a selected workspace. A reviewer-facing decision must therefore address the architecture, not merely add more patterns.
 
+## Tool-surface policy analysis
+
+| Surface | Restricted Data exposure | Architectural implication |
+| --- | --- | --- |
+| `list_workspaces` | Workspace labels and device names are user-controlled metadata. Recognizable authentication secrets are suppressed, but other Restricted Data categories are not generally classifiable. | Low-content surface, but not a categorical Restricted Data boundary. |
+| `list_files` | File and directory names can themselves contain identifiers or sensitive labels. | Removing file-content reads would reduce risk but would not make arbitrary workspace metadata categorically safe. |
+| `read_file`, `read_file_range`, `search_text` | These tools directly process arbitrary selected workspace text. PCI data, PHI, or government identifiers may be present before Glossa can know their meaning. | This is the central policy issue even for `read-only`; removing `system` does not solve it. |
+| `write_file`, `edit_file` | User-supplied content can contain Restricted Data. Recognizable authentication secrets are blocked, but Glossa does not classify arbitrary PCI data, PHI, or government identifiers. | Public mutation tools inherit the same content-boundary problem as reads. |
+| `make_directory`, `delete_path`, `move_path` | Paths and names can contain sensitive identifiers, though these tools do not ordinarily return file contents. | Lower exposure than content tools, but not an enforceable guarantee for arbitrary workspaces. |
+| `run_command` | A process can read unknown local data, transform credentials into an unrecognized form, or send data directly to the network without printing it. | Highest-risk surface. A credential-free isolated runtime is a real boundary; metadata, command allowlists, and output regexes are not. |
+| `get_command`, `read_command_output` | These tools return command output. Recognizable credentials are suppressed, but other Restricted Data categories are not generally classified. | They remain coupled to whatever authority and data sources the originating command had. |
+| `get_logout_instructions`, `cancel_command` | They do not read arbitrary workspace content. | These are not the material Restricted Data blocker by themselves. |
+
+A source-extension allowlist, repository allowlist, user attestation, or larger regex corpus would not establish a categorical boundary. Source files can contain credentials and identifiers, and PHI depends on context. Any narrowed public product therefore needs an enforceable data-source/runtime property rather than a claim that ordinary development files are probably safe.
+
+## OpenAI policy determination request
+
+If the public product remains a general user-selected local-workspace bridge, send the following question to OpenAI before final submission. Include the draft plugin portal ID once one exists and link the public security model rather than attaching credentials or private logs.
+
+> We are preparing Glossa, an MCP-only plugin that bridges ChatGPT to a user-selected local development workspace through an authenticated outbound worker. The public product uses least-privilege read-only, workspace, and explicit system profiles; never persists file contents or command output in the hosted relay; blocks recognizable authentication-secret material before it leaves the local worker; and documents that this detector is defense in depth rather than a complete DLP system. However, a general local file tool can encounter PCI-regulated payment data, PHI, or government identifiers before the application can know what the file contains, and arbitrary system commands cannot provide a categorical no-secret guarantee even when the review worker is isolated and credential-free. Does OpenAI consider this user-selected local-workspace architecture compatible with the published Restricted Data rule when these categories are explicitly unsupported and the listed controls are enforced, or must a marketplace version enforce a data source/runtime that categorically excludes those categories? We can provide the draft plugin ID, complete 15-tool contract, reviewer fixture, privacy/terms, and security model for review.
+
+An affirmative answer should be retained with the release decision record. An ambiguous or negative answer means the public architecture must be narrowed before submission; it should not be interpreted as approval based only on disclosures or reviewer confirmation.
+
 ## Implemented credential egress guard
 
 The guard is deliberately fail-closed for recognizable authentication data:

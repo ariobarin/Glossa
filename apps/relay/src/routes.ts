@@ -402,6 +402,16 @@ export function buildRoutes(
     response.json({ ok: true, service: "glossa-relay" });
   });
 
+  router.get("/.well-known/openai-apps-challenge", (_request, response) => {
+    const challenge = config.GLOSSA_OPENAI_APPS_CHALLENGE;
+    if (!challenge) {
+      response.status(404).end();
+      return;
+    }
+    response.set("cache-control", "no-store");
+    response.type("text/plain").send(challenge);
+  });
+
   router.get("/.well-known/oauth-protected-resource", (_request, response) => {
     response.json({
       resource: config.GLOSSA_AUTH0_AUDIENCE,

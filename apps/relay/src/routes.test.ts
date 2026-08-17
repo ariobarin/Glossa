@@ -27,6 +27,69 @@ const device: DeviceRecord = {
 const unused = async (): Promise<never> => {
   throw new Error("Unexpected store call.");
 };
+const unusedStore: RelayStore = {
+  accountIdForSubject: unused,
+  enrollDevice: unused,
+  listDevices: unused,
+  renameDevice: unused,
+  revokeDevice: unused,
+  touchDevice: unused,
+  authenticateDevice: unused,
+  createPairing: unused,
+  findPairing: unused,
+  claimPairing: unused,
+  redeemPairing: unused,
+};
+
+test("serves the exact OpenAI apps challenge only when configured", async (context) => {
+  const challenge = "openai-plugin-domain-challenge-test";
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+    GLOSSA_OPENAI_APPS_CHALLENGE: challenge,
+  });
+  const app = express();
+  app.use(buildRoutes(config, unusedStore, new RouterState()));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/.well-known/openai-apps-challenge`,
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/plain/);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(await response.text(), challenge);
+});
+
+test("keeps the OpenAI apps challenge unavailable when not configured", async (context) => {
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(buildRoutes(config, unusedStore, new RouterState()));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/.well-known/openai-apps-challenge`,
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(await response.text(), "");
+});
 
 test("enrolls a device with temporary browser authorization", async (context) => {
   const subject = "google-oauth2|published-cli";
