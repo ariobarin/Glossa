@@ -7,15 +7,18 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startDevAuth, type DevAuthServer } from "./dev-auth.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const databaseUrl = "postgres://glossa:glossa@localhost:55432/glossa";
-const relayOrigin = "http://127.0.0.1:39100";
+const databaseUrl = process.env.GLOSSA_INTEGRATION_DATABASE_URL ??
+  "postgres://glossa:glossa@localhost:55432/glossa";
+const relayOrigin = process.env.GLOSSA_INTEGRATION_RELAY_ORIGIN ??
+  "http://127.0.0.1:39100";
 const audience = `${relayOrigin}/`;
+const relayPort = new URL(relayOrigin).port || "80";
 
 const temporaryPaths: string[] = [];
 let relay: ChildProcess | undefined;
@@ -35,6 +38,9 @@ async function waitForHealthz(timeoutMs = 30_000): Promise<void> {
       if (response.ok) return;
     } catch {
       // Relay is not listening yet.
+    }
+    if (relay?.exitCode !== null && relay?.exitCode !== undefined) {
+      throw new Error(`Relay exited early with code ${relay.exitCode}.`);
     }
     if (Date.now() > deadline) throw new Error("Relay did not start in time.");
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -77,7 +83,7 @@ async function main(): Promise<void> {
       env: {
         ...process.env,
         NODE_ENV: "development",
-        PORT: "39100",
+        PORT: relayPort,
         DATABASE_URL: databaseUrl,
         GLOSSA_PUBLIC_ORIGIN: relayOrigin,
         GLOSSA_AUTH0_ISSUER: devAuth.issuer,
@@ -85,7 +91,7 @@ async function main(): Promise<void> {
         GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "dev|",
         GLOSSA_WORKER_POLL_MS: "500",
       },
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["ignore", "inherit", "inherit"],
     },
   );
   await waitForHealthz();
@@ -162,6 +168,11 @@ async function main(): Promise<void> {
   // 4. Live worker and a read_file roundtrip through the relay.
   const workspace = await temporaryDirectory("glossa-smoke-workspace-");
   await writeFile(path.join(workspace, "hello.txt"), "local integration works\n");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZfKkAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await writeFile(path.join(workspace, "pixel.png"), png);
   const sessionController = new AbortController();
   const connected = new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("worker did not connect")), 15_000);
@@ -204,6 +215,27 @@ async function main(): Promise<void> {
   });
   assert.match(JSON.stringify(read.structuredContent), /local integration works/);
   console.log("mcp: read_file roundtrip returned workspace content");
+
+  const image = await mcp.callTool({
+    name: "view_image",
+    arguments: { workspaceId: workspaces[0]!.workspaceId, path: "pixel.png" },
+  });
+  assert.equal(image.isError, undefined);
+  assert.equal(image.content.length, 1);
+  const imageContent = image.content[0];
+  assert.ok(imageContent && imageContent.type === "image");
+  assert.equal(imageContent.mimeType, "image/png");
+  assert.equal(imageContent.data, png.toString("base64"));
+  const imageMetadata = image.structuredContent as {
+    mimeType: string;
+    bytes: number;
+    sha256: string;
+  };
+  assert.equal(imageMetadata.mimeType, "image/png");
+  assert.equal(imageMetadata.bytes, png.byteLength);
+  assert.match(imageMetadata.sha256, /^[a-f0-9]{64}$/);
+  assert.equal("data" in imageMetadata, false);
+  console.log("mcp: view_image roundtrip returned native image content only");
 
   // 5. Teardown also exercises self-revocation.
   sessionController.abort();

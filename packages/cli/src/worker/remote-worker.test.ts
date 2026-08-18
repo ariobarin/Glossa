@@ -21,6 +21,7 @@ function registrationResponse(
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      imageReads: true,
       structuredMutations: true,
       commandOutputRanges: true,
     },
@@ -156,6 +157,63 @@ test("rejects a relay that does not support the current worker protocol", async 
 
 
 
+
+test("falls back to the legacy relay protocol without advertising image reads", async () => {
+  const controller = new AbortController();
+  const registerBodies: Array<Record<string, unknown>> = [];
+  const pollBodies: Array<Record<string, unknown>> = [];
+
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (url.pathname === "/device/register") {
+      registerBodies.push(body);
+      const capabilities = body.capabilities as Record<string, unknown>;
+      if (capabilities.imageReads === true) {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+      return Response.json({
+        workerId: body.workerId,
+        generation: "00000000-0000-4000-8000-000000000001",
+        workerToken: `glw_${"a".repeat(43)}`,
+        accessProfile: body.accessProfile,
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+          structuredMutations: true,
+          commandOutputRanges: true,
+        },
+      });
+    }
+    if (url.pathname === "/device/poll") {
+      pollBodies.push(body);
+      controller.abort();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === "/device/unregister") {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await new RemoteWorker({
+    origin: "https://relay.glossa.test",
+    deviceToken: "device-token",
+    worker: { handle: async () => ({ requestId: "unused", ok: true }) },
+    signal: controller.signal,
+    fetcher,
+  }).run();
+
+  assert.equal(registerBodies.length, 2);
+  const currentCapabilities = registerBodies[0]!.capabilities as Record<string, unknown>;
+  const legacyCapabilities = registerBodies[1]!.capabilities as Record<string, unknown>;
+  assert.equal(currentCapabilities.imageReads, true);
+  assert.equal("imageReads" in legacyCapabilities, false);
+  const acceptedTypes = pollBodies[0]!.acceptedTypes as string[];
+  assert.equal(acceptedTypes.includes("view_image"), false);
+  assert.equal(acceptedTypes.length, 13);
+});
 
 test("re-registers when an ephemeral worker credential is rejected", async () => {
   const controller = new AbortController();
@@ -385,6 +443,7 @@ test("handles cancellation while a command status wait is still running", async 
     "read_command_output",
     "cancel_command",
     "read_file",
+    "view_image",
     "list_files",
     "search_text",
     "read_file_range",

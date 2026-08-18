@@ -80,6 +80,7 @@ function activitySafeJob(job: WorkerJob): WorkerJob {
 
   switch (job.type) {
     case "read_file":
+    case "view_image":
       return { ...job, path: "[restricted input blocked]" };
     case "list_files":
       return {

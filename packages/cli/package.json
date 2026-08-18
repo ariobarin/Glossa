@@ -1,6 +1,6 @@
 {
   "name": "@ariobarin/glossa",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": false,
   "description": "Connect an explicitly exposed local coding workspace to the Glossa MCP relay.",
   "type": "module",

@@ -13,17 +13,22 @@ const DEFAULT_HEARTBEAT_MS = 15_000;
 const CAPACITY_REFRESH_POLL_MS = 1;
 const MAX_CONCURRENT_JOBS = 5;
 const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
-const WORKER_CAPABILITIES = {
+const LEGACY_WORKER_CAPABILITIES = {
   commandProgress: true,
   concurrentJobs: true,
   structuredReads: true,
   structuredMutations: true,
   commandOutputRanges: true,
 } as const;
+const WORKER_CAPABILITIES = {
+  ...LEGACY_WORKER_CAPABILITIES,
+  imageReads: true,
+} as const;
 
 interface RegisteredSession {
   generation: string;
   workerToken: string;
+  imageReads: boolean;
 }
 
 type JobLane = "status" | "cancel" | "read" | "mutation";
@@ -93,15 +98,25 @@ function requiredWorkerToken(value: unknown): string {
   return value;
 }
 
-function acceptsCurrentCapabilities(value: unknown): boolean {
+function acceptsCapabilities(
+  value: unknown,
+  requireImageReads: boolean,
+): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
   const capabilities = value.capabilities;
   if (typeof capabilities !== "object" || capabilities === null) return false;
-  return Object.keys(WORKER_CAPABILITIES).every(
-    (capability) =>
-      (capabilities as Record<string, unknown>)[capability] === true,
-  );
+  const required = Object.keys(LEGACY_WORKER_CAPABILITIES);
+  if (
+    !required.every(
+      (capability) =>
+        (capabilities as Record<string, unknown>)[capability] === true,
+    )
+  ) {
+    return false;
+  }
+  return !requireImageReads ||
+    (capabilities as Record<string, unknown>).imageReads === true;
 }
 
 function jobLane(job: WorkerJob): JobLane {
@@ -112,6 +127,7 @@ function jobLane(job: WorkerJob): JobLane {
     case "cancel_command":
       return "cancel";
     case "read_file":
+    case "view_image":
     case "list_files":
     case "search_text":
     case "read_file_range":
@@ -129,6 +145,7 @@ function jobLane(job: WorkerJob): JobLane {
 function acceptedJobTypes(
   counts: LaneCounts,
   total: number,
+  imageReads: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
@@ -137,7 +154,9 @@ function acceptedJobTypes(
   }
   if (counts.cancel < 1) accepted.push("cancel_command");
   if (counts.read < 2) {
-    accepted.push("read_file", "list_files", "search_text", "read_file_range");
+    accepted.push("read_file");
+    if (imageReads) accepted.push("view_image");
+    accepted.push("list_files", "search_text", "read_file_range");
   }
   if (counts.mutation < 1) {
     accepted.push(
@@ -265,20 +284,40 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
+    const registrationBody = (capabilities: Record<string, true>) => ({
+      workerId: this.#workerId,
+      accessProfile: this.#accessProfile,
+      ...(this.#workerVersion ? { workerVersion: this.#workerVersion } : {}),
+      ...(this.#workspaceLabel ? { workspaceLabel: this.#workspaceLabel } : {}),
+      capabilities,
+    });
+
     let response: Response;
+    let imageReads = true;
     try {
-      response = await this.#post("/device/register", {
-        workerId: this.#workerId,
-        accessProfile: this.#accessProfile,
-        ...(this.#workerVersion ? { workerVersion: this.#workerVersion } : {}),
-        ...(this.#workspaceLabel ? { workspaceLabel: this.#workspaceLabel } : {}),
-        capabilities: WORKER_CAPABILITIES,
-      });
+      response = await this.#post(
+        "/device/register",
+        registrationBody(WORKER_CAPABILITIES),
+      );
     } catch (error) {
-      if (error instanceof RelayResponseError && error.status === 400) {
-        throw new RelayProtocolUnsupportedError();
+      if (!(error instanceof RelayResponseError) || error.status !== 400) {
+        throw error;
       }
-      throw error;
+      imageReads = false;
+      try {
+        response = await this.#post(
+          "/device/register",
+          registrationBody(LEGACY_WORKER_CAPABILITIES),
+        );
+      } catch (legacyError) {
+        if (
+          legacyError instanceof RelayResponseError &&
+          legacyError.status === 400
+        ) {
+          throw new RelayProtocolUnsupportedError();
+        }
+        throw legacyError;
+      }
     }
 
     const value = (await response.json()) as unknown;
@@ -292,7 +331,7 @@ export class RemoteWorker {
       !("workerToken" in value) ||
       !("accessProfile" in value) ||
       value.accessProfile !== this.#accessProfile ||
-      !acceptsCurrentCapabilities(value) ||
+      !acceptsCapabilities(value, imageReads) ||
       (this.#workspaceLabel !== undefined &&
         (!("workspaceLabel" in value) ||
           value.workspaceLabel !== this.#workspaceLabel))
@@ -302,6 +341,7 @@ export class RemoteWorker {
     return {
       generation: value.generation,
       workerToken: requiredWorkerToken(value.workerToken),
+      imageReads,
     };
   }
 
@@ -383,7 +423,11 @@ export class RemoteWorker {
     try {
       while (!this.#signal.aborted) {
         if (failure !== undefined) throw failure;
-        const acceptedTypes = acceptedJobTypes(counts, inFlight.size);
+        const acceptedTypes = acceptedJobTypes(
+          counts,
+          inFlight.size,
+          session.imageReads,
+        );
         if (acceptedTypes.length === 0) {
           await Promise.race(inFlight);
           continue;
@@ -410,7 +454,11 @@ export class RemoteWorker {
 
           if (failure !== undefined) throw failure;
           observedCapacityVersion = capacityVersion;
-          const refreshedTypes = acceptedJobTypes(counts, inFlight.size);
+          const refreshedTypes = acceptedJobTypes(
+            counts,
+            inFlight.size,
+            session.imageReads,
+          );
           const newlyAcceptedTypes = refreshedTypes.filter(
             (type) => !acceptedTypes.includes(type),
           );

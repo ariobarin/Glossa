@@ -26,6 +26,7 @@ const expectedTools = [
   "read_file_range",
   "run_command",
   "search_text",
+  "view_image",
   "write_file",
 ];
 const expectedToolTitles: Record<string, string> = {
@@ -43,6 +44,7 @@ const expectedToolTitles: Record<string, string> = {
   read_file_range: "Read Workspace File Range",
   run_command: "Run Workspace Command",
   search_text: "Search Workspace Text",
+  view_image: "View Workspace Image",
   write_file: "Create or Replace Workspace File",
 };
 const expectedToolAnnotations: Record<string, {
@@ -65,6 +67,7 @@ const expectedToolAnnotations: Record<string, {
   read_file_range: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   run_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   search_text: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  view_image: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   write_file: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
 };
 const accountId = "00000000-0000-4000-8000-000000000001";
@@ -126,7 +129,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "3.0.0");
+  assert.equal(MCP_SERVER_VERSION, "3.1.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for a local development workspace/);
@@ -151,7 +154,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     MCP_SERVER_INSTRUCTIONS,
-    /local worker suppresses recognizable credential material.*defense in depth, not a sandbox/,
+    /local worker suppresses recognizable credential material.*view_image.*opaque.*Restricted Data.*defense in depth, not a sandbox/,
   );
 
   const openAIToolListSchema = z.object({
@@ -210,6 +213,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   for (const toolName of [
     "read_file",
+    "view_image",
     "list_files",
     "search_text",
     "read_file_range",
@@ -371,6 +375,15 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("edit_file")?.annotations?.openWorldHint, false);
   assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
   assert.match(byName.get("read_file")?.description ?? "", /access credentials or authentication secrets.*use read_file_range/);
+  assert.match(
+    byName.get("view_image")?.description ?? "",
+    /PNG, JPEG, or WebP.*native MCP image content.*does not OCR or transform.*opaque to Glossa's text secret detector.*Restricted Data/,
+  );
+  const viewImageOutput = byName.get("view_image")?.outputSchema as JsonSchemaNode;
+  assert.ok(viewImageOutput.properties?.mimeType);
+  assert.ok(viewImageOutput.properties?.bytes);
+  assert.ok(viewImageOutput.properties?.sha256);
+  assert.equal(viewImageOutput.properties?.data, undefined);
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
   assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
@@ -453,6 +466,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         commandProgress: true,
         concurrentJobs: true,
         structuredReads: true,
+        imageReads: true,
         structuredMutations: true,
         commandOutputRanges: true,
       },
@@ -553,6 +567,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         commandProgress: true,
         concurrentJobs: true,
         structuredReads: true,
+        imageReads: true,
         structuredMutations: true,
         commandOutputRanges: true,
       },
@@ -582,6 +597,109 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
 
+
+test("returns workspace images as native MCP image content without duplicating bytes", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000090";
+  const workerId = "00000000-0000-4000-8000-000000000091";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    accessProfile: "read-only",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-image-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const data = "iVBORw0KGgo=";
+  const call = client.callTool({
+    name: "view_image",
+    arguments: { workspaceId: workerId, path: "screenshots/home.png" },
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(job?.type, "view_image");
+  assert.ok(job && job.type === "view_image");
+  assert.equal(job.path, "screenshots/home.png");
+  state.complete(accountId, workerId, {
+    requestId: job.requestId,
+    ok: true,
+    value: {
+      data,
+      mimeType: "image/png",
+      sha256: "0".repeat(64),
+      bytes: Buffer.byteLength(data, "base64"),
+    },
+  });
+
+  const result = await call;
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent, {
+    mimeType: "image/png",
+    sha256: "0".repeat(64),
+    bytes: Buffer.byteLength(data, "base64"),
+  });
+  assert.deepEqual(result.content, [{
+    type: "image",
+    data,
+    mimeType: "image/png",
+  }]);
+  assert.doesNotMatch(JSON.stringify(result.structuredContent), new RegExp(data));
+});
+
+test("returns an actionable upgrade error instead of dispatching images to legacy workers", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000092";
+  const workerId = "00000000-0000-4000-8000-000000000093";
+  const session = state.register(accountId, deviceId, "Legacy PC", workerId, {
+    accessProfile: "read-only",
+    capabilities: {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      imageReads: false,
+      structuredMutations: true,
+      commandOutputRanges: true,
+    },
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-image-legacy-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "view_image",
+    arguments: { workspaceId: workerId, path: "screenshots/home.png" },
+  });
+  assert.equal(result.isError, true);
+  const content = JSON.stringify(result.content);
+  assert.match(content, /worker_protocol_unsupported/);
+  assert.match(content, /older Glossa CLI/);
+  assert.match(content, /Update Glossa/);
+  assert.equal(
+    await state.poll(
+      accountId,
+      deviceId,
+      workerId,
+      session.generation,
+      5,
+      new Set(["view_image"]),
+    ),
+    null,
+  );
+});
 
 test("returns actionable permission errors without dispatching forbidden work", async (context) => {
   const state = new RouterState();
@@ -928,6 +1046,10 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
   for (const call of [
     client.callTool({
       name: "read_file",
+      arguments: { workspaceId: workerId, path: key },
+    }),
+    client.callTool({
+      name: "view_image",
       arguments: { workspaceId: workerId, path: key },
     }),
     client.callTool({
