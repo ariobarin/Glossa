@@ -117,9 +117,10 @@ Point the CLI at the local stack with the printed environment values. The develo
 
 ## Maintainer and review documentation
 
-These documents are not needed for normal use:
+Maintainer-only references:
 
 - [Managed identity and reviewer access](docs/managed-identity.md)
 - [Restricted Data review](docs/restricted-data.md)
 - [Submission readiness](docs/submission-readiness.md)
+- [Plugin submission demo recording](docs/demo-recording.md)
 - [App submission packet](docs/app-submission-packet.md)
