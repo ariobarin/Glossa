@@ -126,7 +126,15 @@ for (const [path, maximum] of [
 const cliPackage = JSON.parse(
   await readFile(join(repositoryRoot, "packages", "cli", "package.json"), "utf8"),
 );
-assert.match(cliPackage.version, /^\d+\.\d+\.\d+$/, "CLI version must be stable SemVer");
+const stableCliVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const prereleaseCliVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*$/;
+if (process.env.GLOSSA_ALLOW_PRERELEASE === "1") {
+  assert.match(cliPackage.version, prereleaseCliVersionPattern,
+    "explicit prerelease release checks require a valid prerelease SemVer CLI version",
+  );
+} else {
+  assert.match(cliPackage.version, stableCliVersionPattern, "CLI version must be stable SemVer");
+}
 assert.equal(cliPackage.publishConfig?.tag, "latest", "CLI must publish to npm latest");
 
 const mcpSource = await readFile(
