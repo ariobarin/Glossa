@@ -310,7 +310,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     byName.get("list_workspaces")?.description ?? "",
-    /no earlier Glossa result identifies.*required permission is unknown.*worker versions, access profiles, permissions, and protocol capabilities.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
+    /no earlier Glossa result identifies.*required permission is unknown.*only the routing identifier, optional user-chosen label, access profile, and permissions.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
   );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_workspaces")?.outputSchema),
@@ -323,8 +323,17 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.workspaceLabel,
   );
-  assert.ok(
+  assert.equal(
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.name,
+    undefined,
+  );
+  assert.equal(
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.path,
+    undefined,
+  );
+  assert.equal(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.workerVersion,
+    undefined,
   );
   assert.ok(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.accessProfile,
@@ -332,8 +341,9 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.permissions,
   );
-  assert.ok(
+  assert.equal(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.capabilities,
+    undefined,
   );
 
   for (const toolName of ["get_command", "cancel_command"]) {
@@ -454,21 +464,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     documentationUrl: managedDocumentationUrl,
     workspaces: [{
       workspaceId: onlineWorkerId,
-      name: "Test PC",
-      path: ".",
       accessProfile: "system",
       permissions: {
         readFiles: true,
         writeFiles: true,
         runCommands: true,
-      },
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-        imageReads: true,
-        structuredMutations: true,
-        commandOutputRanges: true,
       },
     }],
     availability: "online",
@@ -554,22 +554,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     }).workspaces,
     [{
       workspaceId: "00000000-0000-4000-8000-000000000005",
-      name: "Self-hosted PC",
-      path: ".",
-      workerVersion: "1.0.0",
       accessProfile: "workspace",
       permissions: {
         readFiles: true,
         writeFiles: true,
         runCommands: false,
-      },
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-        imageReads: true,
-        structuredMutations: true,
-        commandOutputRanges: true,
       },
     }],
   );
@@ -1199,7 +1188,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
 });
 
-test("redacts restricted device metadata from list_workspaces", async (context) => {
+test("minimizes list_workspaces metadata and drops restricted labels", async (context) => {
   const state = new RouterState();
   const key = "sk-proj-" + "A".repeat(32);
   const workerId = "00000000-0000-4000-8000-000000000042";
@@ -1226,7 +1215,16 @@ test("redacts restricted device metadata from list_workspaces", async (context) 
   assert.equal(result.isError, undefined);
   const serialized = JSON.stringify(result.structuredContent);
   assert.doesNotMatch(serialized, new RegExp(key));
-  assert.match(serialized, /restricted device name blocked/);
+  assert.doesNotMatch(serialized, /"path"/);
+  assert.doesNotMatch(serialized, /workerVersion/);
+  assert.doesNotMatch(serialized, /capabilities/);
+  const content = result.structuredContent as {
+    workspaces?: Array<Record<string, unknown>>;
+  };
+  assert.deepEqual(
+    Object.keys(content.workspaces?.[0] ?? {}).sort(),
+    ["accessProfile", "permissions", "workspaceId"],
+  );
   assert.doesNotMatch(serialized, /workspaceLabel/);
 });
 
