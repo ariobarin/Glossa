@@ -109,7 +109,7 @@ export function initialHudState(workspace: string): HudState {
   };
 }
 
-const MAX_STORED_ACTIVITIES = 999;
+const MAX_STORED_ACTIVITIES = 9_999;
 const MAX_STORED_ACTIVITY_TARGET_CHARS = 512;
 
 function truncate(value: string, width: number): string {
