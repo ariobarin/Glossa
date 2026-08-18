@@ -16,6 +16,13 @@
       "expectedTools": ["list_workspaces", "run_command"]
     },
     {
+      "id": "direct-image",
+      "class": "direct",
+      "prompt": "Use Glossa to view assets/review.png from my local workspace and describe the image.",
+      "expectedActivation": "glossa",
+      "expectedTools": ["list_workspaces", "view_image"]
+    },
+    {
       "id": "indirect-search",
       "class": "indirect",
       "prompt": "Find where OAuth access tokens are validated in my connected local workspace.",
