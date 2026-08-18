@@ -2,9 +2,9 @@
 
 Glossa routes requests between an authenticated ChatGPT or MCP client and a local project that you explicitly expose from your computer.
 
-*Last updated August 14, 2026*
+*Last updated August 17, 2026*
 
-The public app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. See [Security and permissions](/security).
+Public Glossa does not support processing payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Do not expose a workspace containing those categories to the public app. See [Security and permissions](/security).
 
 ## Data Glossa processes
 

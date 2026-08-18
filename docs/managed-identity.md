@@ -40,7 +40,7 @@ Required reviewer properties:
 - login does not require MFA, SMS, passwordless email, CAPTCHA, a private network, or an operator approval step;
 - the password is strong, unique, and delivered only through the OpenAI review credential fields;
 - the account remains usable for the entire review window and is rotated or revoked after review;
-- the reviewer can use the same username and password in ChatGPT OAuth and the CLI Device Authorization flow.
+- the reviewer can use the same username and password in ChatGPT OAuth and the Glossa control panel while redeeming the CLI's single-use pairing code.
 
 After creating the account, copy its exact Auth0 `user_id` from the tenant dashboard into the managed relay's secret configuration. Keep Google as the only provider-wide prefix and admit the reviewer by exact subject:
 
@@ -84,7 +84,7 @@ Before treating an identity change as deployed:
 
 1. Confirm regular login offers the intended Google connection and no unapproved provider.
 2. Confirm Google displays an account chooser even when an Auth0 session existed previously.
-3. Confirm the dedicated reviewer account works in both ChatGPT OAuth and CLI Device Authorization without MFA or external account access.
+3. Confirm the dedicated reviewer account works in both ChatGPT OAuth and the Glossa control-panel pairing flow without MFA or external account access.
 4. Start a reviewer fixture worker and confirm `list_workspaces` returns its profile and permissions.
 5. Attempt authentication with a different `auth0|` database subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.
 6. Attempt authentication with a subject from an unlisted provider and confirm the same denial.
