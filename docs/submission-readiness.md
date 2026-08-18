@@ -10,9 +10,12 @@ Creating and filling a draft submission is appropriate before those final gates 
 
 ## Automated release gates
 
-Run this from the repository root on the exact commit intended for deployment and submission:
+Run this from the repository root on the exact commit intended for deployment and submission after the real plugin package has been generated. The package directory and registered MCP connection ID are required; the publisher-name variable enables an additional exact manifest-author check:
 
 ```powershell
+$env:GLOSSA_PLUGIN_PACKAGE_DIR = "<generated-plugin-directory>"
+$env:GLOSSA_PLUGIN_APP_ID = "plugin_asdk_app_<registered-id>"
+$env:GLOSSA_VERIFIED_PUBLISHER_NAME = "<verified-publisher-name>"
 npm run review:check:submission
 ```
 
@@ -20,6 +23,7 @@ It runs:
 
 - documentation, site, review-readiness, build, and test checks;
 - the production website, OAuth metadata, relay health, GitHub release, native-asset, and npm stable-release checks;
+- validation of the actual generated `.codex-plugin/plugin.json` and `.app.json` against the real `plugin_asdk_app...` connection ID and reviewed package fields;
 - an npm package dry-run for `@ariobarin/glossa`;
 - `git diff --check`.
 

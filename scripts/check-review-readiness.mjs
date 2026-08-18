@@ -348,8 +348,15 @@ assert.match(packageName, /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
   "plugin package name must start alphanumeric and contain only ASCII letters, digits, underscores, or hyphens",
 );
 const pluginVersion = submissionPacket.match(/- Initial plugin version: `([^`]+)`/)?.[1] ?? "";
-assert.match(pluginVersion, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/,
-  "plugin version must be semantic versioning",
+const semanticVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+for (const validVersion of ["0.0.0", "1.2.3-alpha.1", "1.0.0+build.1", "1.2.3-alpha+build.01"]) {
+  assert.match(validVersion, semanticVersionPattern, `SemVer validator must accept ${validVersion}`);
+}
+for (const invalidVersion of ["01.0.0", "1.01.0", "1.0.01", "1.0.0-01", "1.0", "1.0.0+"]) {
+  assert.doesNotMatch(invalidVersion, semanticVersionPattern, `SemVer validator must reject ${invalidVersion}`);
+}
+assert.match(pluginVersion, semanticVersionPattern,
+  "plugin version must be valid Semantic Versioning, including prerelease/build rules and no leading-zero numeric components",
 );
 assert.ok(pluginVersion.length <= 64, "plugin version must be at most 64 characters");
 const packageDescription = submissionPacket.match(/- Package description: `([^`]+)`/)?.[1] ?? "";
@@ -358,17 +365,44 @@ assert.ok(packageDescription.length > 0 && packageDescription.length <= 1024,
 );
 const capabilityLine = submissionPacket.match(/- Capabilities: ([^\r\n]+)/)?.[1] ?? "";
 const capabilities = [...capabilityLine.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
-assert.ok(capabilities.length > 0 && capabilities.length <= 20,
-  `plugin must define 1-20 capabilities; got ${capabilities.length}`,
+const requiredCapabilities = [
+  "Read local project files",
+  "Edit local project files",
+  "Run local project commands",
+];
+assert.equal(new Set(capabilities).size, capabilities.length,
+  "plugin capabilities must not contain duplicates",
+);
+assert.deepEqual(
+  [...capabilities].sort(),
+  [...requiredCapabilities].sort(),
+  "plugin capabilities must match the three reviewed Glossa capabilities exactly",
 );
 for (const capability of capabilities) {
   assert.ok(capability.length <= 120, `capability exceeds 120 characters: ${capability}`);
 }
 const manifestUrlLine = submissionPacket.match(/- Plugin manifest URLs: ([^\r\n]+)/)?.[1] ?? "";
-const manifestUrls = [...manifestUrlLine.matchAll(/(?:websiteURL|privacyPolicyURL|termsOfServiceURL|supportURL)=(https:\/\/[^`,\s]+)/g)]
-  .map((match) => match[1]);
-assert.equal(manifestUrls.length, 4, "plugin manifest must provide four HTTPS listing URLs");
-for (const url of manifestUrls) assert.equal(new URL(url).protocol, "https:");
+const manifestUrlEntries = [...manifestUrlLine.matchAll(
+  /`(websiteURL|privacyPolicyURL|termsOfServiceURL|supportURL)=(https:\/\/[^`\s]+)`/g,
+)].map((match) => ({ field: match[1], url: match[2] }));
+const requiredManifestUrlFields = [
+  "websiteURL",
+  "privacyPolicyURL",
+  "termsOfServiceURL",
+  "supportURL",
+];
+assert.equal(manifestUrlEntries.length, requiredManifestUrlFields.length,
+  "plugin manifest must provide each of the four listing URL fields exactly once",
+);
+assert.equal(new Set(manifestUrlEntries.map(({ field }) => field)).size, manifestUrlEntries.length,
+  "plugin manifest listing URL fields must not contain duplicates",
+);
+assert.deepEqual(
+  manifestUrlEntries.map(({ field }) => field).sort(),
+  [...requiredManifestUrlFields].sort(),
+  "plugin manifest must provide websiteURL, privacyPolicyURL, termsOfServiceURL, and supportURL",
+);
+for (const { url } of manifestUrlEntries) assert.equal(new URL(url).protocol, "https:");
 const starterSection = submissionPacket.match(
   /## Starter prompts\r?\n([\s\S]*?)\r?\n## Agent-routing evaluation set/,
 )?.[1] ?? "";
@@ -397,10 +431,28 @@ assert.equal(
 const annotationJustifications = submissionPacket.match(
   /### Submission annotation justifications\r?\n([\s\S]*?)\r?\n### Idempotency annotation justifications/,
 )?.[1] ?? "";
-assert.equal(
-  (annotationJustifications.match(/^\| `[^`]+` \|/gm) ?? []).length,
-  16,
-  "submission packet must provide explicit read-only/destructive/open-world justifications for all 16 MCP tools",
+const annotationRows = annotationJustifications
+  .split(/\r?\n/)
+  .filter((line) => /^\|\s*`[^`]+`\s*\|/.test(line))
+  .map((line) => {
+    const match = line.match(/^\|\s*`([^`]+)`\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|$/);
+    assert.ok(match, `invalid submission annotation justification row: ${line}`);
+    const [, tool, readOnly, destructive, openWorld] = match;
+    assert.ok(readOnly.trim(), `${tool} must justify readOnlyHint`);
+    assert.ok(destructive.trim(), `${tool} must justify destructiveHint`);
+    assert.ok(openWorld.trim(), `${tool} must justify openWorldHint`);
+    return tool;
+  });
+assert.equal(annotationRows.length, expectedTools.length,
+  "submission packet must provide one annotation justification row for every MCP tool",
+);
+assert.equal(new Set(annotationRows).size, annotationRows.length,
+  "submission annotation justification rows must not contain duplicate tools",
+);
+assert.deepEqual(
+  [...annotationRows].sort(),
+  [...expectedTools].sort(),
+  "submission annotation justification rows must match the MCP tool set exactly",
 );
 assert.ok(
   (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 12,
