@@ -773,6 +773,12 @@ function routedError(error: unknown) {
       "This workspace does not allow commands. Do not retry; ask the user to restart with system access only if their request requires a local command.",
     );
   }
+  if (code === "worker_protocol_unsupported") {
+    return errorResult(
+      code,
+      "This workspace is connected with an older Glossa CLI that does not support image viewing. Update Glossa on that computer and reconnect the workspace.",
+    );
+  }
   return errorResult("relay_failure", "The relay operation failed.");
 }
 

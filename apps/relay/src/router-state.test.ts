@@ -394,6 +394,49 @@ test("enforces declared worker access profiles before queueing jobs", async () =
   assert.deepEqual(await commandPending, commandResult);
 });
 
+test("rejects image jobs for workers without image-read capability", async () => {
+  const state = new RouterState();
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000026";
+  const session = state.register(
+    accountId,
+    deviceId,
+    "Legacy PC",
+    legacyWorkerId,
+    {
+      accessProfile: "read-only",
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        imageReads: false,
+        structuredMutations: true,
+        commandOutputRanges: true,
+      },
+    },
+  );
+  const imageJob: WorkerJob = {
+    type: "view_image",
+    requestId: "00000000-0000-4000-8000-000000000027",
+    path: "screenshot.png",
+  };
+
+  await assert.rejects(
+    state.enqueue(accountId, legacyWorkerId, imageJob, 100),
+    /worker_protocol_unsupported/,
+  );
+  assert.equal(
+    await state.poll(
+      accountId,
+      deviceId,
+      legacyWorkerId,
+      session.generation,
+      5,
+      new Set(["view_image"]),
+    ),
+    null,
+  );
+});
+
 test("does not deliver a queued job after its request times out", async () => {
   const state = new RouterState();
   const generation = state.register(

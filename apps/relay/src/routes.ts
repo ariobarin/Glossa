@@ -71,7 +71,7 @@ const registerSchema = z.object({
     commandProgress: z.literal(true),
     concurrentJobs: z.literal(true),
     structuredReads: z.literal(true),
-    imageReads: z.literal(true),
+    imageReads: z.literal(true).optional(),
     structuredMutations: z.literal(true),
     commandOutputRanges: z.literal(true),
   }).strict(),
@@ -687,6 +687,14 @@ export function buildRoutes(
           ...(parsed.data.workspaceLabel
             ? { workspaceLabel: parsed.data.workspaceLabel }
             : {}),
+          capabilities: {
+            commandProgress: true,
+            concurrentJobs: true,
+            structuredReads: true,
+            imageReads: parsed.data.capabilities.imageReads === true,
+            structuredMutations: true,
+            commandOutputRanges: true,
+          },
         },
       );
     } catch (error) {
