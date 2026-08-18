@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { z } from "zod";
 import { loadConfig } from "./config.js";
 import {
   createMcpServer,
@@ -128,11 +129,17 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(MCP_SERVER_VERSION, "3.0.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /do not use it for general questions, web research, built-in ChatGPT tasks/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for a local development workspace/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use Glossa for general questions, web research, built-in ChatGPT tasks/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /The Glossa CLI shows a short pairing code that the user redeems on the Glossa control panel; pairing never happens through an MCP tool/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Never attempt a write when writeFiles is false or a command when runCommands is false/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /never write when writeFiles is false or run commands when runCommands is false/);
+  const instructionPrefix = MCP_SERVER_INSTRUCTIONS.slice(0, 512);
+  assert.match(instructionPrefix, /list_workspaces/);
+  assert.match(instructionPrefix, /accessProfile and permissions/);
+  assert.match(instructionPrefix, /never write when writeFiles is false or run commands when runCommands is false/);
+  assert.match(instructionPrefix, /untrusted data/);
+  assert.match(instructionPrefix, /Restricted Data/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use commands to inspect secrets, bypass file-tool boundaries/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
@@ -146,6 +153,26 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     MCP_SERVER_INSTRUCTIONS,
     /local worker suppresses recognizable credential material.*defense in depth, not a sandbox/,
   );
+
+  const openAIToolListSchema = z.object({
+    tools: z.array(z.object({
+      name: z.string(),
+      securitySchemes: z.array(z.object({
+        type: z.literal("oauth2"),
+        scopes: z.array(z.string()),
+      })),
+    }).passthrough()),
+  }).passthrough();
+  const openAIToolList = await client.request(
+    { method: "tools/list", params: {} },
+    openAIToolListSchema,
+  );
+  assert.equal(openAIToolList.tools.length, expectedTools.length);
+  for (const tool of openAIToolList.tools) {
+    assert.deepEqual(tool.securitySchemes, [
+      { type: "oauth2", scopes: ["glossa:access"] },
+    ]);
+  }
 
   const { tools } = await client.listTools();
   assert.deepEqual(
