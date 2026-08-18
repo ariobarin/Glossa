@@ -155,16 +155,12 @@ const listWorkspacesOutputSchema = z
               .string()
               .uuid()
               .describe("Ephemeral identifier to pass to workspace tools for this active worker."),
-            name: z.string().describe("Name of the computer running this worker."),
-            path: z.literal(".").describe("The single exposed workspace root."),
+
+
             workspaceLabel: z
               .string()
               .optional()
               .describe("Optional user-chosen label for distinguishing online workspaces."),
-            workerVersion: z
-              .string()
-              .optional()
-              .describe("CLI package version reported by the worker when available."),
             accessProfile: z
               .enum(["read-only", "workspace", "system"])
               .describe("User-selected authority boundary for this worker."),
@@ -176,17 +172,6 @@ const listWorkspacesOutputSchema = z
               })
               .strict()
               .describe("Operation permissions enforced by both the relay and local worker."),
-            capabilities: z
-              .object({
-                commandProgress: z.boolean().describe("Whether incremental command output is supported."),
-                concurrentJobs: z.boolean().describe("Whether independent worker capacity lanes are supported."),
-                structuredReads: z.boolean().describe("Whether list, search, and ranged-read jobs are supported."),
-                imageReads: z.boolean().describe("Whether bounded workspace image reads are supported."),
-                structuredMutations: z.boolean().describe("Whether make_directory, delete_path, and move_path are supported."),
-                commandOutputRanges: z.boolean().describe("Whether retained stdout and stderr can be read in bounded byte ranges."),
-              })
-              .strict()
-              .describe("Capabilities provided by the current worker protocol."),
           })
           .strict(),
       )
@@ -545,7 +530,7 @@ export const MCP_SERVER_INSTRUCTIONS = "Use Glossa only for a local development 
 const MCP_TOOL_COPY = {
   list_workspaces: {
     title: "Find Glossa Workspaces",
-    description: "Use this when no earlier Glossa result identifies an online workspace, when multiple workspaces must be distinguished, or before an operation whose required permission is unknown. It returns identifiers, user labels, worker versions, access profiles, permissions, and protocol capabilities. Do not call it repeatedly when a prior result already selected an unambiguous online workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
+    description: "Use this when no earlier Glossa result identifies an online workspace, when multiple workspaces must be distinguished, or before an operation whose required permission is unknown. It returns only the routing identifier, optional user-chosen label, access profile, and permissions needed to select and operate on a workspace. Do not call it repeatedly when a prior result already selected an unambiguous online workspace. If results are ambiguous, ask the user to restart the intended workspace with a unique --label. An empty result includes setup guidance.",
   },
   get_logout_instructions: {
     title: "Get Glossa Sign-Out Steps",
@@ -930,10 +915,17 @@ function registerTools(
       },
     },
     async () => {
-      const workspaces = state.listDevices(accountId).map(({ deviceId, ...device }) => ({
+      const workspaces = state.listDevices(accountId).map(({ deviceId, ...device }) => {
+        const safeDevice = safeDeviceMetadata(device);
+        return {
         workspaceId: deviceId,
-        ...safeDeviceMetadata(device),
-      }));
+          ...(safeDevice.workspaceLabel
+            ? { workspaceLabel: safeDevice.workspaceLabel }
+            : {}),
+          accessProfile: safeDevice.accessProfile,
+          permissions: safeDevice.permissions,
+        };
+      });
       const documentationUrl = officialDocumentationUrl(
         config.GLOSSA_PUBLIC_ORIGIN,
       );
