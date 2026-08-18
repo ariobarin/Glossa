@@ -70,7 +70,7 @@ A worker always advertises one `accessProfile`: `read-only`, `workspace`, or `sy
 
 Workers advertise their CLI package version and the current command progress, concurrent job, structured read, image read, structured mutation, and command output range capabilities. `list_workspaces` returns the reported version, selected profile, derived permissions, and current capability booleans so clients can choose a workspace whose authority matches the requested operation.
 
-The CLI and relay use one current worker protocol. Registration fails closed when either side does not confirm the complete protocol, selected profile, worker identity, and optional label. Self-hosted deployments should update the CLI and relay together instead of relying on cross-version protocol fallbacks.
+Registration remains fail-closed for the shared baseline protocol, selected profile, worker identity, and optional label, but contract `3.1.0` deliberately supports one rolling-upgrade boundary for `imageReads`. A current relay accepts a legacy worker without `imageReads` and records that capability as unavailable, so non-image tools continue to work while `view_image` fails immediately with upgrade guidance. A current worker first advertises `imageReads`; if an older relay rejects the extra capability with the legacy protocol-validation response, the worker retries once with the legacy capability shape and excludes `view_image` from its accepted job types for that session. Other protocol mismatches still fail closed.
 
 ### `POST /device/poll`
 

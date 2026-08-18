@@ -7,23 +7,12 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startDevAuth, type DevAuthServer } from "./dev-auth.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const relayRepositoryRoot = process.env.GLOSSA_INTEGRATION_RELAY_ROOT
-  ? path.resolve(process.env.GLOSSA_INTEGRATION_RELAY_ROOT)
-  : repositoryRoot;
-const workerRepositoryRoot = process.env.GLOSSA_INTEGRATION_WORKER_ROOT
-  ? path.resolve(process.env.GLOSSA_INTEGRATION_WORKER_ROOT)
-  : repositoryRoot;
-const imageMode = process.env.GLOSSA_INTEGRATION_IMAGE_MODE ?? "supported";
-assert.ok(
-  ["supported", "worker-legacy", "relay-legacy"].includes(imageMode),
-  `unsupported integration image mode: ${imageMode}`,
-);
 const databaseUrl = process.env.GLOSSA_INTEGRATION_DATABASE_URL ??
   "postgres://glossa:glossa@localhost:55432/glossa";
 const relayOrigin = process.env.GLOSSA_INTEGRATION_RELAY_ORIGIN ??
@@ -90,7 +79,7 @@ async function main(): Promise<void> {
     process.execPath,
     ["--import", "tsx", "apps/relay/src/index.ts"],
     {
-      cwd: relayRepositoryRoot,
+      cwd: repositoryRoot,
       env: {
         ...process.env,
         NODE_ENV: "development",
@@ -115,17 +104,9 @@ async function main(): Promise<void> {
     loadRelayEndpoints,
     revokePairedDevice,
   } = await import("../packages/cli/src/relay-client.js");
-  const managedSessionUrl = pathToFileURL(
-    path.join(
-      workerRepositoryRoot,
-      "packages",
-      "cli",
-      "src",
-      "worker",
-      "managed-session.ts",
-    ),
-  ).href;
-  const { runManagedSession } = await import(managedSessionUrl);
+  const { runManagedSession } = await import(
+    "../packages/cli/src/worker/managed-session.js"
+  );
 
   const endpoints = loadRelayEndpoints(process.env);
 
@@ -235,41 +216,26 @@ async function main(): Promise<void> {
   assert.match(JSON.stringify(read.structuredContent), /local integration works/);
   console.log("mcp: read_file roundtrip returned workspace content");
 
-  if (imageMode === "supported") {
-    const image = await mcp.callTool({
-      name: "view_image",
-      arguments: { workspaceId: workspaces[0]!.workspaceId, path: "pixel.png" },
-    });
-    assert.equal(image.isError, undefined);
-    assert.equal(image.content.length, 1);
-    const imageContent = image.content[0];
-    assert.ok(imageContent && imageContent.type === "image");
-    assert.equal(imageContent.mimeType, "image/png");
-    assert.equal(imageContent.data, png.toString("base64"));
-    const imageMetadata = image.structuredContent as {
-      mimeType: string;
-      bytes: number;
-      sha256: string;
-    };
-    assert.equal(imageMetadata.mimeType, "image/png");
-    assert.equal(imageMetadata.bytes, png.byteLength);
-    assert.match(imageMetadata.sha256, /^[a-f0-9]{64}$/);
-    assert.equal("data" in imageMetadata, false);
-    console.log("mcp: view_image roundtrip returned native image content only");
-  } else if (imageMode === "worker-legacy") {
-    const image = await mcp.callTool({
-      name: "view_image",
-      arguments: { workspaceId: workspaces[0]!.workspaceId, path: "pixel.png" },
-    });
-    assert.equal(image.isError, true);
-    assert.match(JSON.stringify(image.content), /worker_protocol_unsupported/);
-    assert.match(JSON.stringify(image.content), /older Glossa CLI/);
-    console.log("mcp: legacy worker gets an immediate image upgrade error");
-  } else {
-    const { tools } = await mcp.listTools();
-    assert.equal(tools.some((tool) => tool.name === "view_image"), false);
-    console.log("mcp: legacy relay omits view_image while core reads still work");
-  }
+  const image = await mcp.callTool({
+    name: "view_image",
+    arguments: { workspaceId: workspaces[0]!.workspaceId, path: "pixel.png" },
+  });
+  assert.equal(image.isError, undefined);
+  assert.equal(image.content.length, 1);
+  const imageContent = image.content[0];
+  assert.ok(imageContent && imageContent.type === "image");
+  assert.equal(imageContent.mimeType, "image/png");
+  assert.equal(imageContent.data, png.toString("base64"));
+  const imageMetadata = image.structuredContent as {
+    mimeType: string;
+    bytes: number;
+    sha256: string;
+  };
+  assert.equal(imageMetadata.mimeType, "image/png");
+  assert.equal(imageMetadata.bytes, png.byteLength);
+  assert.match(imageMetadata.sha256, /^[a-f0-9]{64}$/);
+  assert.equal("data" in imageMetadata, false);
+  console.log("mcp: view_image roundtrip returned native image content only");
 
   // 5. Teardown also exercises self-revocation.
   sessionController.abort();

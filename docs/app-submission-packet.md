@@ -1,6 +1,6 @@
 # App submission packet
 
-Status: source and release gates are mechanically healthy for the current `0.2.2` release candidate. MCP contract `3.1.0` adds `view_image` and requires a matching CLI/relay release with the `imageReads` worker capability before the production scan; public submission also requires the human/portal gates and the explicit Restricted Data decision below.
+Status: source and release gates are mechanically healthy for the `0.2.3` CLI release candidate. MCP contract `3.1.0` adds `view_image` with rolling compatibility for pre-image workers/relays; publish the `0.2.3` CLI and deploy the matching source commit before the production scan so the reviewer workspace can advertise `imageReads`. Public submission also requires the human/portal gates and the explicit Restricted Data decision below.
 
 This packet centralizes marketplace copy, tool explanations, reviewer setup, test cases, security tradeoffs, and portal-only fields. Confirm every field against the production deployment immediately before submission.
 

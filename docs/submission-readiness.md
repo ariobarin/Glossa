@@ -4,7 +4,7 @@ This is the release-owner GO / NO-GO sheet for publishing Glossa to the OpenAI p
 
 ## Current verdict
 
-**NO-GO for final public submission.** The engineering and release surface is mechanically healthy, but final submission remains blocked by the explicit Restricted Data decision and by portal-only work that requires the publisher account. MCP contract `3.1.0` also requires a coordinated CLI/relay release advertising `imageReads` before a fresh **Scan Tools** can validate `view_image`.
+**NO-GO for final public submission.** The engineering and release surface is mechanically healthy, but final submission remains blocked by the explicit Restricted Data decision and by portal-only work that requires the publisher account. Before a fresh **Scan Tools**, publish CLI `0.2.3`, deploy the matching relay source commit, and reconnect the reviewer workspace so it advertises `imageReads`; rolling compatibility keeps older workers and older relays usable for non-image tools during that rollout.
 
 Creating and filling a draft submission is appropriate before those final gates are closed.
 
