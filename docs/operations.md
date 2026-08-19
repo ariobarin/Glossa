@@ -112,4 +112,5 @@ A paired computer manages the account's devices from the devices view in its ter
 - **Wrong paired account:** stop workers, run `glossa unpair`, restart, and redeem the new pairing code on the control panel while signed in to the intended account.
 - **Tool definitions changed:** run **Scan Tools** again.
 - **Service health:** confirm `https://mcp.glossa.sh/healthz` returns an object with `ok` set to `true`.
+- **Network or DNS errors:** Glossa prefers IPv4 DNS for its managed relay and built-in public update endpoints to avoid local dual-stack resolver stalls, while custom relay and update origins keep the operating system's normal resolution behavior. On Linux, if other applications also hang, compare `resolvectl -4 query mcp.glossa.sh` with `resolvectl -6 query mcp.glossa.sh` and repair the local resolver separately.
 - **Sensitive security issue:** use the private process in [`SECURITY.md`](../SECURITY.md), not a public issue.

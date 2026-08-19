@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NetworkRequestError } from "./network-error.js";
 import {
   createPairing,
   enrollDevice,
@@ -161,4 +162,25 @@ test("accepts an older relay without inventing worker counts", async () => {
     }],
   }));
   assert.equal(devices[0]?.activeWorkers, null);
+});
+
+test("normalizes rejected relay fetches before they reach the UI", async () => {
+  const cause = Object.assign(
+    new Error("connect ECONNREFUSED 127.0.0.1:39100"),
+    { code: "ECONNREFUSED" },
+  );
+  await assert.rejects(
+    listDevices(endpoints, deviceAuthorization, async () => {
+      throw new TypeError("fetch failed", { cause });
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof NetworkRequestError);
+      assert.equal(error.code, "ECONNREFUSED");
+      assert.equal(
+        error.message,
+        "Could not connect to the Glossa relay; the connection was refused.",
+      );
+      return true;
+    },
+  );
 });
