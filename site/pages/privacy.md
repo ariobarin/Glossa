@@ -41,7 +41,7 @@ ChatGPT or another connected MCP client receives the file contents, command deta
 
 ## Your controls
 
-- Choose `read-only`, `workspace`, or explicit `system` access for each worker.
+- Choose `read-only`, `workspace`, or explicit `system` access for each worker; every new system command also requires approval in the local terminal before it starts.
 - Stop the worker with Ctrl+C or `q`.
 - Run `glossa unpair` to revoke this computer's device credential and remove its local copy.
 - Press `d` in any paired Glossa terminal to list and revoke the account's devices.
@@ -50,7 +50,7 @@ ChatGPT or another connected MCP client receives the file contents, command deta
 
 ## Security
 
-The relay and worker independently enforce the selected access profile. `system` commands inherit the operating-system authority of the account that starts the worker and are not confined to the selected root. Read [Security and permissions](/security) before enabling commands.
+The relay and worker independently enforce the selected access profile. Every new `system` command requires local terminal approval before process creation. An approved command inherits the operating-system authority of the account that starts the worker and is not confined to the selected root. HTTPS protects data in transit, but the managed relay processes tool requests and responses in plaintext while routing them; this is not end-to-end encryption between the MCP client and local worker. Read [Security and permissions](/security) before enabling commands.
 
 ## Children
 

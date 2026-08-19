@@ -18,10 +18,12 @@ import {
 import {
   applyHudEvent,
   initialHudState,
+  summarizeJob,
   type HudActivity,
   type HudDevice,
   type HudState,
   type HudUiActions,
+  type SystemCommandJob,
 } from "./ui-hud-model.js";
 
 const COLORS = {
@@ -72,6 +74,7 @@ interface HudScreenMetrics {
 class HudStore {
   #state: HudState;
   #listeners = new Set<() => void>();
+  #commandApprovals = new Map<string, (approved: boolean) => void>();
 
   constructor(workspace: string) {
     this.#state = initialHudState(workspace);
@@ -93,6 +96,49 @@ class HudStore {
 
   event(event: Parameters<typeof applyHudEvent>[1]): void {
     this.update((state) => applyHudEvent(state, event));
+  }
+
+  requestCommandApproval(
+    job: SystemCommandJob,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (signal.aborted || this.#commandApprovals.size > 0) {
+      return Promise.resolve(false);
+    }
+    const summary = summarizeJob(job);
+    const label = [summary.target, ...summary.details].join(" · ");
+    return new Promise((resolve) => {
+      let settled = false;
+      const onAbort = (): void => finish(false);
+      const finish = (approved: boolean): void => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        this.#commandApprovals.delete(job.requestId);
+        this.update((state) =>
+          state.prompt?.type === "command-confirm" &&
+            state.prompt.requestId === job.requestId
+            ? { ...state, prompt: undefined }
+            : state
+        );
+        resolve(approved);
+      };
+      this.#commandApprovals.set(job.requestId, finish);
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.update((state) => ({
+        ...state,
+        prompt: {
+          type: "command-confirm",
+          requestId: job.requestId,
+          summary: label,
+        },
+        notice: undefined,
+      }));
+    });
+  }
+
+  resolveCommandApproval(requestId: string, approved: boolean): void {
+    this.#commandApprovals.get(requestId)?.(approved);
   }
 }
 
@@ -267,6 +313,12 @@ function promptText(
     return {
       message: `Increase access to ${accessProfileLabel(state.prompt.accessProfile)}? ${detail}`,
       choices: "Y confirm  N cancel",
+    };
+  }
+  if (state.prompt.type === "command-confirm") {
+    return {
+      message: `Run system command? ${state.prompt.summary}`,
+      choices: "Y run  N deny",
     };
   }
   const device = state.status?.devices[state.prompt.deviceIndex];
@@ -1055,10 +1107,18 @@ function HudRuntime({ store, actions, signal, stop }: {
 
     if (current.prompt) {
       if (key.escape || value === "n") {
-        store.update((state) => ({ ...state, prompt: undefined, notice: undefined }));
+        if (current.prompt.type === "command-confirm") {
+          store.resolveCommandApproval(current.prompt.requestId, false);
+        } else {
+          store.update((state) => ({ ...state, prompt: undefined, notice: undefined }));
+        }
         return;
       }
       if (value !== "y") return;
+      if (current.prompt.type === "command-confirm") {
+        store.resolveCommandApproval(current.prompt.requestId, true);
+        return;
+      }
       if (current.prompt.type === "access-confirm") {
         beginAccessChange(store, actions, current.prompt.accessProfile);
         return;
@@ -1250,7 +1310,11 @@ export async function runSessionHud(
     },
   );
 
-  const session = actions.run(controller.signal, (event) => store.event(event)).then(() => {
+  const session = actions.run(
+    controller.signal,
+    (event) => store.event(event),
+    async (job) => await store.requestCommandApproval(job, controller.signal),
+  ).then(() => {
     if (!controller.signal.aborted) {
       store.update((state) => ({ ...state, connection: "disconnected" }));
     }

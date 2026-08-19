@@ -18,7 +18,10 @@ import {
   revokePairedDevice,
   type RelayEndpoints,
 } from "../relay-client.js";
-import { LocalWorker } from "./local-worker.js";
+import {
+  LocalWorker,
+  type CommandAuthorizer,
+} from "./local-worker.js";
 import {
   DeviceRejectedError,
   RemoteWorker,
@@ -47,6 +50,7 @@ export interface ManagedSessionOptions {
   accessProfile?: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
+  authorizeCommand?: CommandAuthorizer;
 }
 
 function report(
@@ -232,7 +236,7 @@ export function accessProfileSummary(
     case "workspace":
       return "Workspace access: clients can inspect and modify files inside this root; commands are disabled.";
     case "system":
-      return "System access: clients can modify files and run commands with this account's full environment, permissions, credentials, and network access.";
+      return "System access: clients can modify files; every new command requires local approval before it can run with this account's full environment, permissions, credentials, and network access.";
   }
 }
 
@@ -333,7 +337,16 @@ export async function runManagedSession(
       controller.signal,
     );
     controller.signal.throwIfAborted();
-    worker = await LocalWorker.create(root, accessProfile);
+    if (accessProfile === "system" && !options.authorizeCommand) {
+      throw new Error(
+        "System access requires a local command-approval handler.",
+      );
+    }
+    worker = await LocalWorker.create(
+      root,
+      accessProfile,
+      options.authorizeCommand,
+    );
     controller.signal.throwIfAborted();
 
     report(

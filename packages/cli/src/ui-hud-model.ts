@@ -40,9 +40,11 @@ export interface HudStatus {
 }
 
 type HudView = "activity" | "workspace" | "devices" | "help";
+export type SystemCommandJob = Extract<WorkerJob, { type: "run_command" }>;
 type HudPrompt =
   | { type: "revoke-confirm"; deviceIndex: number }
-  | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
+  | { type: "access-confirm"; accessProfile: WorkerAccessProfile }
+  | { type: "command-confirm"; requestId: string; summary: string };
 
 export interface HudState {
   workspace: string;
@@ -75,6 +77,7 @@ export interface HudUiActions {
   run(
     signal: AbortSignal,
     onEvent: (event: ManagedSessionEvent) => void,
+    authorizeCommand: (job: SystemCommandJob) => Promise<boolean>,
   ): Promise<void>;
   loadStatus(signal: AbortSignal): Promise<HudStatus>;
   revokeDevice(deviceId: string, signal: AbortSignal): Promise<void>;
@@ -207,7 +210,7 @@ function assertNever(_value: never): never {
   throw new Error("Unsupported activity type.");
 }
 
-function summarizeJob(job: WorkerJob): HudActivitySummary {
+export function summarizeJob(job: WorkerJob): HudActivitySummary {
   switch (job.type) {
     case "read_file":
     case "view_image":

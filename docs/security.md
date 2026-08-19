@@ -10,15 +10,15 @@ Each worker exposes one canonical local directory and one access profile:
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
-| `system` | Yes | Yes | Yes |
+| `system` | Yes | Yes | Yes, after local approval |
 
-The selected profile is visible in the local terminal and returned by `list_workspaces` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
+The selected profile is visible in the local terminal and returned by `list_workspaces` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. Under `system`, profile permission alone is not enough to start a new command: the worker also requires a local approval decision supplied by the interactive terminal. Command status, retained-output reads, and cancellation apply only to commands that already passed that start gate. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
 
 ## Warning about system access
 
-`system` access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.
+`system` access enables remote command requests for the operating-system account that launched Glossa, but every new command must be approved in the local terminal before the worker starts it. A denied request, a missing approval handler, or a disconnected terminal fails closed. An approved command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment and local approval do not sandbox commands, and command filtering is not presented as a security boundary.
 
-Use the default `workspace` profile when file changes, directory creation, deletion, or moves inside the exposed root are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
+Use the default `workspace` profile when file changes, directory creation, deletion, or moves inside the exposed root are sufficient. Enable `system` only when the requested task genuinely requires the local toolchain. Read each local command prompt as an authorization decision, not as proof that the command is harmless: an earlier workspace mutation can alter a build script or executable that an apparently routine approved command later invokes. Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
 
 ## Trust assumptions
 
@@ -113,8 +113,9 @@ Device management authority is scoped to the token's own account, and enrolling 
 - expose only one narrow root per worker and reject implicit home or filesystem-root exposure;
 - let the user select `read-only`, `workspace`, or explicit `system` authority at startup;
 - enforce the selected authority in both the relay and local worker;
-- treat startup as authorization only for operations inside the selected profile, without claiming per-command local confirmation;
-- show the selected profile and compact write or command activity locally;
+- treat startup as authorization for operations inside the selected profile, while requiring a fresh local approval before every new `run_command` under `system`;
+- fail closed when a system command has no local approval handler, is denied, or the interactive session disconnects before approval;
+- show the selected profile, the exact command summary awaiting approval, and compact write or command activity locally;
 - provide visible status, immediate disconnect, logout, and device revocation;
 - treat all file and command output as untrusted data rather than instructions;
 - reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.
@@ -131,7 +132,8 @@ Device management authority is scoped to the token's own account, and enrolling 
 - reject writes and commands before relay dispatch when permission is absent;
 - reject the same operations again inside `LocalWorker`;
 - return stable, actionable `write_access_disabled` and `command_access_disabled` errors that tell the model not to retry or bypass the boundary;
-- cover all profiles at the CLI, relay, MCP, and local-worker test layers.
+- return `command_not_approved` when a locally gated command start is denied or lacks an approval handler;
+- cover all profiles at the CLI, relay, MCP, local-worker, and terminal-interaction test layers.
 
 ### Path escape
 
@@ -158,7 +160,8 @@ Device management authority is scoped to the token's own account, and enrolling 
 **Controls and limits:**
 
 - make `workspace`, not `system`, the default;
-- require the user to start `glossa --access system` explicitly;
+- require an explicit local choice before entering `system`, either through `--access system` at startup or the HUD access escalation;
+- require local approval before every new `run_command`, and refuse to start a system-profile managed session that has no command-approval handler;
 - disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
 - tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
 - reject recognizable authentication-secret inputs at the relay and worker;
@@ -169,7 +172,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 - make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;
 - recommend a dedicated OS account, container, or VM for unattended or sensitive use.
 
-The authentication-secret detector is deliberately high-confidence. It does not recognize every custom, encoded, encrypted, compressed, fragmented, or transformed value, and it cannot prevent a command from sending data directly to the network. Detection can occur only after earlier command effects. The detector is defense in depth, not a sandbox, complete data-loss-prevention system, or substitute for a credential-free runtime. Public submission remains gated by the decision in [Restricted authentication data review](restricted-data.md).
+Local command approval limits silent command starts but is not a code-integrity or sandbox boundary. A client or relay that can mutate the exposed workspace may alter a script, dependency, executable, or configuration and later request an ordinary-looking command that exercises that change. The authentication-secret detector is deliberately high-confidence. It does not recognize every custom, encoded, encrypted, compressed, fragmented, or transformed value, and it cannot prevent a command from sending data directly to the network. Detection can occur only after earlier command effects. These controls are defense in depth, not a sandbox, complete data-loss-prevention system, or substitute for a credential-free runtime. Public submission remains gated by the decision in [Restricted authentication data review](restricted-data.md).
 
 ### Restricted Data in tool traffic
 
@@ -215,11 +218,12 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 - the relay does not possess local repository clones or durable developer credentials;
 - device or worker credentials can issue jobs while an authorized worker is exposed, so relay compromise remains serious;
 - relay-side profile enforcement reduces accidental overreach, while local enforcement remains authoritative against a forbidden operation;
+- a new `system` command also requires a local terminal approval that the relay cannot grant by itself;
 - minimize dependencies and privileges;
 - use managed platform patching, exact dependencies, secret scanning, short-lived worker credentials, and rapid device revocation;
 - keep production content out of logs and durable routing state.
 
-A fully malicious relay can still send any protocol job to a connected worker. The local profile boundary prevents a read-only or workspace worker from executing a command, but a `system` worker intentionally retains broad command authority. Stronger protection requires running that worker inside an isolated OS account, container, or VM.
+A fully malicious relay can still send protocol jobs to a connected worker and can observe the plaintext application data it routes; HTTPS protects transport, not the relay process from the data it must route. The local profile boundary prevents a read-only or workspace worker from executing a command, and a `system` worker will not start a new command without local approval. That approval prevents silent command starts but does not make the relay untrusted: a malicious relay can still exercise permitted structured file operations, including workspace mutations, and may poison code or configuration that a later approved command executes. Stronger protection requires running the worker inside an isolated OS account, container, or VM. A claim that the managed relay is cryptographically unable to read or forge workspace traffic would require an end-to-end protocol in which encryption and request authentication occur before the managed relay receives MCP tool arguments; the current relay alone cannot provide that property.
 
 ## Data retention
 

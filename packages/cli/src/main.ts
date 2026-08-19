@@ -57,7 +57,8 @@ Usage:
 Running glossa opens one workspace in an interactive terminal.
 Access defaults to workspace: guarded file reads and writes, with commands disabled.
 Use read-only to prevent file changes. Use system only when ChatGPT must run commands;
-those commands inherit this account's permissions, environment, credentials, and network.
+each command requires local approval before inheriting this account's permissions,
+environment, credentials, and network.
 Update checks run at most once per day before a workspace connects.
 
 Keys:
@@ -87,7 +88,7 @@ async function runWorkspaceSession(
     await runSessionHud({
       workspace: root,
       ...(label ? { workspaceLabel: label } : {}),
-      run: async (signal, onEvent) => {
+      run: async (signal, onEvent, authorizeCommand) => {
         while (!signal.aborted) {
           const sessionAccessProfile = requestedAccessProfile;
           const sessionController = new AbortController();
@@ -100,6 +101,7 @@ async function runWorkspaceSession(
               device,
               workerVersion: VERSION,
               accessProfile: sessionAccessProfile,
+              authorizeCommand,
               ...(label ? { workspaceLabel: label } : {}),
               signal: sessionController.signal,
               onEvent: (event) => {

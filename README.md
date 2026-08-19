@@ -34,13 +34,13 @@ Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete conn
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
-| `system` | Yes | Yes | Yes |
+| `system` | Yes | Yes | Yes, after local approval |
 
 The default is useful for most code changes because it permits guarded file edits without command execution.
 
-> **`system` is not sandboxed.** Commands have the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. They are not confined to the selected project.
+> **`system` is not sandboxed.** Each command needs local approval before it starts with the worker account's full environment, credentials, filesystem permissions, and network access. It is not confined to the selected project.
 
-Expose only a narrow project you trust. Keep credentials and regulated or otherwise sensitive data out of the workspace. See [Security and permissions](https://glossa.sh/security) before enabling `system`.
+Expose only a narrow trusted project; keep credentials and sensitive data out. See [Security and permissions](https://glossa.sh/security) before enabling `system`.
 
 ## How it works
 

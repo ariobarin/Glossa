@@ -8,17 +8,17 @@ Glossa connects one project folder to an authenticated client through a local wo
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
-| `system` | Yes | Yes | Yes |
+| `system` | Yes | Yes | Yes, after local approval |
 
 The selected profile appears in the local terminal and in `list_workspaces`. Both the relay and the local worker enforce it.
 
-> **`system` is powerful and is not sandboxed.** Commands run with the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. Commands are not confined to the selected project and can affect local or external systems.
+> **`system` is powerful and is not sandboxed.** Each command needs local approval. Approved commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the project.
 
 ## What Glossa enforces
 
 - Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes. Workspace mode can create directories, move files or directories, and delete paths without enabling commands.
-- File changes require `workspace` or `system`; commands require an explicit `system` session.
-- OAuth, account scoping, device credentials, and HTTPS protect the relay connection.
+- File changes require `workspace` or `system`; commands require `system` plus local approval.
+- OAuth, account scoping, device credentials, and HTTPS protect the connection. HTTPS encrypts transport; the managed relay still processes plaintext tool traffic.
 - The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
 - The local worker keeps command state only transiently. Default command responses remain bounded; when output is truncated, up to 1 MiB of stdout and 1 MiB of stderr can be read back in bounded ranges without rerunning the command. Terminal command records last no more than five minutes, at most eight recent records are kept, and retained output is deleted with its record.
 - Press Ctrl+C or `q` in the worker terminal to disconnect immediately.
@@ -35,7 +35,7 @@ When credentials must be unreachable, run `system` in a credential-free dedicate
 
 - Start with the default `workspace` mode for ordinary code changes, directory creation, moves, and scoped deletions.
 - Use `read-only` for inspection when no edits are needed.
-- Enable `system` only for a task that needs the local toolchain.
+- Enable `system` only when needed and review every command prompt.
 - Expose a narrow project, never a home directory, filesystem root, credential store, or secrets directory.
 - Stop the worker if the activity shown in the terminal is unexpected.
 

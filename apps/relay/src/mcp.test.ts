@@ -147,7 +147,9 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use commands to inspect secrets, bypass file-tool boundaries/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Change and fix requests authorize only scoped edits/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /A build request authorizes the requested build command only when system access is already enabled/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /every new command still requires approval in the worker's local terminal/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /A build request authorizes requesting the build command only when system access is already enabled/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /local terminal still makes the final start decision/);
   assert.match(
     MCP_SERVER_INSTRUCTIONS,
     /Never request, pass, or return Restricted Data.*access credentials,? or authentication secrets/,
@@ -1166,6 +1168,30 @@ test("returns safe actionable messages for public file-policy errors", async (co
     assert.ok(serialized.includes(expectedMessage));
     assert.doesNotMatch(serialized, /private|workspace\\details/);
   }
+
+  const approvalCall = client.callTool({
+    name: "read_file",
+    arguments: { workspaceId: workerId, path: "fixture.txt" },
+  });
+  const approvalJob = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.ok(approvalJob);
+  state.complete(accountId, workerId, {
+    requestId: approvalJob.requestId,
+    ok: false,
+    error: { code: "command_not_approved", message: "private local detail" },
+  });
+  const approvalResult = await approvalCall;
+  const approvalSerialized = JSON.stringify(approvalResult.content);
+  assert.match(approvalSerialized, /command_not_approved/);
+  assert.match(approvalSerialized, /local user did not approve/);
+  assert.match(approvalSerialized, /Do not retry, rephrase, or bypass/);
+  assert.doesNotMatch(approvalSerialized, /private local detail/);
 
   const unknownCall = client.callTool({
     name: "read_file",

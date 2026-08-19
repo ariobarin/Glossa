@@ -118,9 +118,9 @@ test("workspace access permits guarded file writes but not commands", async (con
   assert.equal(commandResult.error?.code, "command_access_disabled");
 });
 
-test("system access preserves full local command execution", async (context) => {
+test("system access preserves full local command execution after approval", async (context) => {
   const root = await temporaryDirectory(context);
-  const worker = await LocalWorker.create(root, "system");
+  const worker = await LocalWorker.create(root, "system", () => true);
   context.after(async () => await worker.shutdown());
 
   const commandResult = await worker.handle({
@@ -162,11 +162,42 @@ test("system access preserves full local command execution", async (context) => 
   });
 });
 
+test("system commands fail closed without local approval and honor denial", async (context) => {
+  const root = await temporaryDirectory(context);
+  const withoutApproval = await LocalWorker.create(root, "system");
+  context.after(async () => await withoutApproval.shutdown());
+
+  const missingApprovalResult = await withoutApproval.handle({
+    type: "run_command",
+    requestId: "00000000-0000-4000-8000-000000000046",
+    argv: [process.execPath, "--version"],
+    timeoutMs: 5_000,
+  });
+  assert.equal(missingApprovalResult.ok, false);
+  assert.equal(missingApprovalResult.error?.code, "command_not_approved");
+
+  let approvalRequestId: string | undefined;
+  const denied = await LocalWorker.create(root, "system", (job) => {
+    approvalRequestId = job.requestId;
+    return false;
+  });
+  context.after(async () => await denied.shutdown());
+  const deniedResult = await denied.handle({
+    type: "run_command",
+    requestId: "00000000-0000-4000-8000-000000000047",
+    argv: [process.execPath, "--version"],
+    timeoutMs: 5_000,
+  });
+  assert.equal(approvalRequestId, "00000000-0000-4000-8000-000000000047");
+  assert.equal(deniedResult.ok, false);
+  assert.equal(deniedResult.error?.code, "command_not_approved");
+});
+
 test("blocks recognizable authentication data before it leaves the worker", async (context) => {
   const root = await temporaryDirectory(context);
   const key = "sk-proj-" + "A".repeat(32);
   await writeFile(path.join(root, "secret.txt"), `OPENAI_API_KEY=${key}`, "utf8");
-  const worker = await LocalWorker.create(root, "system");
+  const worker = await LocalWorker.create(root, "system", () => true);
   context.after(async () => await worker.shutdown());
 
   await writeFile(path.join(root, key), "safe", "utf8");
