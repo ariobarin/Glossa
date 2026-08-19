@@ -336,7 +336,7 @@ await check("stable GitHub CLI release and native checksums", async () => {
 
 await check("stable npm latest tag", async () => {
   const response = await request(
-    "https://registry.npmjs.org/@ariobarin%2Fglossa",
+    "https://registry.npmjs.org/glossa",
   );
   assert.equal(response.status, 200);
   const metadata = await response.json();

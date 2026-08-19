@@ -9,7 +9,7 @@ Use it when a task depends on local state such as an existing checkout, uncommit
 Install the CLI with Node.js 22.9 or newer:
 
 ```shell
-npm install --global @ariobarin/glossa
+npm install --global glossa
 ```
 
 Add this MCP server to ChatGPT using OAuth:

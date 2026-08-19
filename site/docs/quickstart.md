@@ -7,8 +7,10 @@ Install Glossa, add it to ChatGPT, then pair the computer that will expose your 
 Requires Node.js 22.9 or newer.
 
 ```shell
-npm install --global @ariobarin/glossa
+npm install --global glossa
 ```
+
+Prefer not to install globally? Skip this step and use `npx glossa` in step 3.
 
 ## 2. Add Glossa to ChatGPT
 
@@ -31,9 +33,15 @@ Open a terminal in your project folder and run:
 glossa
 ```
 
+If you skipped the global install, run:
+
+```shell
+npx glossa
+```
+
 The first time a computer runs Glossa, it shows a short pairing code. Enter it on the Glossa control panel and sign in to the account that should own the computer. On a headless or SSH-only machine, redeem the printed code from any other device. Glossa then stores only the computer's revocable device credential. It does not retain your Google or Auth0 refresh token.
 
-Keep the terminal open after pairing. Later `glossa` runs on that computer reuse the device pairing without user sign-in. Run `glossa unpair` to revoke the computer before pairing it with another Glossa account.
+Keep the terminal open after pairing. Later `glossa` or `npx glossa` runs on that computer reuse the device pairing without user sign-in. Run `glossa unpair` to revoke the computer before pairing it with another Glossa account.
 
 > Glossa starts with `workspace` access: ChatGPT can read and edit the selected project, but cannot run commands. `system` access is optional and unsandboxed; commands inherit the account's environment, credentials, filesystem permissions, and network access. [Review security](/security) before enabling it.
 

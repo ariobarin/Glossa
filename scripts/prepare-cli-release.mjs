@@ -19,14 +19,14 @@ run([
   "version",
   version,
   "--workspace",
-  "@ariobarin/glossa",
+  "glossa",
   "--no-git-tag-version",
   "--allow-same-version",
 ]);
 run(["run", "check"]);
-run(["pack", "--workspace", "@ariobarin/glossa", "--dry-run"]);
+run(["pack", "--workspace", "glossa", "--dry-run"]);
 
-console.log(`Prepared @ariobarin/glossa ${version}. No tag was created or published.`);
+console.log(`Prepared glossa ${version}. No tag was created or published.`);
 
 function run(args) {
   const result = spawnSync(process.execPath, [npmCli, ...args], {

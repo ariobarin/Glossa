@@ -6,8 +6,8 @@ import semver from "semver";
 import type { UpdateChannel } from "./update-state.js";
 import { processIsAlive } from "./update-lock.js";
 
-const PACKAGE_NAME = "@ariobarin/glossa";
-const DEFAULT_REGISTRY_URL = "https://registry.npmjs.org/@ariobarin%2Fglossa";
+const PACKAGE_NAME = "glossa";
+const DEFAULT_REGISTRY_URL = "https://registry.npmjs.org/glossa";
 const DEFAULT_RELEASE_BASE_URL =
   "https://github.com/ariobarin/glossa/releases/download";
 

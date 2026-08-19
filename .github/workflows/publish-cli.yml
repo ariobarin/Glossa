@@ -134,7 +134,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm run build --workspace @glossa/protocol
-      - run: npm run build --workspace @ariobarin/glossa
+      - run: npm run build --workspace glossa
       - name: Publish package
         shell: bash
         run: |
@@ -144,7 +144,7 @@ jobs:
           else
             tag=latest
           fi
-          npm publish --workspace @ariobarin/glossa --tag "$tag"
+          npm publish --workspace glossa --tag "$tag"
 
   publish-release:
     needs: standalone

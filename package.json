@@ -13,7 +13,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run clean && npm run build --workspace @glossa/protocol && npm run build --workspace @ariobarin/glossa && npm run build --workspace @glossa/relay",
+    "build": "npm run clean && npm run build --workspace @glossa/protocol && npm run build --workspace glossa && npm run build --workspace @glossa/relay",
     "check": "npm run docs:check && npm run site:check && npm run review:check && npm run build && npm test",
     "clean": "node scripts/clean.mjs",
     "dev": "npm run build --workspace @glossa/protocol && npm run dev --workspace @glossa/relay",
@@ -23,15 +23,15 @@
     "docs:build": "node scripts/build-docs.mjs",
     "docs:check": "node scripts/build-docs.mjs --check",
     "site:check": "node scripts/check-site-chrome.mjs",
-    "cli:hud-demo": "npm run build --workspace @glossa/protocol && npm run hud:demo --workspace @ariobarin/glossa",
+    "cli:hud-demo": "npm run build --workspace @glossa/protocol && npm run hud:demo --workspace glossa",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "integration:smoke": "node --import tsx scripts/integration-smoke.ts",
-    "test": "npm run test --workspace @glossa/relay && npm run test --workspace @ariobarin/glossa",
+    "test": "npm run test --workspace @glossa/relay && npm run test --workspace glossa",
     "review:metadata:check": "node scripts/check-metadata-golden.mjs",
     "review:check": "npm run review:metadata:check && node scripts/check-review-readiness.mjs && node --import tsx scripts/check-restricted-data-corpus.ts",
     "review:check:production": "node scripts/check-production-review-surface.mjs",
     "review:check:plugin": "node scripts/check-plugin-package.mjs",
-    "review:check:submission": "npm run check && npm run review:check:production && npm run review:check:plugin && npm pack --workspace @ariobarin/glossa --dry-run && git diff --check",
+    "review:check:submission": "npm run check && npm run review:check:production && npm run review:check:plugin && npm pack --workspace glossa --dry-run && git diff --check",
     "review:fixture:prepare": "node scripts/prepare-app-review-workspace.mjs --reset"
   },
   "license": "MIT",

@@ -24,7 +24,7 @@ It runs:
 - documentation, site, review-readiness, build, and test checks;
 - the production website, OAuth metadata, relay health, GitHub release, native-asset, and npm stable-release checks;
 - validation of the actual generated `.codex-plugin/plugin.json` and `.app.json` against the real `plugin_asdk_app...` connection ID and reviewed package fields;
-- an npm package dry-run for `@ariobarin/glossa`;
+- an npm package dry-run for `glossa`;
 - `git diff --check`.
 
 Also reset the deterministic reviewer fixture before any reviewer session:
