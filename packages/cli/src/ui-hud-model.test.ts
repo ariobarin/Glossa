@@ -273,7 +273,7 @@ test("activity command summaries preserve argv endpoints without stdin content",
     job: {
       type: "run_command",
       requestId: "request-3",
-      argv: ["npm", "run", "check", "--workspace", "@ariobarin/glossa"],
+      argv: ["npm", "run", "check", "--workspace", "glossa"],
       stdin: "do not show this",
       timeoutMs: 30_000,
     },
@@ -282,7 +282,7 @@ test("activity command summaries preserve argv endpoints without stdin content",
 
   assert.equal(
     summary.target,
-    'argv ["npm", "run", "check", "--workspace", "@ariobarin/glossa"]',
+    'argv ["npm", "run", "check", "--workspace", "glossa"]',
   );
   assert.deepEqual(summary.details, ["stdin 16 B", "timeout 30000 ms"]);
   assert.doesNotMatch(`${summary.target} ${summary.details.join(" ")}`, /do not show this/);

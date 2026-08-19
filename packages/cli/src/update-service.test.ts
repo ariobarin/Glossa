@@ -72,13 +72,13 @@ test("routes Windows npm updates through cmd.exe", () => {
         "/d",
         "/s",
         "/c",
-        "npm.cmd install --global @ariobarin/glossa@0.1.1",
+        "npm.cmd install --global glossa@0.1.1",
       ],
     },
   );
   assert.deepEqual(npmInstallInvocation("0.1.1", "linux"), {
     command: "npm",
-    args: ["install", "--global", "@ariobarin/glossa@0.1.1"],
+    args: ["install", "--global", "glossa@0.1.1"],
   });
   assert.throws(
     () => npmInstallInvocation("0.1.1 & echo unsafe", "win32", "cmd.exe"),

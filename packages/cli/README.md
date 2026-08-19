@@ -1,15 +1,21 @@
-# @ariobarin/glossa
+# glossa
 
 The `glossa` CLI connects one project on your computer to the Glossa MCP relay through an authenticated outbound worker. The npm package supports Windows, macOS, and Linux and requires Node.js 22.9 or newer.
 
 ```shell
-npm install --global @ariobarin/glossa
+npm install --global glossa
 ```
 
 Start it in the project you want ChatGPT to use:
 
 ```shell
 glossa
+```
+
+Or run the same CLI without a global install:
+
+```shell
+npx glossa
 ```
 
 ## Access profiles
