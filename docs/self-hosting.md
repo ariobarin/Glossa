@@ -4,7 +4,7 @@ Glossa is a managed service. Self-hosting is the optional alternative for people
 
 ## Requirements
 
-- Node.js 22.9 or newer and npm
+- Docker, or Node.js 22.9 or newer and npm
 - Postgres 17 with TLS enabled
 - one public HTTPS origin for the relay
 - an Auth0 tenant that issues JWT access tokens for your relay audience
@@ -45,7 +45,15 @@ GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES=YOUR_PROVIDER|
 # GLOSSA_AUTH0_ALLOWED_SUBJECTS=YOUR_PROVIDER|EXACT_USER_ID
 ```
 
-Install, build, migrate, and start the relay:
+Build and run the relay image with the same `.env` file:
+
+```powershell
+docker build -t glossa-relay .
+docker run --rm --env-file .env glossa-relay npm run migrate --workspace @glossa/relay
+docker run --rm --env-file .env -p 39100:39100 glossa-relay
+```
+
+Or install, build, migrate, and start it directly with Node.js:
 
 ```powershell
 npm ci

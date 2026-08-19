@@ -31,6 +31,17 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  relay-container:
+    name: Relay container smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker compose up -d --build --wait
+      - run: curl --fail --silent --show-error http://127.0.0.1:39100/healthz
+      - if: always()
+        run: docker compose down -v
+
   check-windows:
     name: Full repository check (Windows)
     runs-on: windows-latest
