@@ -14,10 +14,14 @@ function connectedState(): HudState {
   };
 }
 
-async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 1_000,
+  label = "HUD state",
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for HUD state.");
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}.`);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
 }
@@ -95,7 +99,7 @@ test("footer keeps navigation left and contextual controls right", () => {
   for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, regularNav);
   }
-  assert.match(activity, /↑ Older\s+↓ Newer$/);
+  assert.match(activity, /↑↓ Select\s+Enter Inspect\s+Tab Detailed$/);
   assert.match(workspace, /← Read only\s+→ System$/);
   assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
 });
@@ -173,7 +177,7 @@ test("activity layout aligns tool arguments and timestamps", () => {
   assert.match(rows[2]!, /○\s+run_command/);
 });
 
-test("activity view paginates newest-first without an agent block", () => {
+test("activity view follows newest activity without an agent block", () => {
   const activities = Array.from({ length: 30 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
@@ -191,10 +195,106 @@ test("activity view paginates newest-first without an agent block", () => {
     false,
     20,
   );
-  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(1-15\/30\)/);
+  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(17-30\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
-  assert.match(output, /file-30\.txt/);
+  assert.match(output, /›\s+✓\s+read_file\s+path "file-30\.txt"/);
   assert.doesNotMatch(output, /file-1\.txt/);
+});
+
+test("activity keyboard toggles density and inspects the selected call", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+    ref(): unknown;
+    unref(): unknown;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+  input.ref = () => input;
+  input.unref = () => input;
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 100;
+  output.rows = 28;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent) => {
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+          },
+        });
+        onEvent({
+          type: "activity",
+          phase: "returned",
+          job: {
+            type: "read_file",
+            requestId: "00000000-0000-4000-8000-000000000021",
+            path: "packages/cli/src/ui-hud.tsx",
+          },
+          ok: true,
+        });
+        onEvent({
+          type: "activity",
+          phase: "started",
+          job: {
+            type: "run_command",
+            requestId: "00000000-0000-4000-8000-000000000022",
+            argv: ["npm", "run", "check", "--workspace", "@ariobarin/glossa"],
+            timeoutMs: 120_000,
+          },
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => {
+        throw new Error("not used");
+      },
+      revokeDevice: async () => {
+        throw new Error("not used");
+      },
+      changeAccessProfile: () => undefined,
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  try {
+    await waitFor(() => rendered.includes("Glossa / Workspace"), 1_000, "Workspace view");
+    input.write("a");
+    await waitFor(() => rendered.includes("Tab Detailed"), 1_000, "compact Activity view");
+    assert.match(rendered, /npm run check/);
+
+    input.write("\t");
+    await waitFor(() => rendered.includes("Tab Compact"), 1_000, "detailed Activity view");
+    assert.match(rendered, /argv \["npm"/);
+
+    input.write("\r");
+    await waitFor(() => rendered.includes("Activity / Run Command"), 1_000, "Activity inspect view");
+    assert.match(rendered, /@ariobarin\/glossa/);
+    assert.match(rendered, /Esc Back/);
+  } finally {
+    input.write("q");
+    await run;
+  }
 });
 
 test("devices keyboard navigation revokes the selected device", async () => {

@@ -37,8 +37,17 @@ const demoJobs: WorkerJob[] = [
   {
     type: "run_command",
     requestId: "demo-command",
-    argv: ["npm", "run", "check"],
-    timeoutMs: 30_000,
+    argv: [
+      "npm",
+      "run",
+      "check",
+      "--workspace",
+      "@ariobarin/glossa",
+      "--",
+      "--reporter",
+      "spec",
+    ],
+    timeoutMs: 120_000,
   },
 ];
 

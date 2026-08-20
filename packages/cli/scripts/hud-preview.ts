@@ -5,11 +5,25 @@ import { fileURLToPath } from "node:url";
 
 import { Resvg } from "@resvg/resvg-js";
 import xtermHeadless from "@xterm/headless";
+import type { WorkerJob } from "@glossa/protocol";
+import {
+  activityCallByteLength,
+  activityCallFromJob,
+  formatActivityCall,
+} from "../src/ui-hud-activity.js";
 import type { HudActivity, HudState } from "../src/ui-hud-model.js";
 
 const { Terminal } = xtermHeadless;
 
-const SCREENS = ["activity", "activity-empty", "workspace", "devices", "help"] as const;
+const SCREENS = [
+  "activity",
+  "activity-detailed",
+  "activity-detail",
+  "activity-empty",
+  "workspace",
+  "devices",
+  "help",
+] as const;
 type PreviewScreen = typeof SCREENS[number];
 
 const PREVIEW_NOW = Date.UTC(2026, 7, 20, 14, 0, 0);
@@ -104,28 +118,162 @@ function parseArgs(args: string[]): PreviewOptions | "help" {
   return options;
 }
 
+function previewActivity(
+  job: WorkerJob,
+  state: HudActivity["state"],
+  startedAt: number,
+  updatedAt: number,
+): HudActivity {
+  const call = activityCallFromJob(job);
+  return {
+    tool: job.type,
+    summary: {
+      target: formatActivityCall(call, "detailed", 512),
+      details: [],
+      truncation: "middle",
+    },
+    compactSummary: formatActivityCall(call, "compact", 512),
+    call,
+    callBytes: activityCallByteLength(call),
+    requestId: job.requestId,
+    state,
+    startedAt,
+    updatedAt,
+  };
+}
+
 function previewActivities(now: number): HudActivity[] {
-  return [
-    { tool: "list_files", summary: { target: 'path "packages/cli/src"', details: ["recursive", "limit 100"], truncation: "middle" }, requestId: "preview-list", state: "returned", updatedAt: now - 240_000 },
-    { tool: "read_file", summary: { target: 'path "packages/cli/src/ui-hud.tsx"', details: [], truncation: "middle" }, requestId: "preview-read", state: "returned", updatedAt: now - 55_000 },
-    { tool: "search_text", summary: { target: 'query "activityPageCapacity" in path "packages/cli/src"', details: ["extensions .ts, .tsx"], truncation: "middle" }, requestId: "preview-search", state: "returned", updatedAt: now - 31_000 },
-    { tool: "read_file_range", summary: { target: 'path "packages/cli/src/ui-hud-model.test.ts"', details: ["lines 700–820"], truncation: "middle" }, requestId: "preview-range", state: "returned", updatedAt: now - 22_000 },
-    { tool: "edit_file", summary: { target: 'path "packages/cli/src/ui-hud.tsx"', details: ["2 edits", "guarded"], truncation: "middle" }, requestId: "preview-edit", state: "returned", updatedAt: now - 12_000 },
-    { tool: "run_command", summary: { target: 'argv ["npm", "run", "check"]', details: ["timeout 120000 ms"], truncation: "middle" }, requestId: "preview-failed", state: "failed", updatedAt: now - 9_000 },
-    { tool: "view_image", summary: { target: 'path ".hud-preview/current.png"', details: [], truncation: "middle" }, requestId: "preview-image", state: "returned", updatedAt: now - 5_000 },
-    { tool: "run_command", summary: { target: 'argv ["npm", "run", "cli:hud-preview", "--", "--screen", "activity"]', details: [], truncation: "middle" }, requestId: "preview-running", state: "working", updatedAt: now },
+  const jobs: Array<{
+    job: WorkerJob;
+    state: HudActivity["state"];
+    startedAt: number;
+    updatedAt: number;
+  }> = [
+    {
+      job: {
+        type: "list_files",
+        requestId: "00000000-0000-4000-8000-000000000001",
+        path: "packages/cli/src",
+        recursive: true,
+        limit: 100,
+        timeoutMs: 8_000,
+      },
+      state: "returned",
+      startedAt: now - 243_000,
+      updatedAt: now - 240_000,
+    },
+    {
+      job: {
+        type: "read_file",
+        requestId: "00000000-0000-4000-8000-000000000002",
+        path: "packages/cli/src/ui-hud.tsx",
+      },
+      state: "returned",
+      startedAt: now - 56_000,
+      updatedAt: now - 55_000,
+    },
+    {
+      job: {
+        type: "search_text",
+        requestId: "00000000-0000-4000-8000-000000000003",
+        query: "activityPageCapacity",
+        path: "packages/cli/src",
+        extensions: [".ts", ".tsx"],
+        timeoutMs: 8_000,
+      },
+      state: "returned",
+      startedAt: now - 33_000,
+      updatedAt: now - 31_000,
+    },
+    {
+      job: {
+        type: "read_file_range",
+        requestId: "00000000-0000-4000-8000-000000000004",
+        path: "packages/cli/src/ui-hud-model.test.ts",
+        startLine: 700,
+        lineCount: 121,
+        timeoutMs: 8_000,
+      },
+      state: "returned",
+      startedAt: now - 24_000,
+      updatedAt: now - 22_000,
+    },
+    {
+      job: {
+        type: "edit_file",
+        requestId: "00000000-0000-4000-8000-000000000005",
+        path: "packages/cli/src/ui-hud.tsx",
+        edits: [
+          { oldText: "old one", newText: "new one" },
+          { oldText: "old two", newText: "new two" },
+        ],
+        expectedSha256: "b".repeat(64),
+      },
+      state: "returned",
+      startedAt: now - 14_000,
+      updatedAt: now - 12_000,
+    },
+    {
+      job: {
+        type: "run_command",
+        requestId: "00000000-0000-4000-8000-000000000006",
+        argv: [
+          "npm",
+          "run",
+          "check",
+          "--workspace",
+          "@ariobarin/glossa",
+          "--",
+          "--reporter",
+          "spec",
+        ],
+        timeoutMs: 120_000,
+      },
+      state: "failed",
+      startedAt: now - 14_000,
+      updatedAt: now - 9_000,
+    },
+    {
+      job: {
+        type: "view_image",
+        requestId: "00000000-0000-4000-8000-000000000007",
+        path: ".hud-preview/current.png",
+      },
+      state: "returned",
+      startedAt: now - 6_000,
+      updatedAt: now - 5_000,
+    },
+    {
+      job: {
+        type: "run_command",
+        requestId: "00000000-0000-4000-8000-000000000008",
+        argv: ["npm", "run", "cli:hud-preview", "--", "--screen", "activity"],
+        timeoutMs: 900_000,
+        waitMs: 0,
+      },
+      state: "working",
+      startedAt: now - 18_000,
+      updatedAt: now - 18_000,
+    },
   ];
+  return jobs.map(({ job, state, startedAt, updatedAt }) =>
+    previewActivity(job, state, startedAt, updatedAt)
+  );
 }
 
 async function previewState(screen: PreviewScreen): Promise<HudState> {
   const { initialHudState } = await import("../src/ui-hud-model.js");
+  const activities = previewActivities(PREVIEW_NOW);
+  const newest = activities.at(-1)?.requestId;
+  const failed = activities.find((activity) => activity.state === "failed")?.requestId;
   const state: HudState = {
     ...initialHudState("/workspace/glossa-preview"),
     accessProfile: "system",
     deviceName: "Preview workstation",
     connection: "connected",
     connectedBefore: true,
-    activities: previewActivities(PREVIEW_NOW),
+    activities,
+    activitySelection: newest,
     status: {
       relay: "Local preview relay",
       activeWorkers: 2,
@@ -135,7 +283,31 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       ],
     },
   };
-  if (screen === "activity-empty") return { ...state, view: "activity", activities: [] };
+  if (screen === "activity-empty") {
+    return {
+      ...state,
+      view: "activity",
+      activities: [],
+      activitySelection: undefined,
+    };
+  }
+  if (screen === "activity-detailed") {
+    return {
+      ...state,
+      view: "activity",
+      activityMode: "detailed",
+      activitySelection: failed,
+      activityFollowTail: false,
+    };
+  }
+  if (screen === "activity-detail") {
+    return {
+      ...state,
+      view: "activity-detail",
+      activitySelection: failed,
+      activityFollowTail: false,
+    };
+  }
   return { ...state, view: screen };
 }
 

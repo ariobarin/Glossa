@@ -23,6 +23,12 @@ import {
   type HudState,
   type HudUiActions,
 } from "./ui-hud-model.js";
+import {
+  activityCallDetailFields,
+  activityToolTitle,
+  formatActivityCall,
+  type HudActivityMode,
+} from "./ui-hud-activity.js";
 
 const COLORS = {
   ink: "#f4f1fb",
@@ -45,7 +51,9 @@ function Text({ color, ...props }: HudTextProps): React.ReactNode {
     : <InkText {...props} color={color} />;
 }
 
-const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
+const ACTIVITY_IDLE_REFRESH_INTERVAL_MS = 10_000;
+const ACTIVITY_LIVE_REFRESH_INTERVAL_MS = 1_000;
+const ACTIVITY_SELECTOR_COLUMN_WIDTH = 2;
 const ACTIVITY_STATUS_COLUMN_WIDTH = 2;
 const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
 const ACTIVITY_AGE_COLUMN_WIDTH = 10;
@@ -114,10 +122,23 @@ function connectionLabel(state: HudState): string {
   return "Disconnected";
 }
 
-function activityAge(updatedAt: number | undefined, working: boolean, now: number): string {
-  if (working) return "now";
-  if (updatedAt === undefined) return "";
-  const elapsedMs = Math.max(0, now - updatedAt);
+function liveDuration(elapsedMs: number): string {
+  const seconds = Math.floor(Math.max(0, elapsedMs) / 1_000);
+  if (seconds < 1) return "now";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+function activityAge(activity: HudActivity, now: number): string {
+  if (activity.state === "working") {
+    const startedAt = activity.startedAt ?? activity.updatedAt;
+    return startedAt === undefined ? "now" : liveDuration(now - startedAt);
+  }
+  if (activity.updatedAt === undefined) return "";
+  const elapsedMs = Math.max(0, now - activity.updatedAt);
   if (elapsedMs < 10_000) return "just now";
   if (elapsedMs < 60_000) return `${Math.floor(elapsedMs / 1_000)}s ago`;
   if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m ago`;
@@ -133,6 +154,20 @@ function activityStatus(activity: HudActivity): { symbol: string; tone: string }
 
 function activitySummary(activity: HudActivity): string {
   return [activity.summary.target, ...activity.summary.details].join(" · ");
+}
+
+function selectedActivity(state: HudState): HudActivity | undefined {
+  if (state.activities.length === 0) return undefined;
+  const selected = state.activitySelection
+    ? state.activities.find((activity) => activity.requestId === state.activitySelection)
+    : undefined;
+  return selected ?? state.activities.at(-1);
+}
+
+function selectedActivityIndex(state: HudState): number {
+  const selected = selectedActivity(state);
+  if (!selected) return 0;
+  return Math.max(0, state.activities.findIndex((activity) => activity.requestId === selected.requestId));
 }
 
 function sectionLabel(value: string): string {
@@ -187,8 +222,17 @@ function primaryFooterHints(): HudHint[] {
 function contextualFooterHints(state: HudState): HudHint[] {
   if (state.view === "activity") {
     return [
-      { key: "↑", label: "Older" },
-      { key: "↓", label: "Newer" },
+      { key: "↑↓", label: "Select" },
+      { key: "Enter", label: "Inspect" },
+      { key: "Tab", label: state.activityMode === "compact" ? "Detailed" : "Compact" },
+    ];
+  }
+  if (state.view === "activity-detail") {
+    return [
+      { key: "↑↓", label: "Scroll" },
+      { key: "←", label: "Older" },
+      { key: "→", label: "Newer" },
+      { key: "Esc", label: "Back" },
     ];
   }
   if (state.view === "devices" && (state.status?.devices.length ?? 0) > 0) {
@@ -295,31 +339,30 @@ function screenMetrics(state: HudState, columns: number, rows: number): HudScree
   return { usable, bodyBudget, footerRows, overlayRows };
 }
 
-function activityPageCapacity(bodyBudget: number): number {
+function activityListCapacity(bodyBudget: number): number {
   return Math.max(0, bodyBudget - ACTIVITY_PREAMBLE_LINES);
 }
 
-function activityMaxPage(activityCount: number, pageCapacity: number): number {
-  if (pageCapacity <= 0 || activityCount <= pageCapacity) return 0;
-  return Math.floor((activityCount - 1) / pageCapacity);
-}
-
-function activityPageInfo(state: HudState, bodyBudget: number): {
+function activityWindow(state: HudState, bodyBudget: number): {
   capacity: number;
-  maxPage: number;
-  page: number;
-  rangeStart: number;
-  rangeEnd: number;
+  selection: number;
+  start: number;
+  end: number;
 } {
-  const capacity = activityPageCapacity(bodyBudget);
-  const maxPage = activityMaxPage(state.activities.length, capacity);
-  const page = Math.min(state.activityPage, maxPage);
+  const capacity = activityListCapacity(bodyBudget);
+  const total = state.activities.length;
+  const selection = total === 0
+    ? 0
+    : Math.min(selectedActivityIndex(state), total - 1);
+  if (capacity <= 0) return { capacity, selection, start: 0, end: 0 };
+  const maxStart = Math.max(0, total - capacity);
+  const centered = selection - Math.floor(capacity / 2);
+  const start = Math.min(maxStart, Math.max(0, centered));
   return {
     capacity,
-    maxPage,
-    page,
-    rangeStart: page * capacity + 1,
-    rangeEnd: Math.min((page + 1) * capacity, state.activities.length),
+    selection,
+    start,
+    end: Math.min(total, start + capacity),
   };
 }
 
@@ -366,20 +409,24 @@ function Header({ state, usable, bodyBudget, color }: {
   color: boolean;
 }): React.ReactNode {
   const statusColor = state.connection === "error" ? COLORS.coral : COLORS.purpleReadable;
+  const selected = selectedActivity(state);
   const pageTitle = state.view === "activity"
     ? "Activity"
-    : state.view === "devices"
-      ? "Devices"
-      : state.view === "workspace"
-        ? "Workspace"
-        : state.view === "help"
-          ? "Help"
-          : undefined;
-  const activityPage = state.view === "activity"
-    ? activityPageInfo(state, bodyBudget)
+    : state.view === "activity-detail"
+      ? `Activity / ${selected ? activityToolTitle(selected.tool) : "Call"}`
+      : state.view === "devices"
+        ? "Devices"
+        : state.view === "workspace"
+          ? "Workspace"
+          : state.view === "help"
+            ? "Help"
+            : undefined;
+  const activityListWindow = state.view === "activity"
+    ? activityWindow(state, bodyBudget)
     : undefined;
-  const activityRange = activityPage && activityPage.maxPage > 0
-    ? ` (${activityPage.rangeStart}-${activityPage.rangeEnd}/${state.activities.length})`
+  const activityRange = activityListWindow &&
+      activityListWindow.capacity > 0 && state.activities.length > activityListWindow.capacity
+    ? ` (${activityListWindow.start + 1}-${activityListWindow.end}/${state.activities.length})`
     : "";
   const deviceWindow = state.view === "devices"
     ? deviceListWindow(state, bodyBudget, usable)
@@ -466,21 +513,26 @@ function AccessSectionTitle({ accessProfile, usable, color }: {
   );
 }
 
-function activityLayout(usable: number): {
+function activityLayout(usable: number, selectable: boolean): {
   toolWidth: number;
   showSummary: boolean;
   showAge: boolean;
+  summaryWidth: number;
 } {
+  const selectorWidth = selectable ? ACTIVITY_SELECTOR_COLUMN_WIDTH : 0;
+  const leadingWidth = selectorWidth + ACTIVITY_STATUS_COLUMN_WIDTH;
   const toolWidth = Math.min(
     ACTIVITY_TOOL_COLUMN_WIDTH,
-    Math.max(0, usable - ACTIVITY_STATUS_COLUMN_WIDTH),
+    Math.max(0, usable - leadingWidth),
   );
-  return {
-    toolWidth,
-    showSummary: usable >= ACTIVITY_STATUS_COLUMN_WIDTH + toolWidth + 5,
-    showAge: usable >=
-      ACTIVITY_STATUS_COLUMN_WIDTH + toolWidth + ACTIVITY_AGE_COLUMN_WIDTH + 10,
-  };
+  const showSummary = usable >= leadingWidth + toolWidth + 5;
+  const showAge = usable >= leadingWidth + toolWidth + ACTIVITY_AGE_COLUMN_WIDTH + 10;
+  const summaryWidth = Math.max(
+    0,
+    usable - leadingWidth - toolWidth - (showSummary ? 2 : 0) -
+      (showAge ? ACTIVITY_AGE_COLUMN_WIDTH + 2 : 0),
+  );
+  return { toolWidth, showSummary, showAge, summaryWidth };
 }
 
 function WorkspaceView({ state, usable, bodyBudget, color, now }: {
@@ -561,24 +613,45 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
   );
 }
 
-function ActivityRow({ activity, usable, color, now }: {
+function ActivityRow({
+  activity,
+  usable,
+  color,
+  now,
+  selectable = false,
+  selected = false,
+  mode = "compact",
+}: {
   activity: HudActivity;
   usable: number;
   color: boolean;
   now: number;
+  selectable?: boolean;
+  selected?: boolean;
+  mode?: HudActivityMode;
 }): React.ReactNode {
-  const { toolWidth, showSummary, showAge } = activityLayout(usable);
-  const age = activityAge(activity.updatedAt, activity.state === "working", now);
+  const { toolWidth, showSummary, showAge, summaryWidth } = activityLayout(usable, selectable);
+  const age = activityAge(activity, now);
   const status = activityStatus(activity);
+  const summary = activity.call
+    ? formatActivityCall(activity.call, mode, summaryWidth)
+    : mode === "compact"
+      ? activity.compactSummary ?? activitySummary(activity)
+      : activitySummary(activity);
   return (
     <Box width={usable} height={1} flexShrink={0}>
+      {selectable ? (
+        <Box width={ACTIVITY_SELECTOR_COLUMN_WIDTH} flexShrink={0}>
+          <Text bold color={color ? COLORS.purpleReadable : undefined}>{selected ? "›" : " "}</Text>
+        </Box>
+      ) : null}
       <Box width={ACTIVITY_STATUS_COLUMN_WIDTH} flexShrink={0}>
         <Text bold color={color ? status.tone : undefined}>{status.symbol}</Text>
       </Box>
       <Box width={toolWidth} flexShrink={0}>
         <Text
           bold
-          color={color ? COLORS.ink : undefined}
+          color={color ? (selected ? COLORS.purpleReadable : COLORS.ink) : undefined}
           wrap="truncate"
         >
           {activity.tool}
@@ -586,8 +659,8 @@ function ActivityRow({ activity, usable, color, now }: {
       </Box>
       {showSummary ? (
         <Box marginLeft={2} flexGrow={1} flexShrink={1}>
-          <Text color={color ? COLORS.muted : undefined} wrap="truncate-middle">
-            {activitySummary(activity)}
+          <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+            {summary}
           </Text>
         </Box>
       ) : null}
@@ -612,10 +685,11 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
   color: boolean;
   now: number;
 }): React.ReactNode {
-  const { capacity, page } = activityPageInfo(state, bodyBudget);
-  const pageEnd = state.activities.length - page * capacity;
-  const pageStart = Math.max(0, pageEnd - capacity);
-  const visible = capacity > 0 ? state.activities.slice(pageStart, pageEnd) : [];
+  const window = activityWindow(state, bodyBudget);
+  const visible = window.capacity > 0
+    ? state.activities.slice(window.start, window.end)
+    : [];
+  const selection = selectedActivity(state)?.requestId;
 
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
@@ -629,10 +703,183 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
           usable={usable}
           color={color}
           now={now}
+          selectable
+          selected={activity.requestId === selection}
+          mode={state.activityMode}
         />
       ))}
     </Box>
   );
+}
+
+interface HudDetailLine {
+  section?: string;
+  label?: string;
+  value?: string;
+  tone?: string;
+  bold?: boolean;
+}
+
+function wrapDetailValue(value: string, width: number): string[] {
+  if (width <= 0) return [""];
+  const characters = Array.from(value);
+  if (characters.length <= width) return [value];
+  const lines: string[] = [];
+  let remaining = characters;
+  while (remaining.length > width) {
+    let cut = width;
+    for (let index = width - 1; index >= Math.floor(width * 0.55); index -= 1) {
+      if (remaining[index] === " ") {
+        cut = index;
+        break;
+      }
+    }
+    lines.push(remaining.slice(0, cut).join(""));
+    remaining = remaining.slice(cut);
+    while (remaining[0] === " ") remaining = remaining.slice(1);
+  }
+  if (remaining.length > 0) lines.push(remaining.join(""));
+  return lines;
+}
+
+function detailFieldLines(label: string, value: string, usable: number): HudDetailLine[] {
+  const labelWidth = Math.min(14, Math.max(8, Math.floor(usable * 0.3)));
+  const valueWidth = Math.max(1, usable - labelWidth);
+  return wrapDetailValue(value, valueWidth).map((part, index) => ({
+    label: index === 0 ? label : "",
+    value: part,
+  }));
+}
+
+function activityStateLabel(activity: HudActivity): string {
+  if (activity.state === "working") return "Working";
+  if (activity.state === "failed") return "Failed";
+  return "Completed";
+}
+
+function activityStateTone(activity: HudActivity): string {
+  if (activity.state === "working") return COLORS.purpleReadable;
+  if (activity.state === "failed") return COLORS.coral;
+  return COLORS.success;
+}
+
+function formatClock(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+function activityDetailLines(activity: HudActivity, usable: number, now: number): HudDetailLine[] {
+  const lines: HudDetailLine[] = [
+    {},
+    { section: "Call" },
+    { value: activity.tool, bold: true },
+  ];
+  if (activity.call) {
+    for (const field of activityCallDetailFields(activity.call)) {
+      lines.push(...detailFieldLines(field.label, field.value, usable));
+    }
+  } else {
+    const reason = activity.callUnavailable === "oversized"
+      ? "Full invocation metadata exceeded the local Activity detail budget and was not retained."
+      : "Full invocation metadata has expired from the local Activity detail budget; the compact history remains available.";
+    lines.push(...detailFieldLines("details", reason, usable));
+  }
+
+  lines.push({}, { section: "Status" });
+  lines.push(...detailFieldLines("state", activityStateLabel(activity), usable).map((line) => ({
+    ...line,
+    tone: activityStateTone(activity),
+    bold: true,
+  })));
+  if (activity.startedAt !== undefined) {
+    lines.push(...detailFieldLines("started", formatClock(activity.startedAt), usable));
+    if (activity.state !== "working" && activity.updatedAt !== undefined) {
+      lines.push(...detailFieldLines("finished", formatClock(activity.updatedAt), usable));
+    }
+    const end = activity.state === "working" ? now : activity.updatedAt ?? now;
+    lines.push(...detailFieldLines("duration", liveDuration(end - activity.startedAt), usable));
+  }
+  lines.push(...detailFieldLines("request", activity.requestId, usable));
+  return lines;
+}
+
+function ActivityDetailLine({ line, usable, color }: {
+  line: HudDetailLine;
+  usable: number;
+  color: boolean;
+}): React.ReactNode {
+  if (line.section) return <SectionTitle color={color}>{line.section}</SectionTitle>;
+  if (line.label === undefined && line.value === undefined) return <Blank />;
+  const labelWidth = Math.min(14, Math.max(8, Math.floor(usable * 0.3)));
+  return (
+    <Box width={usable} height={1} flexShrink={0}>
+      <Box width={labelWidth} flexShrink={0}>
+        <Text color={color ? COLORS.muted : undefined}>{line.label ?? ""}</Text>
+      </Box>
+      <Text
+        bold={Boolean(line.bold)}
+        color={color ? (line.tone ?? COLORS.ink) : undefined}
+        wrap="truncate"
+      >
+        {line.value ?? ""}
+      </Text>
+    </Box>
+  );
+}
+
+function ActivityDetailView({ state, usable, bodyBudget, color, now }: {
+  state: HudState;
+  usable: number;
+  bodyBudget: number;
+  color: boolean;
+  now: number;
+}): React.ReactNode {
+  const activity = selectedActivity(state);
+  if (!activity) {
+    return (
+      <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
+        <Blank />
+        <Text color={color ? COLORS.muted : undefined}>No activity selected.</Text>
+      </Box>
+    );
+  }
+  const lines = activityDetailLines(activity, usable, now);
+  const maxScroll = Math.max(0, lines.length - bodyBudget);
+  const scroll = Math.min(state.activityDetailScroll, maxScroll);
+  const visible = lines.slice(scroll, scroll + bodyBudget);
+  const remaining = Math.max(0, bodyBudget - visible.length);
+  const previewCapacity = maxScroll === 0 ? Math.min(3, Math.max(0, remaining - 2)) : 0;
+  const preview = previewCapacity > 0 ? state.activities.slice(-previewCapacity) : [];
+
+  return (
+    <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
+      {visible.map((line, index) => (
+        <ActivityDetailLine key={`${scroll}-${index}`} line={line} usable={usable} color={color} />
+      ))}
+      {previewCapacity > 0 ? (
+        <>
+          <Blank />
+          <ActivityPreviewHeader usable={usable} color={color} />
+          {preview.map((recent) => (
+            <ActivityRow
+              key={recent.requestId}
+              activity={recent}
+              usable={usable}
+              color={color}
+              now={now}
+              mode="compact"
+            />
+          ))}
+        </>
+      ) : null}
+    </Box>
+  );
+}
+
+function activityDetailMaxScroll(state: HudState, usable: number, bodyBudget: number, now: number): number {
+  const activity = selectedActivity(state);
+  if (!activity) return 0;
+  return Math.max(0, activityDetailLines(activity, usable, now).length - bodyBudget);
 }
 
 function Metric({ value, label, color }: {
@@ -900,6 +1147,14 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
           color={color}
           now={now}
         />
+      ) : state.view === "activity-detail" ? (
+        <ActivityDetailView
+          state={state}
+          usable={metrics.usable}
+          bodyBudget={metrics.bodyBudget}
+          color={color}
+          now={now}
+        />
       ) : state.view === "devices" ? (
         <DevicesView
           state={state}
@@ -1015,22 +1270,30 @@ function HudRuntime({ store, actions, signal, stop }: {
 
   useEffect(() => {
     if (
-      (state.view !== "activity" && state.view !== "workspace") ||
+      (state.view !== "activity" && state.view !== "activity-detail" && state.view !== "workspace") ||
       state.activities.length === 0
     ) return;
-    const timer = setInterval(() => setClock((value) => value + 1), ACTIVITY_REFRESH_INTERVAL_MS);
+    const hasWorkingActivity = state.activities.some((activity) => activity.state === "working");
+    const interval = hasWorkingActivity
+      ? ACTIVITY_LIVE_REFRESH_INTERVAL_MS
+      : ACTIVITY_IDLE_REFRESH_INTERVAL_MS;
+    const timer = setInterval(() => setClock((value) => value + 1), interval);
     return () => clearInterval(timer);
-  }, [state.view, state.activities.length]);
+  }, [state.view, state.activities]);
 
   useEffect(() => {
     store.update((current) => {
       let next = current;
       const metrics = screenMetrics(current, columns, rows);
-      if (current.view === "activity") {
-        const capacity = activityPageCapacity(metrics.bodyBudget);
-        const maxPage = activityMaxPage(current.activities.length, capacity);
-        if (current.activityPage > maxPage) {
-          next = { ...next, activityPage: maxPage };
+      if (current.view === "activity-detail") {
+        const maxScroll = activityDetailMaxScroll(
+          current,
+          metrics.usable,
+          metrics.bodyBudget,
+          Date.now(),
+        );
+        if (current.activityDetailScroll > maxScroll) {
+          next = { ...next, activityDetailScroll: maxScroll };
         }
       }
       if (current.prompt?.type === "revoke-confirm") {
@@ -1091,17 +1354,88 @@ function HudRuntime({ store, actions, signal, stop }: {
       return;
     }
 
-    if (current.view === "activity" && (key.upArrow || key.downArrow)) {
-      const metrics = screenMetrics(current, columns, rows);
-      const capacity = activityPageCapacity(metrics.bodyBudget);
-      const maxPage = activityMaxPage(current.activities.length, capacity);
-      const page = key.upArrow
-        ? Math.min(maxPage, current.activityPage + 1)
-        : Math.max(0, current.activityPage - 1);
-      if (page !== current.activityPage) {
-        store.update((state) => ({ ...state, activityPage: page }));
+    if (current.view === "activity-detail") {
+      if (key.upArrow || key.downArrow) {
+        const metrics = screenMetrics(current, columns, rows);
+        const maxScroll = activityDetailMaxScroll(
+          current,
+          metrics.usable,
+          metrics.bodyBudget,
+          Date.now(),
+        );
+        const activityDetailScroll = key.upArrow
+          ? Math.max(0, current.activityDetailScroll - 1)
+          : Math.min(maxScroll, current.activityDetailScroll + 1);
+        if (activityDetailScroll !== current.activityDetailScroll) {
+          store.update((state) => ({ ...state, activityDetailScroll }));
+        }
+        return;
       }
-      return;
+      if (key.leftArrow || key.rightArrow) {
+        const total = current.activities.length;
+        if (total === 0) return;
+        const currentIndex = selectedActivityIndex(current);
+        const selection = key.leftArrow
+          ? Math.max(0, currentIndex - 1)
+          : Math.min(total - 1, currentIndex + 1);
+        if (selection !== currentIndex) {
+          store.update((state) => ({
+            ...state,
+            activitySelection: state.activities[selection]?.requestId,
+            activityFollowTail: selection === total - 1,
+            activityDetailScroll: 0,
+          }));
+        }
+        return;
+      }
+      if (key.escape) {
+        store.update((state) => ({
+          ...state,
+          view: "activity",
+          activityDetailScroll: 0,
+          notice: undefined,
+        }));
+        return;
+      }
+    }
+    if (current.view === "activity") {
+      if (key.tab || input === "\t") {
+        store.update((state) => ({
+          ...state,
+          activityMode: state.activityMode === "compact" ? "detailed" : "compact",
+          notice: undefined,
+        }));
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        const total = current.activities.length;
+        if (total === 0) return;
+        const currentIndex = selectedActivityIndex(current);
+        const selection = key.upArrow
+          ? Math.max(0, currentIndex - 1)
+          : Math.min(total - 1, currentIndex + 1);
+        if (selection !== currentIndex) {
+          store.update((state) => ({
+            ...state,
+            activitySelection: state.activities[selection]?.requestId,
+            activityFollowTail: selection === total - 1,
+            notice: undefined,
+          }));
+        }
+        return;
+      }
+      if (key.return || input === "\r" || input === "\n") {
+        const selected = selectedActivity(current);
+        if (!selected) return;
+        store.update((state) => ({
+          ...state,
+          activitySelection: selected.requestId,
+          view: "activity-detail",
+          activityDetailScroll: 0,
+          notice: undefined,
+        }));
+        return;
+      }
     }
     if (current.view === "devices" && (key.upArrow || key.downArrow)) {
       const total = current.status?.devices.length ?? 0;
@@ -1143,10 +1477,15 @@ function HudRuntime({ store, actions, signal, stop }: {
       return;
     }
     if (value === "a") {
+      const enteringFromAnotherView = current.view !== "activity" && current.view !== "activity-detail";
       store.update((state) => ({
         ...state,
         view: "activity",
-        activityPage: current.view === "activity" ? state.activityPage : 0,
+        activitySelection: enteringFromAnotherView
+          ? state.activities.at(-1)?.requestId
+          : selectedActivity(state)?.requestId,
+        activityFollowTail: enteringFromAnotherView ? true : state.activityFollowTail,
+        activityDetailScroll: 0,
         notice: undefined,
       }));
       return;
