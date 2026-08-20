@@ -874,21 +874,8 @@ function formatClock(timestamp: number): string {
 function activityDetailLines(activity: HudActivity, usable: number, now: number): HudDetailLine[] {
   const lines: HudDetailLine[] = [
     {},
-    { section: "Call" },
-    { value: activity.tool, bold: true },
+    { section: "Status" },
   ];
-  if (activity.call) {
-    for (const field of activityCallDetailFields(activity.call)) {
-      lines.push(...detailFieldLines(field.label, field.value, usable));
-    }
-  } else {
-    const reason = activity.callUnavailable === "oversized"
-      ? "Full invocation metadata exceeded the local Activity detail budget and was not retained."
-      : "Full invocation metadata has expired from the local Activity detail budget; the compact history remains available.";
-    lines.push(...detailFieldLines("details", reason, usable));
-  }
-
-  lines.push({}, { section: "Status" });
   lines.push(...detailFieldLines("state", activityStateLabel(activity), usable).map((line) => ({
     ...line,
     tone: activityStateTone(activity),
@@ -902,7 +889,19 @@ function activityDetailLines(activity: HudActivity, usable: number, now: number)
     const end = activity.state === "working" ? now : activity.updatedAt ?? now;
     lines.push(...detailFieldLines("duration", liveDuration(end - activity.startedAt), usable));
   }
-  lines.push(...detailFieldLines("request", activity.requestId, usable));
+
+  lines.push({}, { section: "Call" });
+  if (activity.call) {
+    for (const field of activityCallDetailFields(activity.call)) {
+      lines.push(...detailFieldLines(field.label, field.value, usable));
+    }
+  } else {
+    const reason = activity.callUnavailable === "oversized"
+      ? "Full invocation metadata exceeded the local Activity detail budget and was not retained."
+      : "Full invocation metadata has expired from the local Activity detail budget; the compact history remains available.";
+    lines.push(...detailFieldLines("details", reason, usable));
+  }
+
   return lines;
 }
 
@@ -950,31 +949,12 @@ function ActivityDetailView({ state, usable, bodyBudget, color, now }: {
   const maxScroll = Math.max(0, lines.length - bodyBudget);
   const scroll = Math.min(state.activityDetailScroll, maxScroll);
   const visible = lines.slice(scroll, scroll + bodyBudget);
-  const remaining = Math.max(0, bodyBudget - visible.length);
-  const previewCapacity = maxScroll === 0 ? Math.min(3, Math.max(0, remaining - 2)) : 0;
-  const preview = previewCapacity > 0 ? state.activities.slice(-previewCapacity) : [];
 
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       {visible.map((line, index) => (
         <ActivityDetailLine key={`${scroll}-${index}`} line={line} usable={usable} color={color} />
       ))}
-      {previewCapacity > 0 ? (
-        <>
-          <Blank />
-          <ActivityPreviewHeader usable={usable} color={color} />
-          {preview.map((recent) => (
-            <ActivityRow
-              key={recent.requestId}
-              activity={recent}
-              usable={usable}
-              color={color}
-              now={now}
-              mode="compact"
-            />
-          ))}
-        </>
-      ) : null}
     </Box>
   );
 }
