@@ -817,6 +817,8 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
 
 interface HudDetailLine {
   section?: string;
+  separator?: boolean;
+  fullWidth?: boolean;
   label?: string;
   value?: string;
   tone?: string;
@@ -854,23 +856,15 @@ function detailFieldLines(label: string, value: string, usable: number): HudDeta
   }));
 }
 
-function activityResultLabel(activity: HudActivity): string {
-  if (activity.output) return activity.output.result;
-  if (activity.state === "working") return "Running";
-  if (activity.state === "failed") return "Failed";
-  return "Success";
-}
-
-function activityResultTone(activity: HudActivity): string {
-  if (activity.output?.kind === "running" || activity.state === "working") return COLORS.purpleReadable;
-  if (activity.output?.kind === "error" || activity.state === "failed") return COLORS.coral;
-  return COLORS.success;
-}
-
-function activityOutputPreviewLines(preview: string, usable: number): HudDetailLine[] {
+function activityInspectOutputLines(activity: HudActivity, usable: number): HudDetailLine[] {
+  const preview = activity.output?.preview;
+  if (!preview) return [];
+  const tone = activity.output?.kind === "error" ? COLORS.coral : undefined;
   const lines: HudDetailLine[] = [];
-  for (const [index, part] of preview.split("\n").entries()) {
-    lines.push(...detailFieldLines(index === 0 ? "output" : "", part || " ", usable));
+  for (const part of preview.split("\n")) {
+    for (const wrapped of wrapDetailValue(part || " ", usable)) {
+      lines.push({ value: wrapped, fullWidth: true, ...(tone ? { tone } : {}) });
+    }
   }
   return lines;
 }
@@ -880,26 +874,8 @@ function formatClock(timestamp: number): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
 }
 
-function activityDetailLines(activity: HudActivity, usable: number, now: number): HudDetailLine[] {
-  const lines: HudDetailLine[] = [
-    {},
-    { section: "Output" },
-  ];
-  lines.push(...detailFieldLines("result", activityResultLabel(activity), usable).map((line) => ({
-    ...line,
-    tone: activityResultTone(activity),
-    bold: true,
-  })));
-  if (activity.startedAt !== undefined) {
-    lines.push(...detailFieldLines("started", formatClock(activity.startedAt), usable));
-    if (activity.output?.preview) {
-      lines.push(...activityOutputPreviewLines(activity.output.preview, usable));
-    }
-    const end = activity.state === "working" ? now : activity.updatedAt ?? now;
-    lines.push(...detailFieldLines("duration", liveDuration(end - activity.startedAt), usable));
-  }
-
-  lines.push({}, { section: "Call" });
+function activityInspectLines(activity: HudActivity, usable: number, now: number): HudDetailLine[] {
+  const lines: HudDetailLine[] = [{}];
   if (activity.call) {
     for (const field of activityCallDetailFields(activity.call)) {
       lines.push(...detailFieldLines(field.label, field.value, usable));
@@ -910,7 +886,13 @@ function activityDetailLines(activity: HudActivity, usable: number, now: number)
       : "Full invocation metadata has expired from the local Activity detail budget; the compact history remains available.";
     lines.push(...detailFieldLines("details", reason, usable));
   }
-
+  if (activity.startedAt !== undefined) {
+    lines.push(...detailFieldLines("started", formatClock(activity.startedAt), usable));
+    const end = activity.state === "working" ? now : activity.updatedAt ?? now;
+    lines.push(...detailFieldLines("duration", liveDuration(end - activity.startedAt), usable));
+  }
+  lines.push({}, { separator: true }, {}, { section: "Output" });
+  lines.push(...activityInspectOutputLines(activity, usable));
   return lines;
 }
 
@@ -920,6 +902,18 @@ function ActivityDetailLine({ line, usable, color }: {
   color: boolean;
 }): React.ReactNode {
   if (line.section) return <SectionTitle color={color}>{line.section}</SectionTitle>;
+  if (line.separator) return <Line usable={usable} color={color} />;
+  if (line.fullWidth) {
+    return (
+      <Text
+        bold={Boolean(line.bold)}
+        color={color ? (line.tone ?? COLORS.ink) : undefined}
+        wrap="truncate"
+      >
+        {line.value ?? ""}
+      </Text>
+    );
+  }
   if (line.label === undefined && line.value === undefined) return <Blank />;
   const labelWidth = Math.min(14, Math.max(8, Math.floor(usable * 0.3)));
   return (
@@ -954,7 +948,7 @@ function ActivityDetailView({ state, usable, bodyBudget, color, now }: {
       </Box>
     );
   }
-  const lines = activityDetailLines(activity, usable, now);
+  const lines = activityInspectLines(activity, usable, now);
   const maxScroll = Math.max(0, lines.length - bodyBudget);
   const scroll = Math.min(state.activityDetailScroll, maxScroll);
   const visible = lines.slice(scroll, scroll + bodyBudget);
@@ -971,7 +965,7 @@ function ActivityDetailView({ state, usable, bodyBudget, color, now }: {
 function activityDetailMaxScroll(state: HudState, usable: number, bodyBudget: number, now: number): number {
   const activity = selectedActivity(state);
   if (!activity) return 0;
-  return Math.max(0, activityDetailLines(activity, usable, now).length - bodyBudget);
+  return Math.max(0, activityInspectLines(activity, usable, now).length - bodyBudget);
 }
 
 function Metric({ value, label, color }: {

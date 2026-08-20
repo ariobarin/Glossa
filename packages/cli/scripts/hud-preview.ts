@@ -20,6 +20,8 @@ const SCREENS = [
   "activity-detailed",
   "activity-selected",
   "activity-detail",
+  "activity-detail-read",
+  "activity-detail-working",
   "activity-empty",
   "workspace",
   "devices",
@@ -131,13 +133,18 @@ function previewActivity(
     : state === "failed"
       ? {
           kind: "error",
-          result: "Failed",
           preview: job.type === "run_command"
             ? "src/ui-hud.test.ts: activity footer mismatch\n… output truncated …\n1 test failed"
             : "The operation failed.",
           truncated: job.type === "run_command",
         }
-      : { kind: "success", result: "Success" };
+      : job.type === "read_file"
+        ? {
+            kind: "success",
+            preview: "import React from \"react\";\nimport { Box, Text } from \"ink\";\n… output truncated …\nexport function HudScreen(...) { ... }",
+            truncated: true,
+          }
+        : { kind: "success", preview: "Completed successfully." };
   return {
     tool: job.type,
     summary: {
@@ -279,6 +286,8 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
   const { initialHudState } = await import("../src/ui-hud-model.js");
   const activities = previewActivities(PREVIEW_NOW);
   const failed = activities.find((activity) => activity.state === "failed")?.requestId;
+  const read = activities.find((activity) => activity.tool === "read_file")?.requestId;
+  const working = activities.find((activity) => activity.state === "working")?.requestId;
   const center = activities[Math.floor(activities.length / 2)]?.requestId;
   const state: HudState = {
     ...initialHudState("/workspace/glossa-preview"),
@@ -323,6 +332,20 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       ...state,
       view: "activity-detail",
       activitySelection: failed,
+    };
+  }
+  if (screen === "activity-detail-read") {
+    return {
+      ...state,
+      view: "activity-detail",
+      activitySelection: read,
+    };
+  }
+  if (screen === "activity-detail-working") {
+    return {
+      ...state,
+      view: "activity-detail",
+      activitySelection: working,
     };
   }
   return { ...state, view: screen };

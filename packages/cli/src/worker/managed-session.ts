@@ -29,7 +29,6 @@ import {
 
 export interface ManagedActivityOutput {
   kind: "success" | "error" | "running";
-  result: string;
   preview?: string;
   truncated?: boolean;
 }
@@ -96,6 +95,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function escapeActivityOutputControls(text: string): string {
+  let escaped = "";
+  for (const character of text) {
+    const code = character.codePointAt(0)!;
+    if (character === "\n") {
+      escaped += character;
+    } else if (
+      code < 0x20 ||
+      code === 0x7f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      escaped += character;
+    }
+  }
+  return escaped;
+}
+
 function boundedActivityPreview(
   text: string,
   sourceTruncated = false,
@@ -104,17 +123,18 @@ function boundedActivityPreview(
   if (containsRestrictedAuthenticationData(normalized)) {
     return { preview: "[restricted output blocked]" };
   }
-  if (!normalized) return sourceTruncated
+  const safe = escapeActivityOutputControls(normalized);
+  if (!safe) return sourceTruncated
     ? { preview: OUTPUT_TRUNCATION_MARKER, truncated: true }
     : {};
-  const characters = Array.from(normalized);
+  const characters = Array.from(safe);
   if (
     characters.length <= MAX_ACTIVITY_OUTPUT_CHARS &&
     (!sourceTruncated || characters.length + OUTPUT_TRUNCATION_MARKER.length + 1 <= MAX_ACTIVITY_OUTPUT_CHARS)
   ) {
     return sourceTruncated
-      ? { preview: `${normalized}\n${OUTPUT_TRUNCATION_MARKER}`, truncated: true }
-      : { preview: normalized };
+      ? { preview: `${safe}\n${OUTPUT_TRUNCATION_MARKER}`, truncated: true }
+      : { preview: safe };
   }
   const marker = `\n${OUTPUT_TRUNCATION_MARKER}\n`;
   const remaining = Math.max(2, MAX_ACTIVITY_OUTPUT_CHARS - marker.length);
@@ -126,26 +146,43 @@ function boundedActivityPreview(
   };
 }
 
+function formatOutputBytes(bytes: unknown): string | undefined {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return undefined;
+  if (bytes < 1024) return `${bytes} B`;
+  const kibibytes = bytes / 1024;
+  if (kibibytes < 1024) return `${kibibytes.toFixed(kibibytes < 10 ? 1 : 0)} KiB`;
+  return `${(kibibytes / 1024).toFixed(1)} MiB`;
+}
+
+function activitySuccess(preview: string, sourceTruncated = false): ManagedActivityOutput {
+  return {
+    kind: "success",
+    ...boundedActivityPreview(preview, sourceTruncated),
+  };
+}
+
 function commandActivityOutput(value: unknown): ManagedActivityOutput | undefined {
   if (!isRecord(value) || typeof value.status !== "string") return undefined;
   const status = value.status;
   let kind: ManagedActivityOutput["kind"];
-  let result: string;
+  let fallback: string;
   if (status === "running") {
     kind = "running";
-    result = "Running";
+    fallback = "Command started and is still running.";
   } else if (status === "succeeded") {
     kind = "success";
-    result = "Success";
+    fallback = "Command completed successfully.";
   } else if (status === "canceled") {
     kind = "success";
-    result = "Canceled";
+    fallback = "Command canceled.";
   } else if (status === "timed_out") {
     kind = "error";
-    result = "Timed out";
+    fallback = "Command timed out.";
   } else if (status === "failed") {
     kind = "error";
-    result = "Failed";
+    fallback = typeof value.exitCode === "number"
+      ? `Command failed with exit code ${value.exitCode}.`
+      : "Command failed.";
   } else {
     return undefined;
   }
@@ -159,38 +196,126 @@ function commandActivityOutput(value: unknown): ManagedActivityOutput | undefine
   const sourceTruncated = previewText === stderr
     ? value.stderrTruncated === true
     : value.stdoutTruncated === true;
-  const fallback = !previewText && kind === "error" && typeof value.exitCode === "number"
-    ? `Exit code ${value.exitCode}.`
-    : "";
   return {
     kind,
-    result,
     ...boundedActivityPreview(previewText || fallback, sourceTruncated),
   };
+}
+
+function listFilesActivityOutput(value: unknown): ManagedActivityOutput | undefined {
+  if (!isRecord(value) || !Array.isArray(value.entries)) return undefined;
+  const lines = value.entries.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.path !== "string") return [];
+    const suffix = entry.type === "directory"
+      ? "/"
+      : formatOutputBytes(entry.bytes)
+        ? ` · ${formatOutputBytes(entry.bytes)}`
+        : "";
+    return [`${entry.path}${suffix}`];
+  });
+  return activitySuccess(
+    lines.length > 0 ? lines.join("\n") : "No entries.",
+    value.truncated === true,
+  );
+}
+
+function searchTextActivityOutput(value: unknown): ManagedActivityOutput | undefined {
+  if (!isRecord(value) || !Array.isArray(value.matches)) return undefined;
+  const lines = value.matches.flatMap((match) => {
+    if (
+      !isRecord(match) ||
+      typeof match.path !== "string" ||
+      typeof match.line !== "number" ||
+      typeof match.column !== "number" ||
+      typeof match.text !== "string"
+    ) return [];
+    return [`${match.path}:${match.line}:${match.column}  ${match.text}${match.lineTruncated === true ? " …" : ""}`];
+  });
+  return activitySuccess(
+    lines.length > 0 ? lines.join("\n") : "No matches.",
+    value.truncated === true,
+  );
 }
 
 function activityOutput(job: WorkerJob, result: WorkerResult): ManagedActivityOutput {
   if (!result.ok) {
     return {
       kind: "error",
-      result: "Failed",
       ...boundedActivityPreview(result.error?.message ?? "The worker operation failed."),
     };
   }
 
-  if (job.type === "run_command" || job.type === "get_command" || job.type === "cancel_command") {
-    return commandActivityOutput(result.value) ?? { kind: "success", result: "Success" };
+  const value = result.value;
+  switch (job.type) {
+    case "read_file":
+      if (isRecord(value) && typeof value.content === "string") {
+        return activitySuccess(value.content || "(empty file)");
+      }
+      break;
+    case "view_image":
+      if (isRecord(value)) {
+        const size = formatOutputBytes(value.bytes);
+        const mimeType = typeof value.mimeType === "string" ? value.mimeType : "image";
+        return activitySuccess(`Loaded ${mimeType}${size ? ` · ${size}` : ""}.`);
+      }
+      break;
+    case "list_files": {
+      const output = listFilesActivityOutput(value);
+      if (output) return output;
+      break;
+    }
+    case "search_text": {
+      const output = searchTextActivityOutput(value);
+      if (output) return output;
+      break;
+    }
+    case "read_file_range":
+      if (isRecord(value) && typeof value.content === "string") {
+        return activitySuccess(value.content || "(empty range)", value.nextLine !== undefined);
+      }
+      break;
+    case "write_file":
+      if (isRecord(value)) {
+        const size = formatOutputBytes(value.bytes);
+        return activitySuccess(size ? `Wrote ${size}.` : "File written.");
+      }
+      break;
+    case "edit_file":
+      if (isRecord(value) && typeof value.diff === "string") {
+        return activitySuccess(value.diff || "Edit applied.", value.diffTruncated === true);
+      }
+      break;
+    case "make_directory":
+      if (isRecord(value) && typeof value.created === "boolean") {
+        return activitySuccess(value.created ? "Directory created." : "Directory already existed.");
+      }
+      break;
+    case "delete_path":
+      if (isRecord(value) && typeof value.deletedType === "string") {
+        return activitySuccess(`Deleted ${value.deletedType}.`);
+      }
+      break;
+    case "move_path":
+      if (isRecord(value) && typeof value.movedType === "string") {
+        return activitySuccess(`Moved ${value.movedType}.`);
+      }
+      break;
+    case "run_command":
+    case "get_command":
+    case "cancel_command": {
+      const output = commandActivityOutput(value);
+      if (output) return output;
+      break;
+    }
+    case "read_command_output":
+      if (isRecord(value)) {
+        const content = typeof value.content === "string" ? value.content : "";
+        const sourceTruncated = value.nextOffset !== undefined || value.retentionTruncated === true;
+        return activitySuccess(content || "No output in this range.", sourceTruncated);
+      }
+      break;
   }
-  if (job.type === "read_command_output" && isRecord(result.value)) {
-    const content = typeof result.value.content === "string" ? result.value.content : "";
-    const sourceTruncated = result.value.nextOffset !== undefined || result.value.retentionTruncated === true;
-    return {
-      kind: "success",
-      result: "Success",
-      ...boundedActivityPreview(content, sourceTruncated),
-    };
-  }
-  return { kind: "success", result: "Success" };
+  return activitySuccess("Completed successfully.");
 }
 
 function activitySafeJob(job: WorkerJob): WorkerJob {
@@ -284,7 +409,12 @@ export function visibleWorker(
             phase: "returned",
             job: visibleJob,
             ok: false,
-            output: { kind: "error", result: "Failed" },
+            output: {
+              kind: "error",
+              ...boundedActivityPreview(
+                error instanceof Error ? error.message : "The worker operation failed.",
+              ),
+            },
           },
           `${job.type} failed (${job.requestId}).`,
         );

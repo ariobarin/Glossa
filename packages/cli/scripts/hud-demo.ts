@@ -107,15 +107,18 @@ await runSessionHud({
           job,
           ok: job.type !== "search_text",
           output: job.type === "search_text"
-            ? { kind: "error", result: "Failed", preview: "No matches found in the selected files." }
+            ? { kind: "error", preview: "Search exceeded its 5s deadline." }
             : job.type === "run_command"
               ? {
                   kind: "success",
-                  result: "Success",
                   preview: "Review readiness checks passed.\n… output truncated …\n204 tests passed · 0 failed",
                   truncated: true,
                 }
-              : { kind: "success", result: "Success" },
+              : {
+                  kind: "success",
+                  preview: "import React from \"react\";\nimport { Box, Text } from \"ink\";\n… output truncated …\nexport function HudScreen(...) { ... }",
+                  truncated: true,
+                },
         });
         if (!await sleep(1_500, signal)) return;
       }
