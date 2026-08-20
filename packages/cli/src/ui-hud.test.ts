@@ -437,6 +437,15 @@ test("activity keyboard toggles density and inspects the selected call", async (
     await waitFor(() => rendered.includes("Activity / Run Command"), 1_000, "Activity inspect view");
     assert.match(rendered, /@ariobarin\/glossa/);
     assert.match(rendered, /Esc Back/);
+    assert.doesNotMatch(rendered, /↑↓ Scroll|← Older|→ Newer/);
+
+    const beforeBack = rendered.length;
+    input.write("\r");
+    await waitFor(
+      () => rendered.slice(beforeBack).includes("Enter Inspect"),
+      1_000,
+      "selection view after Enter back",
+    );
   } finally {
     input.write("q");
     await run;

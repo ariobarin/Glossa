@@ -241,9 +241,6 @@ function contextualFooterHints(state: HudState): HudHint[] {
   }
   if (state.view === "activity-detail") {
     return [
-      { key: "↑↓", label: "Scroll" },
-      { key: "←", label: "Older" },
-      { key: "→", label: "Newer" },
       { key: "Esc", label: "Back" },
     ];
   }
@@ -1479,23 +1476,7 @@ function HudRuntime({ store, actions, signal, stop }: {
         }
         return;
       }
-      if (key.leftArrow || key.rightArrow) {
-        const listMetrics = screenMetrics({ ...current, view: "activity" }, columns, rows);
-        const update = activitySelectionUpdate(
-          current,
-          listMetrics.bodyBudget,
-          key.leftArrow ? -1 : 1,
-        );
-        if (update) {
-          store.update((state) => ({
-            ...state,
-            ...update,
-            activityDetailScroll: 0,
-          }));
-        }
-        return;
-      }
-      if (key.escape) {
+      if (key.escape || key.return || input === "\r" || input === "\n") {
         store.update((state) => ({
           ...state,
           view: "activity",
