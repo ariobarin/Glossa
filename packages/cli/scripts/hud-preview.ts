@@ -18,6 +18,7 @@ const { Terminal } = xtermHeadless;
 const SCREENS = [
   "activity",
   "activity-detailed",
+  "activity-selected",
   "activity-detail",
   "activity-empty",
   "workspace",
@@ -264,8 +265,8 @@ function previewActivities(now: number): HudActivity[] {
 async function previewState(screen: PreviewScreen): Promise<HudState> {
   const { initialHudState } = await import("../src/ui-hud-model.js");
   const activities = previewActivities(PREVIEW_NOW);
-  const newest = activities.at(-1)?.requestId;
   const failed = activities.find((activity) => activity.state === "failed")?.requestId;
+  const center = activities[Math.floor(activities.length / 2)]?.requestId;
   const state: HudState = {
     ...initialHudState("/workspace/glossa-preview"),
     accessProfile: "system",
@@ -273,7 +274,6 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
     connection: "connected",
     connectedBefore: true,
     activities,
-    activitySelection: newest,
     status: {
       relay: "Local preview relay",
       activeWorkers: 2,
@@ -296,8 +296,13 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       ...state,
       view: "activity",
       activityMode: "detailed",
-      activitySelection: failed,
-      activityFollowTail: false,
+    };
+  }
+  if (screen === "activity-selected") {
+    return {
+      ...state,
+      view: "activity",
+      activitySelection: center,
     };
   }
   if (screen === "activity-detail") {
@@ -305,7 +310,6 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       ...state,
       view: "activity-detail",
       activitySelection: failed,
-      activityFollowTail: false,
     };
   }
   return { ...state, view: screen };

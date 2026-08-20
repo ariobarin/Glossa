@@ -99,7 +99,7 @@ test("footer keeps navigation left and contextual controls right", () => {
   for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, regularNav);
   }
-  assert.match(activity, /Tab Detailed\s+↑↓ Select\s+Enter Inspect$/);
+  assert.match(activity, /Tab Detailed\s+↑ Older\s+↓ Newer\s+Enter Select$/);
   assert.match(workspace, /← Read only\s+→ System$/);
   assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
 });
@@ -125,14 +125,96 @@ test("activity footer keeps stable controls pinned across density toggles", () =
       false,
       20,
     );
-    for (const control of ["↑↓ Select", "Enter Inspect"]) {
+    for (const control of ["↑ Older", "↓ Newer", "Enter Select"]) {
       assert.deepEqual(
         position(compact, control),
         position(detailed, control),
         `${control} shifted at ${width} columns`,
       );
     }
+
+    const compactSelected = renderHud(
+      {
+        ...connectedState(),
+        view: "activity",
+        activityMode: "compact",
+        activitySelection: "selected",
+      },
+      width,
+      false,
+      20,
+    );
+    const detailedSelected = renderHud(
+      {
+        ...connectedState(),
+        view: "activity",
+        activityMode: "detailed",
+        activitySelection: "selected",
+      },
+      width,
+      false,
+      20,
+    );
+    for (const control of ["↑↓ Select", "Enter Inspect", "Esc Browse"]) {
+      assert.deepEqual(
+        position(compactSelected, control),
+        position(detailedSelected, control),
+        `${control} shifted in selection mode at ${width} columns`,
+      );
+    }
   }
+});
+
+test("activating Activity selection does not shift row columns", () => {
+  const now = Date.now();
+  const activities = [
+    {
+      tool: "read_file" as const,
+      summary: { target: 'path "one.ts"', details: [], truncation: "middle" as const },
+      requestId: "one",
+      state: "returned" as const,
+      updatedAt: now - 15_000,
+    },
+    {
+      tool: "read_file" as const,
+      summary: { target: 'path "two.ts"', details: [], truncation: "middle" as const },
+      requestId: "two",
+      state: "returned" as const,
+      updatedAt: now - 10_000,
+    },
+    {
+      tool: "read_file" as const,
+      summary: { target: 'path "three.ts"', details: [], truncation: "middle" as const },
+      requestId: "three",
+      state: "returned" as const,
+      updatedAt: now - 5_000,
+    },
+  ];
+  const browse = renderHud(
+    { ...connectedState(), view: "activity", activities },
+    90,
+    false,
+    20,
+    now,
+  );
+  const selected = renderHud(
+    { ...connectedState(), view: "activity", activities, activitySelection: "two" },
+    90,
+    false,
+    20,
+    now,
+  );
+  const browseRow = browse.split("\n").find((line) => line.includes('path "two.ts"'))!;
+  const selectedRow = selected.split("\n").find((line) => line.includes('path "two.ts"'))!;
+
+  for (const token of ["✓", "read_file", 'path "two.ts"', "10s ago"]) {
+    assert.equal(
+      browseRow.indexOf(token),
+      selectedRow.indexOf(token),
+      `${token} shifted when selection activated`,
+    );
+  }
+  assert.match(selectedRow, /›\s+✓/);
 });
 
 test("workspace switch label stays pinned as arrow availability changes", () => {
@@ -245,7 +327,8 @@ test("activity view follows newest activity without an agent block", () => {
   );
   assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(17-30\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
-  assert.match(output, /›\s+✓\s+read_file\s+path "file-30\.txt"/);
+  assert.match(output, /✓\s+read_file\s+path "file-30\.txt"/);
+  assert.doesNotMatch(output, /›/);
   assert.doesNotMatch(output, /file-1\.txt/);
 });
 
@@ -309,6 +392,16 @@ test("activity keyboard toggles density and inspects the selected call", async (
             timeoutMs: 120_000,
           },
         });
+        onEvent({
+          type: "activity",
+          phase: "returned",
+          job: {
+            type: "view_image",
+            requestId: "00000000-0000-4000-8000-000000000023",
+            path: ".hud-preview/current.png",
+          },
+          ok: true,
+        });
         await new Promise<void>((resolve) => {
           signal.addEventListener("abort", () => resolve(), { once: true });
         });
@@ -328,12 +421,17 @@ test("activity keyboard toggles density and inspects the selected call", async (
   try {
     await waitFor(() => rendered.includes("Glossa / Workspace"), 1_000, "Workspace view");
     input.write("a");
-    await waitFor(() => rendered.includes("Tab Detailed"), 1_000, "compact Activity view");
+    await waitFor(() => rendered.includes("Enter Select"), 1_000, "browse Activity view");
     assert.match(rendered, /npm run check/);
 
     input.write("\t");
-    await waitFor(() => rendered.includes("Tab Compact"), 1_000, "detailed Activity view");
+    await waitFor(() => rendered.includes("Tab Compact"), 1_000, "detailed browse view");
     assert.match(rendered, /argv \["npm"/);
+
+    input.write("\r");
+    await waitFor(() => rendered.includes("Enter Inspect"), 1_000, "selection Activity view");
+    assert.match(rendered, /›\s+○\s+run_command/);
+    assert.match(rendered, /Esc Browse/);
 
     input.write("\r");
     await waitFor(() => rendered.includes("Activity / Run Command"), 1_000, "Activity inspect view");

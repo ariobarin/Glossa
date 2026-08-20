@@ -158,17 +158,15 @@ function activitySummary(activity: HudActivity): string {
 }
 
 function selectedActivity(state: HudState): HudActivity | undefined {
-  if (state.activities.length === 0) return undefined;
-  const selected = state.activitySelection
-    ? state.activities.find((activity) => activity.requestId === state.activitySelection)
-    : undefined;
-  return selected ?? state.activities.at(-1);
+  if (!state.activitySelection) return undefined;
+  return state.activities.find((activity) => activity.requestId === state.activitySelection);
 }
 
 function selectedActivityIndex(state: HudState): number {
   const selected = selectedActivity(state);
-  if (!selected) return 0;
-  return Math.max(0, state.activities.findIndex((activity) => activity.requestId === selected.requestId));
+  return selected
+    ? state.activities.findIndex((activity) => activity.requestId === selected.requestId)
+    : -1;
 }
 
 function sectionLabel(value: string): string {
@@ -222,15 +220,24 @@ function primaryFooterHints(): HudHint[] {
 
 function contextualFooterHints(state: HudState): HudHint[] {
   if (state.view === "activity") {
-    return [
-      {
-        key: "Tab",
-        label: state.activityMode === "compact" ? "Detailed" : "Compact",
-        labelWidth: "Detailed".length,
-      },
-      { key: "↑↓", label: "Select" },
-      { key: "Enter", label: "Inspect" },
-    ];
+    const density = {
+      key: "Tab",
+      label: state.activityMode === "compact" ? "Detailed" : "Compact",
+      labelWidth: "Detailed".length,
+    };
+    return state.activitySelection
+      ? [
+          density,
+          { key: "↑↓", label: "Select" },
+          { key: "Enter", label: "Inspect" },
+          { key: "Esc", label: "Browse" },
+        ]
+      : [
+          density,
+          { key: "↑", label: "Older" },
+          { key: "↓", label: "Newer" },
+          { key: "Enter", label: "Select" },
+        ];
   }
   if (state.view === "activity-detail") {
     return [
@@ -348,26 +355,118 @@ function activityListCapacity(bodyBudget: number): number {
   return Math.max(0, bodyBudget - ACTIVITY_PREAMBLE_LINES);
 }
 
+function activityBrowseWindow(state: HudState, bodyBudget: number): {
+  capacity: number;
+  start: number;
+  end: number;
+} {
+  const capacity = activityListCapacity(bodyBudget);
+  const total = state.activities.length;
+  if (capacity <= 0 || total === 0) return { capacity, start: 0, end: 0 };
+
+  let end = total;
+  if (state.activityBrowseAnchor) {
+    const anchorIndex = state.activities.findIndex(
+      (activity) => activity.requestId === state.activityBrowseAnchor,
+    );
+    end = anchorIndex >= 0 ? anchorIndex + 1 : Math.min(total, capacity);
+  }
+  return {
+    capacity,
+    start: Math.max(0, end - capacity),
+    end,
+  };
+}
+
 function activityWindow(state: HudState, bodyBudget: number): {
   capacity: number;
   selection: number;
   start: number;
   end: number;
 } {
-  const capacity = activityListCapacity(bodyBudget);
+  const browsing = activityBrowseWindow(state, bodyBudget);
+  const selection = selectedActivityIndex(state);
+  if (
+    selection < 0 ||
+    browsing.capacity <= 0 ||
+    (selection >= browsing.start && selection < browsing.end)
+  ) {
+    return { ...browsing, selection };
+  }
   const total = state.activities.length;
-  const selection = total === 0
-    ? 0
-    : Math.min(selectedActivityIndex(state), total - 1);
-  if (capacity <= 0) return { capacity, selection, start: 0, end: 0 };
-  const maxStart = Math.max(0, total - capacity);
-  const centered = selection - Math.floor(capacity / 2);
+  const maxStart = Math.max(0, total - browsing.capacity);
+  const centered = selection - Math.floor(browsing.capacity / 2);
   const start = Math.min(maxStart, Math.max(0, centered));
   return {
-    capacity,
+    capacity: browsing.capacity,
     selection,
     start,
-    end: Math.min(total, start + capacity),
+    end: Math.min(total, start + browsing.capacity),
+  };
+}
+
+function activityBrowseAnchorForEnd(
+  activities: HudActivity[],
+  end: number,
+): string | undefined {
+  if (end >= activities.length) return undefined;
+  return end > 0 ? activities[end - 1]?.requestId : undefined;
+}
+
+function activityCenterSelection(state: HudState, bodyBudget: number): string | undefined {
+  const { start, end } = activityBrowseWindow(state, bodyBudget);
+  if (end <= start) return undefined;
+  const index = start + Math.floor((end - start) / 2);
+  return state.activities[index]?.requestId;
+}
+
+function activityPageUpdate(
+  state: HudState,
+  bodyBudget: number,
+  direction: "older" | "newer",
+): { activityBrowseAnchor: string | undefined } | undefined {
+  const window = activityBrowseWindow(state, bodyBudget);
+  if (window.capacity <= 0) return undefined;
+  if (direction === "older") {
+    if (window.start <= 0) return undefined;
+    return {
+      activityBrowseAnchor: activityBrowseAnchorForEnd(state.activities, window.start),
+    };
+  }
+  if (window.end >= state.activities.length) return undefined;
+  const end = Math.min(state.activities.length, window.end + window.capacity);
+  return {
+    activityBrowseAnchor: activityBrowseAnchorForEnd(state.activities, end),
+  };
+}
+
+function activitySelectionUpdate(
+  state: HudState,
+  bodyBudget: number,
+  direction: -1 | 1,
+): {
+  activitySelection: string;
+  activityBrowseAnchor: string | undefined;
+} | undefined {
+  const currentIndex = selectedActivityIndex(state);
+  if (currentIndex < 0) return undefined;
+  const targetIndex = Math.min(
+    state.activities.length - 1,
+    Math.max(0, currentIndex + direction),
+  );
+  if (targetIndex === currentIndex) return undefined;
+
+  const window = activityWindow(state, bodyBudget);
+  let activityBrowseAnchor = state.activityBrowseAnchor;
+  if (targetIndex < window.start) {
+    activityBrowseAnchor = activityBrowseAnchorForEnd(state.activities, window.start);
+  } else if (targetIndex >= window.end) {
+    const end = Math.min(state.activities.length, window.end + window.capacity);
+    activityBrowseAnchor = activityBrowseAnchorForEnd(state.activities, end);
+  }
+  return {
+    activitySelection: state.activities[targetIndex]!.requestId,
+    activityBrowseAnchor,
   };
 }
 
@@ -1381,17 +1480,16 @@ function HudRuntime({ store, actions, signal, stop }: {
         return;
       }
       if (key.leftArrow || key.rightArrow) {
-        const total = current.activities.length;
-        if (total === 0) return;
-        const currentIndex = selectedActivityIndex(current);
-        const selection = key.leftArrow
-          ? Math.max(0, currentIndex - 1)
-          : Math.min(total - 1, currentIndex + 1);
-        if (selection !== currentIndex) {
+        const listMetrics = screenMetrics({ ...current, view: "activity" }, columns, rows);
+        const update = activitySelectionUpdate(
+          current,
+          listMetrics.bodyBudget,
+          key.leftArrow ? -1 : 1,
+        );
+        if (update) {
           store.update((state) => ({
             ...state,
-            activitySelection: state.activities[selection]?.requestId,
-            activityFollowTail: selection === total - 1,
+            ...update,
             activityDetailScroll: 0,
           }));
         }
@@ -1416,29 +1514,54 @@ function HudRuntime({ store, actions, signal, stop }: {
         }));
         return;
       }
+      if (key.escape && current.activitySelection) {
+        store.update((state) => ({
+          ...state,
+          activitySelection: undefined,
+          notice: undefined,
+        }));
+        return;
+      }
       if (key.upArrow || key.downArrow) {
-        const total = current.activities.length;
-        if (total === 0) return;
-        const currentIndex = selectedActivityIndex(current);
-        const selection = key.upArrow
-          ? Math.max(0, currentIndex - 1)
-          : Math.min(total - 1, currentIndex + 1);
-        if (selection !== currentIndex) {
-          store.update((state) => ({
-            ...state,
-            activitySelection: state.activities[selection]?.requestId,
-            activityFollowTail: selection === total - 1,
-            notice: undefined,
-          }));
+        const metrics = screenMetrics(current, columns, rows);
+        if (current.activitySelection) {
+          const update = activitySelectionUpdate(
+            current,
+            metrics.bodyBudget,
+            key.upArrow ? -1 : 1,
+          );
+          if (update) {
+            store.update((state) => ({ ...state, ...update, notice: undefined }));
+          }
+        } else {
+          const update = activityPageUpdate(
+            current,
+            metrics.bodyBudget,
+            key.upArrow ? "older" : "newer",
+          );
+          if (update) {
+            store.update((state) => ({ ...state, ...update, notice: undefined }));
+          }
         }
         return;
       }
       if (key.return || input === "\r" || input === "\n") {
+        if (!current.activitySelection) {
+          const metrics = screenMetrics(current, columns, rows);
+          const activitySelection = activityCenterSelection(current, metrics.bodyBudget);
+          if (activitySelection) {
+            store.update((state) => ({
+              ...state,
+              activitySelection,
+              notice: undefined,
+            }));
+          }
+          return;
+        }
         const selected = selectedActivity(current);
         if (!selected) return;
         store.update((state) => ({
           ...state,
-          activitySelection: selected.requestId,
           view: "activity-detail",
           activityDetailScroll: 0,
           notice: undefined,
@@ -1486,14 +1609,12 @@ function HudRuntime({ store, actions, signal, stop }: {
       return;
     }
     if (value === "a") {
-      const enteringFromAnotherView = current.view !== "activity" && current.view !== "activity-detail";
+      const preserveBrowsePage = current.view === "activity" || current.view === "activity-detail";
       store.update((state) => ({
         ...state,
         view: "activity",
-        activitySelection: enteringFromAnotherView
-          ? state.activities.at(-1)?.requestId
-          : selectedActivity(state)?.requestId,
-        activityFollowTail: enteringFromAnotherView ? true : state.activityFollowTail,
+        activitySelection: undefined,
+        activityBrowseAnchor: preserveBrowsePage ? state.activityBrowseAnchor : undefined,
         activityDetailScroll: 0,
         notice: undefined,
       }));

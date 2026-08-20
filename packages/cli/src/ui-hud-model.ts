@@ -72,7 +72,7 @@ export interface HudState {
   activities: HudActivity[];
   activityMode: HudActivityMode;
   activitySelection: string | undefined;
-  activityFollowTail: boolean;
+  activityBrowseAnchor: string | undefined;
   activityDetailScroll: number;
   view: HudView;
   status: HudStatus | undefined;
@@ -115,7 +115,7 @@ export function initialHudState(workspace: string): HudState {
     activities: [],
     activityMode: "compact",
     activitySelection: undefined,
-    activityFollowTail: true,
+    activityBrowseAnchor: undefined,
     activityDetailScroll: 0,
     view: "workspace",
     status: undefined,
@@ -494,20 +494,15 @@ export function applyHudEvent(
   if (existingIndex >= 0) activities[existingIndex] = activity;
   else activities.push(activity);
   const boundedActivities = pruneActivityCalls(activities.slice(-MAX_STORED_ACTIVITIES));
-  let activitySelection = state.activitySelection;
-  let activityFollowTail = state.activityFollowTail;
-  const newest = boundedActivities.at(-1);
-  if (!activitySelection || (activityFollowTail && existingIndex < 0)) {
-    activitySelection = newest?.requestId;
-  }
-  if (activitySelection && !boundedActivities.some((item) => item.requestId === activitySelection)) {
-    activitySelection = boundedActivities[0]?.requestId;
-    activityFollowTail = activitySelection === newest?.requestId;
-  }
+  const activitySelection = state.activitySelection &&
+      boundedActivities.some((item) => item.requestId === state.activitySelection)
+    ? state.activitySelection
+    : undefined;
+
+
   return {
     ...state,
     activities: boundedActivities,
     activitySelection,
-    activityFollowTail,
   };
 }

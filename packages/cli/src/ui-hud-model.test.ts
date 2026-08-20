@@ -86,7 +86,7 @@ test("activity view keeps state and age on the activity row", () => {
   const activeRow = active.split("\n").find((line) => line.includes("packages/cli/src/ui-hud.ts"));
   assert.match(
     activeRow ?? "",
-    /›\s+○\s+read_file\s+packages\/cli\/src\/ui-hud\.ts\s+now$/,
+    /○\s+read_file\s+packages\/cli\/src\/ui-hud\.ts\s+now$/,
   );
 
   const idleState = applyHudEvent(activeState, {
@@ -106,7 +106,7 @@ test("activity view keeps state and age on the activity row", () => {
   const idleRow = idle.split("\n").find((line) => line.includes("packages/cli/src/ui-hud.ts"));
   assert.match(
     idleRow ?? "",
-    /›\s+✓\s+read_file\s+packages\/cli\/src\/ui-hud\.ts\s+just now$/,
+    /✓\s+read_file\s+packages\/cli\/src\/ui-hud\.ts\s+just now$/,
   );
 });
 
@@ -741,7 +741,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
   assert.doesNotMatch(output, /\u001b/);
 });
 
-test("activity window follows newest and selected entries", () => {
+test("activity browse window follows the tail and anchors older pages", () => {
   const activities = Array.from({ length: 22 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
@@ -759,26 +759,34 @@ test("activity window follows newest and selected entries", () => {
     24,
   );
 
-  assert.match(newest.split("\n")[0]!, /Glossa \/ Activity \(5-22\/22\)/);
-  assert.doesNotMatch(newest, /file-[1234]\.txt/);
-  assert.match(newest, /›\s+✓\s+read_file\s+file-22\.txt/);
+  assert.match(newest.split("\n")[0]!, /Glossa \/ Activity \(\d+-22\/22\)/);
+  assert.match(newest, /✓\s+read_file\s+file-22\.txt/);
+  assert.doesNotMatch(newest, /›/);
 
-  const older = renderHud(
-    {
-      ...connectedState(),
-      view: "activity",
-      activitySelection: "request-4",
-      activityFollowTail: false,
-      activities,
-    },
-    70,
-    false,
-    24,
-  );
-  assert.match(older.split("\n")[0]!, /Glossa \/ Activity \(1-18\/22\)/);
+  const anchoredState = {
+    ...connectedState(),
+    view: "activity" as const,
+    activityBrowseAnchor: "request-10",
+    activities,
+  };
+  const older = renderHud(anchoredState, 70, false, 24);
+  assert.match(older.split("\n")[0]!, /Glossa \/ Activity \(1-10\/22\)/);
   assert.match(older, /file-1\.txt/);
-  assert.match(older, /›\s+✓\s+read_file\s+file-4\.txt/);
-  assert.doesNotMatch(older, /file-(?:19|22)\.txt/);
+  assert.match(older, /file-10\.txt/);
+  assert.doesNotMatch(older, /file-(?:11|22)\.txt/);
+
+  const appended = [
+    ...activities,
+    {
+      tool: "read_file" as const,
+      summary: { target: "file-23.txt", details: [], truncation: "middle" as const },
+      requestId: "request-23",
+      state: "returned" as const,
+    },
+  ];
+  const stable = renderHud({ ...anchoredState, activities: appended }, 70, false, 24);
+  assert.match(stable.split("\n")[0]!, /Glossa \/ Activity \(1-10\/23\)/);
+  assert.doesNotMatch(stable, /file-23\.txt/);
 
   const unwindowed = renderHud(
     { ...connectedState(), view: "activity", activities: activities.slice(-4) },
@@ -790,7 +798,7 @@ test("activity window follows newest and selected entries", () => {
   assert.doesNotMatch(unwindowed.split("\n")[0]!, /Activity \(/);
 });
 
-test("activity selection follows the live tail until the user detaches", () => {
+test("activity events never activate or move the selection cursor", () => {
   let state = connectedState();
   const event = (requestId: string, path: string) => ({
     type: "activity" as const,
@@ -804,25 +812,18 @@ test("activity selection follows the live tail until the user detaches", () => {
 
   state = applyHudEvent(state, event("request-1", "one.ts"));
   state = applyHudEvent(state, event("request-2", "two.ts"));
-  assert.equal(state.activitySelection, "request-2");
-  assert.equal(state.activityFollowTail, true);
+  assert.equal(state.activitySelection, undefined);
+  assert.equal(state.activityBrowseAnchor, undefined);
 
   state = {
     ...state,
     activitySelection: "request-1",
-    activityFollowTail: false,
+    activityBrowseAnchor: "request-1",
   };
   state = applyHudEvent(state, event("request-3", "three.ts"));
   assert.equal(state.activitySelection, "request-1");
-  assert.equal(state.activityFollowTail, false);
+  assert.equal(state.activityBrowseAnchor, "request-1");
 
-  state = {
-    ...state,
-    activitySelection: "request-3",
-    activityFollowTail: true,
-  };
-  state = applyHudEvent(state, event("request-4", "four.ts"));
-  assert.equal(state.activitySelection, "request-4");
 });
 
 test("activity inspect renders complete safe invocation metadata", () => {
