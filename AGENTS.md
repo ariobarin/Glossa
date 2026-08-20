@@ -27,6 +27,10 @@ Read `docs/architecture.md` and `docs/security.md` before changing trust boundar
 4. Verify the real CLI or HTTP flow when integration behavior changes.
 5. Open one focused pull request.
 
+## HUD visual changes
+
+When changing the CLI HUD, run `npm run cli:hud-preview -- --screen <screen>` and inspect `.hud-preview/current.png` with Glossa's `view_image` tool before considering the UI done. Use `--width` and `--height` to exercise terminal sizes. The preview uses synthetic state and a real terminal parser, replaces the preview directory on every run, and prints the exact text frame to the command output. Use `npm run cli:hud-preview -- --clean` when the image is no longer needed. Do not capture a live HUD into the repository or ask the user to provide screenshots when the preview can reproduce the state.
+
 ## Account safety
 
 When a service login is required, open the official page and let the user enter passwords and MFA. Never request, view, copy, or store those values.
