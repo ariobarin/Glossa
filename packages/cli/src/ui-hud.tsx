@@ -62,6 +62,7 @@ const ACTIVITY_PREAMBLE_LINES = 1;
 interface HudHint {
   key: string;
   label: string;
+  labelWidth?: number;
   tone?: string;
 }
 
@@ -222,9 +223,13 @@ function primaryFooterHints(): HudHint[] {
 function contextualFooterHints(state: HudState): HudHint[] {
   if (state.view === "activity") {
     return [
+      {
+        key: "Tab",
+        label: state.activityMode === "compact" ? "Detailed" : "Compact",
+        labelWidth: "Detailed".length,
+      },
       { key: "↑↓", label: "Select" },
       { key: "Enter", label: "Inspect" },
-      { key: "Tab", label: state.activityMode === "compact" ? "Detailed" : "Compact" },
     ];
   }
   if (state.view === "activity-detail") {
@@ -256,7 +261,7 @@ function contextualFooterHints(state: HudState): HudHint[] {
 }
 
 function footerHintWidth(hint: HudHint): number {
-  return hint.key.length + hint.label.length + 1;
+  return hint.key.length + Math.max(hint.label.length, hint.labelWidth ?? 0) + 1;
 }
 
 function footerHintsWidth(hints: HudHint[]): number {
@@ -505,7 +510,9 @@ function AccessSectionTitle({ accessProfile, usable, color }: {
       <SectionTitle color={color}>Access</SectionTitle>
       {usable >= 24 ? (
         <Box marginLeft={3} flexShrink={0}>
-          <Text bold color={color ? COLORS.purpleReadable : undefined}>{key}</Text>
+          <Box width={3} flexShrink={0}>
+            <Text bold color={color ? COLORS.purpleReadable : undefined}>{key}</Text>
+          </Box>
           <Text color={color ? COLORS.muted : undefined}> Switch</Text>
         </Box>
       ) : null}
@@ -1093,7 +1100,9 @@ function FooterHintGroup({ hints, color }: {
       <Text bold color={color ? (hint.tone ?? COLORS.purpleReadable) : undefined}>
         {hint.key}
       </Text>
-      <Text color={color ? COLORS.muted : undefined}> {hint.label}</Text>
+      <Text color={color ? COLORS.muted : undefined}>
+        {` ${hint.label.padEnd(Math.max(hint.label.length, hint.labelWidth ?? 0))}`}
+      </Text>
     </React.Fragment>
   ));
 }

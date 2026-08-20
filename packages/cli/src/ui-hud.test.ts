@@ -99,9 +99,57 @@ test("footer keeps navigation left and contextual controls right", () => {
   for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, regularNav);
   }
-  assert.match(activity, /↑↓ Select\s+Enter Inspect\s+Tab Detailed$/);
+  assert.match(activity, /Tab Detailed\s+↑↓ Select\s+Enter Inspect$/);
   assert.match(workspace, /← Read only\s+→ System$/);
   assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
+});
+
+test("activity footer keeps stable controls pinned across density toggles", () => {
+  const position = (output: string, value: string): [number, number] => {
+    const lines = output.split("\n");
+    const row = lines.findIndex((line) => line.includes(value));
+    assert.notEqual(row, -1, `Missing ${value}`);
+    return [row, lines[row]!.indexOf(value)];
+  };
+
+  for (const width of [54, 60, 70, 80, 90, 110]) {
+    const compact = renderHud(
+      { ...connectedState(), view: "activity", activityMode: "compact" },
+      width,
+      false,
+      20,
+    );
+    const detailed = renderHud(
+      { ...connectedState(), view: "activity", activityMode: "detailed" },
+      width,
+      false,
+      20,
+    );
+    for (const control of ["↑↓ Select", "Enter Inspect"]) {
+      assert.deepEqual(
+        position(compact, control),
+        position(detailed, control),
+        `${control} shifted at ${width} columns`,
+      );
+    }
+  }
+});
+
+test("workspace switch label stays pinned as arrow availability changes", () => {
+  const switchColumn = (accessProfile: "read-only" | "workspace" | "system"): number => {
+    const output = renderHud(
+      { ...connectedState(), view: "workspace", accessProfile },
+      100,
+      false,
+      20,
+    );
+    const line = output.split("\n").find((candidate) => candidate.includes("Switch"));
+    assert.ok(line);
+    return line.indexOf("Switch");
+  };
+
+  assert.equal(switchColumn("read-only"), switchColumn("workspace"));
+  assert.equal(switchColumn("workspace"), switchColumn("system"));
 });
 
 test("workspace access handoff has no visible intermediate frame", () => {
@@ -129,7 +177,7 @@ test("workspace access handoff has no visible intermediate frame", () => {
   );
 
   assert.equal(pending, confirmed);
-  assert.match(pending, /ACCESS\s+← Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
+  assert.match(pending, /ACCESS\s+←\s+Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
 });
 

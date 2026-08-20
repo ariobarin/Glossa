@@ -148,7 +148,7 @@ test("shows the selected access boundary in the workspace screen", () => {
     20,
   );
 
-  assert.match(output, /ACCESS\s+← Switch/);
+  assert.match(output, /ACCESS\s+←\s+Switch/);
   assert.match(output, /System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
 });
