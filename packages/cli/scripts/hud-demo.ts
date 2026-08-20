@@ -106,6 +106,16 @@ await runSessionHud({
           phase: "returned",
           job,
           ok: job.type !== "search_text",
+          output: job.type === "search_text"
+            ? { kind: "error", result: "Failed", preview: "No matches found in the selected files." }
+            : job.type === "run_command"
+              ? {
+                  kind: "success",
+                  result: "Success",
+                  preview: "Review readiness checks passed.\n… output truncated …\n204 tests passed · 0 failed",
+                  truncated: true,
+                }
+              : { kind: "success", result: "Success" },
         });
         if (!await sleep(1_500, signal)) return;
       }

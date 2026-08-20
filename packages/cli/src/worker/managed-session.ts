@@ -27,6 +27,13 @@ import {
   type RemoteWorkerStatus,
 } from "./remote-worker.js";
 
+export interface ManagedActivityOutput {
+  kind: "success" | "error" | "running";
+  result: string;
+  preview?: string;
+  truncated?: boolean;
+}
+
 export type ManagedSessionEvent =
   | {
       type: "session";
@@ -36,7 +43,13 @@ export type ManagedSessionEvent =
     }
   | { type: "status"; status: RemoteWorkerStatus }
   | { type: "activity"; phase: "started"; job: WorkerJob }
-  | { type: "activity"; phase: "returned"; job: WorkerJob; ok: boolean }
+  | {
+      type: "activity";
+      phase: "returned";
+      job: WorkerJob;
+      ok: boolean;
+      output?: ManagedActivityOutput;
+    }
   | { type: "notice"; message: string; persistAfterExit?: boolean };
 
 export interface ManagedSessionOptions {
@@ -74,6 +87,110 @@ function activityResultLabel(
     return "run_command started";
   }
   return `${job.type} completed`;
+}
+
+const MAX_ACTIVITY_OUTPUT_CHARS = 512;
+const OUTPUT_TRUNCATION_MARKER = "… output truncated …";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function boundedActivityPreview(
+  text: string,
+  sourceTruncated = false,
+): { preview?: string; truncated?: boolean } {
+  const normalized = text.replaceAll("\r\n", "\n").trimEnd();
+  if (containsRestrictedAuthenticationData(normalized)) {
+    return { preview: "[restricted output blocked]" };
+  }
+  if (!normalized) return sourceTruncated
+    ? { preview: OUTPUT_TRUNCATION_MARKER, truncated: true }
+    : {};
+  const characters = Array.from(normalized);
+  if (
+    characters.length <= MAX_ACTIVITY_OUTPUT_CHARS &&
+    (!sourceTruncated || characters.length + OUTPUT_TRUNCATION_MARKER.length + 1 <= MAX_ACTIVITY_OUTPUT_CHARS)
+  ) {
+    return sourceTruncated
+      ? { preview: `${normalized}\n${OUTPUT_TRUNCATION_MARKER}`, truncated: true }
+      : { preview: normalized };
+  }
+  const marker = `\n${OUTPUT_TRUNCATION_MARKER}\n`;
+  const remaining = Math.max(2, MAX_ACTIVITY_OUTPUT_CHARS - marker.length);
+  const headLength = Math.floor(remaining * 0.7);
+  const tailLength = remaining - headLength;
+  return {
+    preview: `${characters.slice(0, headLength).join("")}${marker}${characters.slice(-tailLength).join("")}`,
+    truncated: true,
+  };
+}
+
+function commandActivityOutput(value: unknown): ManagedActivityOutput | undefined {
+  if (!isRecord(value) || typeof value.status !== "string") return undefined;
+  const status = value.status;
+  let kind: ManagedActivityOutput["kind"];
+  let result: string;
+  if (status === "running") {
+    kind = "running";
+    result = "Running";
+  } else if (status === "succeeded") {
+    kind = "success";
+    result = "Success";
+  } else if (status === "canceled") {
+    kind = "success";
+    result = "Canceled";
+  } else if (status === "timed_out") {
+    kind = "error";
+    result = "Timed out";
+  } else if (status === "failed") {
+    kind = "error";
+    result = "Failed";
+  } else {
+    return undefined;
+  }
+
+  const stdout = typeof value.stdout === "string" ? value.stdout : "";
+  const stderr = typeof value.stderr === "string" ? value.stderr : "";
+  const preferError = kind === "error";
+  const previewText = preferError
+    ? stderr || stdout
+    : stdout || stderr;
+  const sourceTruncated = previewText === stderr
+    ? value.stderrTruncated === true
+    : value.stdoutTruncated === true;
+  const fallback = !previewText && kind === "error" && typeof value.exitCode === "number"
+    ? `Exit code ${value.exitCode}.`
+    : "";
+  return {
+    kind,
+    result,
+    ...boundedActivityPreview(previewText || fallback, sourceTruncated),
+  };
+}
+
+function activityOutput(job: WorkerJob, result: WorkerResult): ManagedActivityOutput {
+  if (!result.ok) {
+    return {
+      kind: "error",
+      result: "Failed",
+      ...boundedActivityPreview(result.error?.message ?? "The worker operation failed."),
+    };
+  }
+
+  if (job.type === "run_command" || job.type === "get_command" || job.type === "cancel_command") {
+    return commandActivityOutput(result.value) ?? { kind: "success", result: "Success" };
+  }
+  if (job.type === "read_command_output" && isRecord(result.value)) {
+    const content = typeof result.value.content === "string" ? result.value.content : "";
+    const sourceTruncated = result.value.nextOffset !== undefined || result.value.retentionTruncated === true;
+    return {
+      kind: "success",
+      result: "Success",
+      ...boundedActivityPreview(content, sourceTruncated),
+    };
+  }
+  return { kind: "success", result: "Success" };
 }
 
 function activitySafeJob(job: WorkerJob): WorkerJob {
@@ -154,6 +271,7 @@ export function visibleWorker(
             phase: "returned",
             job: visibleJob,
             ok: result.ok,
+            output: activityOutput(job, result),
           },
           `${activityResultLabel(job, result)} (${job.requestId}).`,
         );
@@ -166,6 +284,7 @@ export function visibleWorker(
             phase: "returned",
             job: visibleJob,
             ok: false,
+            output: { kind: "error", result: "Failed" },
           },
           `${job.type} failed (${job.requestId}).`,
         );

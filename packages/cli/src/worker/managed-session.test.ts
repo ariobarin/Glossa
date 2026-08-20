@@ -244,7 +244,15 @@ test("reports the actual job while working and when returned", async () => {
       phase: "started",
       job,
     });
-    assert.deepEqual(events[index * 2 + 1], {
+    const returned = events[index * 2 + 1] as { output?: unknown };
+    assert.deepEqual(
+      returned.output,
+      job.type === "run_command"
+        ? { kind: "running", result: "Running" }
+        : { kind: "success", result: "Success" },
+    );
+    const { output: _output, ...returnedWithoutOutput } = returned;
+    assert.deepEqual(returnedWithoutOutput, {
       type: "activity",
       phase: "returned",
       job,
@@ -261,6 +269,51 @@ test("reports the actual job while working and when returned", async () => {
       "read_file completed",
     ],
   );
+});
+
+test("bounds command output previews and marks truncation", async () => {
+  const job: WorkerJob = {
+    type: "run_command",
+    requestId: "00000000-0000-4000-8000-000000000009",
+    argv: ["npm", "test"],
+    timeoutMs: 30_000,
+  };
+  const events: unknown[] = [];
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const worker = visibleWorker(
+      {
+        async handle(requestedJob) {
+          return {
+            requestId: requestedJob.requestId,
+            ok: true,
+            value: {
+              status: "failed",
+              exitCode: 1,
+              stderr: `failure-start\n${"x".repeat(2_500)}\nfailure-end`,
+              stderrTruncated: true,
+            },
+          };
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    await worker.handle(job);
+  } finally {
+    console.error = originalError;
+  }
+
+  const returned = events[1] as {
+    output?: { kind: string; result: string; preview?: string; truncated?: boolean };
+  };
+  assert.equal(returned.output?.kind, "error");
+  assert.equal(returned.output?.result, "Failed");
+  assert.equal(returned.output?.truncated, true);
+  assert.match(returned.output?.preview ?? "", /failure-start/);
+  assert.match(returned.output?.preview ?? "", /output truncated/);
+  assert.match(returned.output?.preview ?? "", /failure-end/);
+  assert.ok(Array.from(returned.output?.preview ?? "").length <= 512);
 });
 
 test("returns a failed activity when its worker throws", async () => {
@@ -288,7 +341,13 @@ test("returns a failed activity when its worker throws", async () => {
 
   assert.deepEqual(events, [
     { type: "activity", phase: "started", job },
-    { type: "activity", phase: "returned", job, ok: false },
+    {
+      type: "activity",
+      phase: "returned",
+      job,
+      ok: false,
+      output: { kind: "error", result: "Failed" },
+    },
   ]);
 });
 

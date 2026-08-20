@@ -126,6 +126,18 @@ function previewActivity(
   updatedAt: number,
 ): HudActivity {
   const call = activityCallFromJob(job);
+  const output: HudActivity["output"] = state === "working"
+    ? undefined
+    : state === "failed"
+      ? {
+          kind: "error",
+          result: "Failed",
+          preview: job.type === "run_command"
+            ? "src/ui-hud.test.ts: activity footer mismatch\n… output truncated …\n1 test failed"
+            : "The operation failed.",
+          truncated: job.type === "run_command",
+        }
+      : { kind: "success", result: "Success" };
   return {
     tool: job.type,
     summary: {
@@ -136,6 +148,7 @@ function previewActivity(
     compactSummary: formatActivityCall(call, "compact", 512),
     call,
     callBytes: activityCallByteLength(call),
+    ...(output ? { output } : {}),
     requestId: job.requestId,
     state,
     startedAt,

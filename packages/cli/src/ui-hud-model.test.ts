@@ -864,8 +864,9 @@ test("activity inspect renders complete safe invocation metadata", () => {
   );
 
   assert.match(output, /Glossa \/ Activity \/ Run Command/);
-  assert.ok(output.indexOf("STATUS") < output.indexOf("CALL"));
-  assert.doesNotMatch(output, /\n\s+ACTIVITY\b|request\s+00000000/);
+  assert.ok(output.indexOf("OUTPUT") < output.indexOf("CALL"));
+  assert.match(output, /result\s+Running/);
+  assert.doesNotMatch(output, /\n\s+ACTIVITY\b|request\s+00000000|state\s+|finished\s+/);
   assert.match(output, /\["npm", "run", "check", "--workspace", "@ariobarin\/glossa", "--",/);
   assert.match(output, /"--reporter",\s+"spec"\]/);
   assert.match(output, /stdin\s+18 B · content not retained in Activity/);

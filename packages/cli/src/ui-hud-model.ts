@@ -7,6 +7,7 @@ import {
 } from "@glossa/protocol";
 import {
   statusMessage,
+  type ManagedActivityOutput,
   type ManagedSessionEvent,
 } from "./worker/managed-session.js";
 import {
@@ -31,6 +32,7 @@ export interface HudActivity {
   call?: HudActivityCall;
   callBytes?: number;
   callUnavailable?: "expired" | "oversized";
+  output?: ManagedActivityOutput;
   requestId: string;
   state: "working" | "returned" | "failed";
   startedAt?: number;
@@ -467,6 +469,12 @@ export function applyHudEvent(
   const retainFreshCall = freshCall !== undefined && freshCallBytes !== undefined &&
     freshCallBytes <= MAX_RETAINED_ACTIVITY_CALL_BYTES;
   const formatCall = freshCall ?? activityCallFromJob(event.job);
+  const eventOutput = event.phase === "returned"
+    ? event.output ?? {
+        kind: event.ok ? "success" as const : "error" as const,
+        result: event.ok ? "Success" : "Failed",
+      }
+    : undefined;
   const activity: HudActivity = {
     tool: event.job.type,
     summary: boundActivitySummary(summarizeJob(event.job)),
@@ -481,12 +489,13 @@ export function applyHudEvent(
       : existing?.callUnavailable
         ? { callUnavailable: existing.callUnavailable }
         : {}),
+    ...(eventOutput ? { output: eventOutput } : {}),
     requestId,
     state: event.phase === "started"
       ? "working"
-      : event.ok
-        ? "returned"
-        : "failed",
+      : eventOutput?.kind === "error"
+        ? "failed"
+        : "returned",
     startedAt: existing?.startedAt ?? activityTimestamp,
     updatedAt: activityTimestamp,
   };

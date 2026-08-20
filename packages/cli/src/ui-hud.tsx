@@ -854,16 +854,25 @@ function detailFieldLines(label: string, value: string, usable: number): HudDeta
   }));
 }
 
-function activityStateLabel(activity: HudActivity): string {
-  if (activity.state === "working") return "Working";
+function activityResultLabel(activity: HudActivity): string {
+  if (activity.output) return activity.output.result;
+  if (activity.state === "working") return "Running";
   if (activity.state === "failed") return "Failed";
-  return "Completed";
+  return "Success";
 }
 
-function activityStateTone(activity: HudActivity): string {
-  if (activity.state === "working") return COLORS.purpleReadable;
-  if (activity.state === "failed") return COLORS.coral;
+function activityResultTone(activity: HudActivity): string {
+  if (activity.output?.kind === "running" || activity.state === "working") return COLORS.purpleReadable;
+  if (activity.output?.kind === "error" || activity.state === "failed") return COLORS.coral;
   return COLORS.success;
+}
+
+function activityOutputPreviewLines(preview: string, usable: number): HudDetailLine[] {
+  const lines: HudDetailLine[] = [];
+  for (const [index, part] of preview.split("\n").entries()) {
+    lines.push(...detailFieldLines(index === 0 ? "output" : "", part || " ", usable));
+  }
+  return lines;
 }
 
 function formatClock(timestamp: number): string {
@@ -874,17 +883,17 @@ function formatClock(timestamp: number): string {
 function activityDetailLines(activity: HudActivity, usable: number, now: number): HudDetailLine[] {
   const lines: HudDetailLine[] = [
     {},
-    { section: "Status" },
+    { section: "Output" },
   ];
-  lines.push(...detailFieldLines("state", activityStateLabel(activity), usable).map((line) => ({
+  lines.push(...detailFieldLines("result", activityResultLabel(activity), usable).map((line) => ({
     ...line,
-    tone: activityStateTone(activity),
+    tone: activityResultTone(activity),
     bold: true,
   })));
   if (activity.startedAt !== undefined) {
     lines.push(...detailFieldLines("started", formatClock(activity.startedAt), usable));
-    if (activity.state !== "working" && activity.updatedAt !== undefined) {
-      lines.push(...detailFieldLines("finished", formatClock(activity.updatedAt), usable));
+    if (activity.output?.preview) {
+      lines.push(...activityOutputPreviewLines(activity.output.preview, usable));
     }
     const end = activity.state === "working" ? now : activity.updatedAt ?? now;
     lines.push(...detailFieldLines("duration", liveDuration(end - activity.startedAt), usable));
