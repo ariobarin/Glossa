@@ -1,4 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +47,14 @@ class UsageError extends Error {
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const previewDirectory = path.join(repositoryRoot, ".hud-preview");
 const previewImage = path.join(previewDirectory, "current.png");
+const require = createRequire(import.meta.url);
+const fontRoot = path.dirname(require.resolve("dejavu-fonts-ttf/package.json"));
+const fontFiles = [
+  "DejaVuSansMono.ttf",
+  "DejaVuSansMono-Bold.ttf",
+  "DejaVuSansMono-Oblique.ttf",
+  "DejaVuSansMono-BoldOblique.ttf",
+].map((file) => path.join(fontRoot, "ttf", file));
 
 function usage(): string {
   return [
@@ -190,12 +199,18 @@ async function terminalSvg(ansi: string, columns: number, rows: number): Promise
   }
   terminal.dispose();
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g font-family="Cascadia Mono, Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="${FONT_SIZE}" xml:space="preserve">${elements.join("")}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g font-family="DejaVu Sans Mono" font-size="${FONT_SIZE}" xml:space="preserve">${elements.join("")}</g></svg>`;
 }
 
 async function renderPng(ansi: string, columns: number, rows: number): Promise<Buffer> {
   const svg = await terminalSvg(ansi, columns, rows);
-  return Buffer.from(new Resvg(svg, { font: { loadSystemFonts: true } }).render().asPng());
+  return Buffer.from(new Resvg(svg, {
+    font: {
+      defaultFontFamily: "DejaVu Sans Mono",
+      fontFiles,
+      loadSystemFonts: false,
+    },
+  }).render().asPng());
 }
 
 async function main(): Promise<void> {
