@@ -176,6 +176,49 @@ test("retries transient network failures while creating a pairing code", async (
   );
 });
 
+test("logs each transient network diagnostic once per pairing operation", async () => {
+  const messages: string[] = [];
+  let creates = 0;
+  let polls = 0;
+  const firstMessage = "Could not resolve the Glossa relay. Check your DNS or network connection.";
+  const secondMessage = "Connection to the Glossa relay timed out.";
+  const paired = await pairDevice(endpoints, undefined, {
+    defaultDeviceName: () => "gpu-box",
+    createPairing: async () => {
+      creates += 1;
+      if (creates === 1) {
+        throw new NetworkRequestError(firstMessage, "ENOTFOUND", new Error("dns"));
+      }
+      if (creates === 2) {
+        throw new NetworkRequestError(secondMessage, "ETIMEDOUT", new Error("timeout"));
+      }
+      return grant("ABCD-EFGH");
+    },
+    redeemPairing: async (): Promise<PairingRedemption> => {
+      polls += 1;
+      if (polls === 1) {
+        throw new NetworkRequestError(firstMessage, "ENOTFOUND", new Error("dns again"));
+      }
+      return {
+        device: { id: pairedDevice.deviceId, name: pairedDevice.deviceName },
+        token: pairedDevice.token,
+      };
+    },
+    delay: async () => undefined,
+    log: (message) => messages.push(message),
+  });
+
+  assert.deepEqual(paired, pairedDevice);
+  assert.equal(
+    messages.filter((message) => message === `${firstMessage} Retrying pairing...`).length,
+    1,
+  );
+  assert.equal(
+    messages.filter((message) => message === `${secondMessage} Retrying pairing...`).length,
+    1,
+  );
+});
+
 test("keeps polling after a transient network failure", async () => {
   const messages: string[] = [];
   let polls = 0;

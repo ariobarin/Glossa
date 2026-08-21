@@ -48,7 +48,7 @@ export async function pairDevice(
   const fetchRequest: FetchLike = signal
     ? async (input, init) => await baseFetch(input, { ...init, signal })
     : baseFetch;
-  let lastNetworkMessage: string | undefined;
+  const loggedNetworkMessages = new Set<string>();
 
   try {
     signal?.throwIfAborted();
@@ -73,9 +73,9 @@ export async function pairDevice(
             ) {
               throw error;
             }
-            if (lastNetworkMessage !== error.message) {
+            if (!loggedNetworkMessages.has(error.message)) {
               log(`${error.message} Retrying pairing...`);
-              lastNetworkMessage = error.message;
+              loggedNetworkMessages.add(error.message);
             }
             await wait(POLL_INTERVAL_MS, signal);
             signal?.throwIfAborted();
@@ -109,9 +109,9 @@ export async function pairDevice(
             break;
           }
           if (error instanceof NetworkRequestError) {
-            if (lastNetworkMessage !== error.message) {
+            if (!loggedNetworkMessages.has(error.message)) {
               log(`${error.message} Retrying pairing...`);
-              lastNetworkMessage = error.message;
+              loggedNetworkMessages.add(error.message);
             }
             continue;
           }
