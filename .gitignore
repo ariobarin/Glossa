@@ -9,6 +9,7 @@ dist/
 .idea/
 .vercel/
 .glossa-agent-state.json
+.hud-preview/
 .review-workspace/
 .review-workspace.backup/
 .review-workspace-*/

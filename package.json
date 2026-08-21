@@ -24,6 +24,7 @@
     "docs:check": "node scripts/build-docs.mjs --check",
     "site:check": "node scripts/check-site-chrome.mjs",
     "cli:hud-demo": "npm run build --workspace @glossa/protocol && npm run hud:demo --workspace @ariobarin/glossa",
+    "cli:hud-preview": "npm run build --workspace @glossa/protocol && npm run hud:preview --workspace @ariobarin/glossa --",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "integration:smoke": "node --import tsx scripts/integration-smoke.ts",
     "test": "npm run test --workspace @glossa/relay && npm run test --workspace @ariobarin/glossa",

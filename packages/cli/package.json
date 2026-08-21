@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build-package.mjs",
     "hud:demo": "node --import tsx scripts/hud-demo.ts",
+    "hud:preview": "node --import tsx scripts/hud-preview.ts",
     "test": "node --import tsx --test src/*.test.ts src/worker/*.test.ts",
     "prepack": "npm run build"
   },
@@ -30,9 +31,12 @@
   },
   "devDependencies": {
     "@glossa/protocol": "*",
+    "@resvg/resvg-js": "2.6.2",
     "@types/node": "22.20.1",
     "@types/react": "19.2.17",
     "@types/semver": "7.7.1",
+    "@xterm/headless": "6.0.0",
+    "dejavu-fonts-ttf": "2.37.3",
     "esbuild": "0.28.1",
     "semver": "7.7.2",
     "tsx": "4.20.6",
