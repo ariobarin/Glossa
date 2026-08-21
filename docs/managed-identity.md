@@ -13,6 +13,13 @@ Maintain these settings for every Auth0 client that can request the managed Glos
 - Configure the Google connection to pass a static upstream `prompt` value of `select_account`.
 - Disable every unapproved social, enterprise, passwordless, and database connection.
 - Configure the relay's identity allowlist explicitly. A valid token is accepted only when its subject matches an approved provider prefix or exact subject.
+- Enable **Client ID Metadata Document Registration** so Auth0 advertises CIMD support to MCP clients.
+- Enable Auth0's **Resource Parameter Compatibility Profile** so the OAuth `resource` value is reflected into the token audience for third-party MCP clients.
+- Keep the Auth0 API/resource-server identifier exactly aligned with the protected-resource `resource` value, currently `https://mcp.glossa.sh/`.
+- Keep authorization-server discovery public and verify it advertises HTTPS authorization/token endpoints, PKCE `S256`, CIMD or DCR, and a supported token endpoint authentication method.
+- Keep `openid` and `email` enabled and the UserInfo endpoint returning verified email claims so Enterprise workspace domain restrictions can work.
+
+The production preflight verifies the discoverable properties above. Auth0 does not expose the Resource Parameter Compatibility Profile dashboard value through ordinary authorization-server discovery, so confirm that toggle manually before final submission and after tenant migrations.
 
 Auth0 configures static upstream parameters inside the connection's existing `options` object. Preserve the complete existing object, including secrets, when adding:
 
@@ -85,9 +92,10 @@ Before treating an identity change as deployed:
 1. Confirm regular login offers the intended Google connection and no unapproved provider.
 2. Confirm Google displays an account chooser even when an Auth0 session existed previously.
 3. Confirm the dedicated reviewer account works in both ChatGPT OAuth and the Glossa control-panel pairing flow without MFA or external account access.
-4. Start a reviewer fixture worker and confirm `list_workspaces` returns its profile and permissions.
-5. Attempt authentication with a different `auth0|` database subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.
-6. Attempt authentication with a subject from an unlisted provider and confirm the same denial.
-7. Confirm prefix configuration rejects duplicates, missing `|` separators, empty values, and simultaneous plural and legacy singular settings.
-8. Confirm exact-subject configuration rejects malformed, empty, and duplicate entries.
-9. Confirm secrets, the reviewer subject, and reviewer credentials are absent from Git history, build output, site content, logs, and the final submission packet.
+4. Confirm Auth0's Resource Parameter Compatibility Profile and Client ID Metadata Document Registration toggles are enabled, then run `npm run review:check:production` to verify the public OAuth discovery contract.
+5. Start a reviewer fixture worker and confirm `list_workspaces` returns its profile and permissions.
+6. Attempt authentication with a different `auth0|` database subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.
+7. Attempt authentication with a subject from an unlisted provider and confirm the same denial.
+8. Confirm prefix configuration rejects duplicates, missing `|` separators, empty values, and simultaneous plural and legacy singular settings.
+9. Confirm exact-subject configuration rejects malformed, empty, and duplicate entries.
+10. Confirm secrets, the reviewer subject, and reviewer credentials are absent from Git history, build output, site content, logs, and the final submission packet.

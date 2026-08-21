@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { subjectIsAllowedIdentity } from "./auth.js";
+import type { Response } from "express";
+import {
+  requireAuth,
+  subjectIsAllowedIdentity,
+  type AuthenticatedRequest,
+} from "./auth.js";
 import { loadConfig } from "./config.js";
+import type { RelaySecurityEvent } from "./security-event.js";
 
 function config(environment: NodeJS.ProcessEnv = {}) {
   return loadConfig({
@@ -13,6 +19,46 @@ function config(environment: NodeJS.ProcessEnv = {}) {
     ...environment,
   });
 }
+
+test("emits identifier-free OAuth failure events", async () => {
+  const events: RelaySecurityEvent[] = [];
+  const middleware = requireAuth(
+    config(),
+    "glossa:access",
+    (event) => events.push(event),
+  );
+  let statusCode = 0;
+  let responseBody: unknown;
+  const request = {
+    header: () => undefined,
+  } as unknown as AuthenticatedRequest;
+  const response = {
+    setHeader: () => response,
+    status: (code: number) => {
+      statusCode = code;
+      return response;
+    },
+    json: (body: unknown) => {
+      responseBody = body;
+      return response;
+    },
+  } as unknown as Response;
+  let nextCalled = false;
+
+  await middleware(request, response, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, false);
+  assert.equal(statusCode, 401);
+  assert.deepEqual(responseBody, { error: "authentication_required" });
+  assert.deepEqual(events, [{
+    event: "relay_security_event",
+    surface: "mcp_oauth",
+    category: "authentication_required",
+  }]);
+  assert.deepEqual(Object.keys(events[0]!).sort(), ["category", "event", "surface"]);
+});
 
 test("managed identity defaults to Google subjects", () => {
   const managed = config();

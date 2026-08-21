@@ -207,6 +207,8 @@ Local command approval limits silent command starts but is not a code-integrity 
 - never add local absolute paths or path-derived repository names to relay metadata or logs;
 - retain an optional workspace label only when the user supplies it explicitly and only for the active worker lifetime;
 - omit file contents, command arguments, output, environment variables, and bearer tokens from durable audit events;
+- in production, emit OAuth authentication-failure security events containing only a fixed surface (`mcp_oauth` or `device_enrollment_oauth`) and fixed failure category; never include a token, subject, IP address, path, request body, or arbitrary error text;
+- configure the hosting/log-drain layer to alert when `relay_security_event` volume or repeated failure categories exceed the deployment's normal baseline, and verify that alert path before marketplace submission;
 - verify log scrubbing before deployment.
 
 ### Relay compromise
@@ -232,7 +234,8 @@ Durably retain only what is needed for account, device, and security operation:
 - device ID, user-supplied name, platform, created, last-seen, and revoked timestamps;
 - OAuth subject identifier;
 - metadata-only audit event type, status, and timestamp;
-- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies.
+- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies;
+- production OAuth failure events limited to the fixed `relay_security_event` name, a bounded authentication surface, and a bounded failure category, with platform timestamps supplied by the hosting/logging layer.
 
 Do not durably retain:
 
