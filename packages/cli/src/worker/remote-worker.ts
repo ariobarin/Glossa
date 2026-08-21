@@ -5,6 +5,8 @@ import {
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
+import { withNetworkErrors } from "../network-error.js";
+import { networkFetch } from "../network-fetch.js";
 
 const WORKER_REQUEST_TIMEOUT_MS = 19_000;
 const DEFAULT_RECONNECT_BASE_MS = 500;
@@ -222,7 +224,7 @@ export class RemoteWorker {
     this.#workerVersion = options.workerVersion;
     this.#worker = options.worker;
     this.#signal = options.signal;
-    this.#fetcher = options.fetcher ?? fetch;
+    this.#fetcher = options.fetcher ?? networkFetch;
     this.#sleep = options.sleep ?? defaultSleep;
     this.#random = options.random ?? Math.random;
     this.#reconnectBaseMs =
@@ -566,7 +568,7 @@ export class RemoteWorker {
   ): Promise<Response> {
     const timeout = AbortSignal.timeout(WORKER_REQUEST_TIMEOUT_MS);
     const signal = AbortSignal.any([this.#signal, timeout]);
-    const response = await this.#fetcher(new URL(path, this.#origin), {
+    const response = await withNetworkErrors(async () => await this.#fetcher(new URL(path, this.#origin), {
       method: "POST",
       headers: {
         authorization: workerToken
@@ -576,7 +578,7 @@ export class RemoteWorker {
       },
       body: JSON.stringify(body),
       signal,
-    });
+    }));
     if (response.status === 401 && !workerToken) throw new DeviceRejectedError();
     if (!response.ok) throw new RelayResponseError(response.status);
     return response;

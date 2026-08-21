@@ -1,8 +1,18 @@
 import os from "node:os";
 import { deviceNameSchema } from "@glossa/protocol";
 import type { StoredDeviceCredential } from "./device-store.js";
+import { withNetworkErrors } from "./network-error.js";
+import { networkFetch } from "./network-fetch.js";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+async function relayFetch(
+  fetchRequest: FetchLike,
+  input: string,
+  init?: RequestInit,
+): Promise<Response> {
+  return await withNetworkErrors(async () => await fetchRequest(input, init));
+}
 
 export const DEFAULT_RELAY_ORIGIN = "https://mcp.glossa.sh";
 
@@ -114,9 +124,9 @@ export async function createPairing(
   endpoints: RelayEndpoints,
   deviceName: string,
   platform: string,
-  fetchRequest: FetchLike = fetch,
+  fetchRequest: FetchLike = networkFetch,
 ): Promise<PairingCodeGrant> {
-  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/pairings`, {
+  const response = await relayFetch(fetchRequest, `${endpoints.relayOrigin}/v1/pairings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: deviceNameSchema.parse(deviceName), platform }),
@@ -141,9 +151,9 @@ export async function createPairing(
 export async function redeemPairing(
   endpoints: RelayEndpoints,
   code: string,
-  fetchRequest: FetchLike = fetch,
+  fetchRequest: FetchLike = networkFetch,
 ): Promise<PairingRedemption> {
-  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/pairings/redeem`, {
+  const response = await relayFetch(fetchRequest, `${endpoints.relayOrigin}/v1/pairings/redeem`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ code }),
@@ -245,9 +255,9 @@ const PAIRING_REJECTED =
 export async function listDevices(
   endpoints: RelayEndpoints,
   authorization: string,
-  fetchRequest: FetchLike = fetch,
+  fetchRequest: FetchLike = networkFetch,
 ): Promise<RelayDevice[]> {
-  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices`, {
+  const response = await relayFetch(fetchRequest, `${endpoints.relayOrigin}/v1/devices`, {
     headers: { authorization },
   });
   let data: DeviceListResponse = {};
@@ -264,13 +274,13 @@ export async function enrollDevice(
   endpoints: RelayEndpoints,
   authorization: string,
   deviceName: string,
-  fetchRequest: FetchLike = fetch,
+  fetchRequest: FetchLike = networkFetch,
 ): Promise<StoredDeviceCredential> {
   const baseName = deviceNameSchema.parse(deviceName);
   let name = baseName;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices/enroll`, {
+    const response = await relayFetch(fetchRequest, `${endpoints.relayOrigin}/v1/devices/enroll`, {
       method: "POST",
       headers: {
         authorization,
@@ -332,9 +342,9 @@ export async function enrollDevice(
 export async function revokePairedDevice(
   endpoints: Pick<RelayEndpoints, "relayOrigin">,
   device: StoredDeviceCredential,
-  fetchRequest: FetchLike = fetch,
+  fetchRequest: FetchLike = networkFetch,
 ): Promise<void> {
-  const response = await fetchRequest(`${endpoints.relayOrigin}/device`, {
+  const response = await relayFetch(fetchRequest, `${endpoints.relayOrigin}/device`, {
     method: "DELETE",
     headers: { authorization: `Device ${device.token}` },
   });
@@ -349,9 +359,9 @@ export async function revokeDevice(
   endpoints: RelayEndpoints,
   authorization: string,
   deviceId: string,
-  fetchRequest: FetchLike = fetch,
+  fetchRequest: FetchLike = networkFetch,
 ): Promise<void> {
-  const response = await fetchRequest(`${endpoints.relayOrigin}/v1/devices/${encodeURIComponent(deviceId)}`, {
+  const response = await relayFetch(fetchRequest, `${endpoints.relayOrigin}/v1/devices/${encodeURIComponent(deviceId)}`, {
     method: "DELETE",
     headers: { authorization },
   });

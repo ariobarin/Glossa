@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { pairDevice } from "./device-pairing.js";
+import { NetworkRequestError } from "./network-error.js";
 import type { StoredDeviceCredential } from "./device-store.js";
 import {
   PairingCodeExpiredError,
@@ -141,4 +142,112 @@ test("cancels pairing when the managed session aborts", async () => {
   await started;
   controller.abort();
   await assert.rejects(pending, /Pairing canceled/);
+});
+
+test("retries transient network failures while creating a pairing code", async () => {
+  const messages: string[] = [];
+  let creates = 0;
+  const paired = await pairDevice(endpoints, undefined, {
+    defaultDeviceName: () => "gpu-box",
+    createPairing: async () => {
+      creates += 1;
+      if (creates < 3) {
+        throw new NetworkRequestError(
+          "Could not resolve the Glossa relay. Check your DNS or network connection.",
+          "ENOTFOUND",
+          new Error("temporary DNS failure"),
+        );
+      }
+      return grant("ABCD-EFGH");
+    },
+    redeemPairing: async () => ({
+      device: { id: pairedDevice.deviceId, name: pairedDevice.deviceName },
+      token: pairedDevice.token,
+    }),
+    delay: async () => undefined,
+    log: (message) => messages.push(message),
+  });
+
+  assert.deepEqual(paired, pairedDevice);
+  assert.equal(creates, 3);
+  assert.equal(
+    messages.filter((message) => message.endsWith("Retrying pairing...")).length,
+    1,
+  );
+});
+
+test("logs each transient network diagnostic once per pairing operation", async () => {
+  const messages: string[] = [];
+  let creates = 0;
+  let polls = 0;
+  const firstMessage = "Could not resolve the Glossa relay. Check your DNS or network connection.";
+  const secondMessage = "Connection to the Glossa relay timed out.";
+  const paired = await pairDevice(endpoints, undefined, {
+    defaultDeviceName: () => "gpu-box",
+    createPairing: async () => {
+      creates += 1;
+      if (creates === 1) {
+        throw new NetworkRequestError(firstMessage, "ENOTFOUND", new Error("dns"));
+      }
+      if (creates === 2) {
+        throw new NetworkRequestError(secondMessage, "ETIMEDOUT", new Error("timeout"));
+      }
+      return grant("ABCD-EFGH");
+    },
+    redeemPairing: async (): Promise<PairingRedemption> => {
+      polls += 1;
+      if (polls === 1) {
+        throw new NetworkRequestError(firstMessage, "ENOTFOUND", new Error("dns again"));
+      }
+      return {
+        device: { id: pairedDevice.deviceId, name: pairedDevice.deviceName },
+        token: pairedDevice.token,
+      };
+    },
+    delay: async () => undefined,
+    log: (message) => messages.push(message),
+  });
+
+  assert.deepEqual(paired, pairedDevice);
+  assert.equal(
+    messages.filter((message) => message === `${firstMessage} Retrying pairing...`).length,
+    1,
+  );
+  assert.equal(
+    messages.filter((message) => message === `${secondMessage} Retrying pairing...`).length,
+    1,
+  );
+});
+
+test("keeps polling after a transient network failure", async () => {
+  const messages: string[] = [];
+  let polls = 0;
+  const paired = await pairDevice(endpoints, undefined, {
+    defaultDeviceName: () => "gpu-box",
+    createPairing: async () => grant("ABCD-EFGH"),
+    redeemPairing: async (): Promise<PairingRedemption> => {
+      polls += 1;
+      if (polls === 1) {
+        throw new NetworkRequestError(
+          "Connection to the Glossa relay was interrupted.",
+          "ECONNRESET",
+          new Error("socket hang up"),
+        );
+      }
+      return {
+        device: { id: pairedDevice.deviceId, name: pairedDevice.deviceName },
+        token: pairedDevice.token,
+      };
+    },
+    delay: async () => undefined,
+    log: (message) => messages.push(message),
+  });
+
+  assert.deepEqual(paired, pairedDevice);
+  assert.equal(polls, 2);
+  assert.ok(
+    messages.includes(
+      "Connection to the Glossa relay was interrupted. Retrying pairing...",
+    ),
+  );
 });

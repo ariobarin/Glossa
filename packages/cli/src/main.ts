@@ -6,6 +6,7 @@ import {
   type CliInvocation,
 } from "./cli-options.js";
 import { deviceStatus, formatRelativeTime } from "./device-format.js";
+import { networkFetch } from "./network-fetch.js";
 import {
   listDevices,
   loadRelayEndpoints,
@@ -129,7 +130,7 @@ async function runWorkspaceSession(
       },
       loadStatus: async (signal) => {
         const withSignal = async (input: string, init?: RequestInit) =>
-          await fetch(input, { ...init, signal });
+          await networkFetch(input, { ...init, signal });
         const devices = (
           await listDevices(endpoints, `Device ${device.token}`, withSignal)
         ).filter((entry) => entry.revokedAt === null);
@@ -152,7 +153,7 @@ async function runWorkspaceSession(
           endpoints,
           `Device ${device.token}`,
           deviceId,
-          async (input, init) => await fetch(input, { ...init, signal }),
+          async (input, init) => await networkFetch(input, { ...init, signal }),
         );
       },
       changeAccessProfile: (nextAccessProfile) => {

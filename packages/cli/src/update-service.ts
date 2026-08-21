@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { chmod, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import semver from "semver";
+import { withNetworkErrors } from "./network-error.js";
+import { networkFetch } from "./network-fetch.js";
 import type { UpdateChannel } from "./update-state.js";
 import { processIsAlive } from "./update-lock.js";
 
@@ -61,12 +63,15 @@ export async function checkForUpdate(
   const normalizedCurrent = semver.valid(currentVersion);
   if (!normalizedCurrent) throw new Error(`Glossa version ${currentVersion} is invalid.`);
 
-  const response = await (options.fetchImpl ?? fetch)(
-    options.registryUrl ?? process.env.GLOSSA_NPM_REGISTRY_URL ?? DEFAULT_REGISTRY_URL,
-    {
-      headers: { Accept: "application/json", "User-Agent": `glossa/${currentVersion}` },
-      ...(options.signal ? { signal: options.signal } : {}),
-    },
+  const response = await withNetworkErrors(
+    async () => await (options.fetchImpl ?? networkFetch)(
+      options.registryUrl ?? process.env.GLOSSA_NPM_REGISTRY_URL ?? DEFAULT_REGISTRY_URL,
+      {
+        headers: { Accept: "application/json", "User-Agent": `glossa/${currentVersion}` },
+        ...(options.signal ? { signal: options.signal } : {}),
+      },
+    ),
+    "the Glossa update service",
   );
   if (!response.ok) {
     throw new Error(`The Glossa update service returned HTTP ${response.status}.`);
@@ -167,10 +172,13 @@ async function fetchBytes(
   fetchImpl: typeof fetch,
   version: string,
 ): Promise<Uint8Array> {
-  const response = await fetchImpl(url, {
-    headers: { "User-Agent": `glossa/${version}` },
-    signal: AbortSignal.timeout(120_000),
-  });
+  const response = await withNetworkErrors(
+    async () => await fetchImpl(url, {
+      headers: { "User-Agent": `glossa/${version}` },
+      signal: AbortSignal.timeout(120_000),
+    }),
+    "the Glossa release server",
+  );
   if (!response.ok) throw new Error(`Glossa could not download ${url} (HTTP ${response.status}).`);
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -180,10 +188,13 @@ async function fetchText(
   fetchImpl: typeof fetch,
   version: string,
 ): Promise<string> {
-  const response = await fetchImpl(url, {
-    headers: { "User-Agent": `glossa/${version}` },
-    signal: AbortSignal.timeout(30_000),
-  });
+  const response = await withNetworkErrors(
+    async () => await fetchImpl(url, {
+      headers: { "User-Agent": `glossa/${version}` },
+      signal: AbortSignal.timeout(30_000),
+    }),
+    "the Glossa release server",
+  );
   if (!response.ok) throw new Error(`Glossa could not download ${url} (HTTP ${response.status}).`);
   return await response.text();
 }
@@ -246,7 +257,7 @@ async function installStandaloneUpdate(
     options.releaseBaseUrl ??
     process.env.GLOSSA_RELEASE_BASE_URL ??
     DEFAULT_RELEASE_BASE_URL;
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? networkFetch;
   const binaryUrl = releaseAssetUrl(info.availableVersion, asset, releaseBaseUrl);
   const [binary, checksumFile] = await Promise.all([
     fetchBytes(binaryUrl, fetchImpl, info.currentVersion),

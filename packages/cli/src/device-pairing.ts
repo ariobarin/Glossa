@@ -1,5 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { StoredDeviceCredential } from "./device-store.js";
+import { NetworkRequestError } from "./network-error.js";
+import { networkFetch } from "./network-fetch.js";
 import {
   createPairing,
   defaultDeviceName,
@@ -20,6 +22,7 @@ export interface PairDeviceDependencies {
 }
 
 const MAX_PAIRING_CODES = 3;
+const MAX_CREATE_NETWORK_ATTEMPTS = 3;
 const POLL_INTERVAL_MS = 2_000;
 
 function canceledError(): Error {
@@ -41,10 +44,11 @@ export async function pairDevice(
   const wait = dependencies.delay ?? defaultDelay;
   const now = dependencies.now ?? Date.now;
   const log = dependencies.log ?? console.log;
-  const baseFetch = dependencies.fetch ?? fetch;
+  const baseFetch = dependencies.fetch ?? networkFetch;
   const fetchRequest: FetchLike = signal
     ? async (input, init) => await baseFetch(input, { ...init, signal })
     : baseFetch;
+  const loggedNetworkMessages = new Set<string>();
 
   try {
     signal?.throwIfAborted();
@@ -54,7 +58,31 @@ export async function pairDevice(
 
     for (let attempt = 0; attempt < MAX_PAIRING_CODES; attempt += 1) {
       signal?.throwIfAborted();
-      const pairing = await create(endpoints, deviceName, platform, fetchRequest);
+      const pairing = await (async () => {
+        for (
+          let networkAttempt = 0;
+          networkAttempt < MAX_CREATE_NETWORK_ATTEMPTS;
+          networkAttempt += 1
+        ) {
+          try {
+            return await create(endpoints, deviceName, platform, fetchRequest);
+          } catch (error) {
+            if (
+              !(error instanceof NetworkRequestError) ||
+              networkAttempt === MAX_CREATE_NETWORK_ATTEMPTS - 1
+            ) {
+              throw error;
+            }
+            if (!loggedNetworkMessages.has(error.message)) {
+              log(`${error.message} Retrying pairing...`);
+              loggedNetworkMessages.add(error.message);
+            }
+            await wait(POLL_INTERVAL_MS, signal);
+            signal?.throwIfAborted();
+          }
+        }
+        throw new Error("Glossa could not create a pairing code.");
+      })();
       log("");
       log(`Pairing code: ${pairing.code} (valid for 10 minutes)`);
       log("");
@@ -76,9 +104,18 @@ export async function pairDevice(
             token: redeemed.token,
           };
         } catch (error) {
-          if (!(error instanceof PairingCodeExpiredError)) throw error;
-          log(error.message);
-          break;
+          if (error instanceof PairingCodeExpiredError) {
+            log(error.message);
+            break;
+          }
+          if (error instanceof NetworkRequestError) {
+            if (!loggedNetworkMessages.has(error.message)) {
+              log(`${error.message} Retrying pairing...`);
+              loggedNetworkMessages.add(error.message);
+            }
+            continue;
+          }
+          throw error;
         }
       }
     }

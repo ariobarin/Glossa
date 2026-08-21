@@ -44,6 +44,20 @@ test("reports a missing stable channel clearly", async () => {
   );
 });
 
+test("normalizes update-service fetch failures", async () => {
+  const cause = Object.assign(new Error("getaddrinfo ENOTFOUND registry"), {
+    code: "ENOTFOUND",
+  });
+  await assert.rejects(
+    checkForUpdate("0.1.0", "stable", {
+      fetchImpl: async () => {
+        throw new TypeError("fetch failed", { cause });
+      },
+    }),
+    /Could not resolve the Glossa update service/,
+  );
+});
+
 test("maps every published standalone target", () => {
   assert.equal(standaloneAssetName("win32", "x64"), "glossa-windows-x64.exe");
   assert.equal(standaloneAssetName("win32", "arm64"), "glossa-windows-arm64.exe");

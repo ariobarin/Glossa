@@ -39,7 +39,12 @@ test("reports retry, connection, and graceful disconnection", async () => {
     paths.push(url.pathname);
     if (url.pathname === "/device/register") {
       registrations += 1;
-      if (registrations === 1) throw new Error("relay unavailable");
+      if (registrations === 1) {
+        const cause = Object.assign(new Error("socket hang up"), {
+          code: "ECONNRESET",
+        });
+        throw new TypeError("fetch failed", { cause });
+      }
       const body = JSON.parse(String(init?.body)) as { workerId: string };
       return registrationResponse(
         body,
@@ -78,6 +83,12 @@ test("reports retry, connection, and graceful disconnection", async () => {
     "/device/poll",
     "/device/unregister",
   ]);
+  const retry = statuses.find((status) => status.state === "retrying");
+  assert.ok(retry?.state === "retrying");
+  assert.equal(
+    retry.error.message,
+    "Connection to the Glossa relay was interrupted.",
+  );
 });
 
 
