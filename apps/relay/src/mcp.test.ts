@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { z } from "zod";
 import { loadConfig } from "./config.js";
 import {
   createMcpServer,
@@ -25,6 +26,7 @@ const expectedTools = [
   "read_file_range",
   "run_command",
   "search_text",
+  "view_image",
   "write_file",
 ];
 const expectedToolTitles: Record<string, string> = {
@@ -42,6 +44,7 @@ const expectedToolTitles: Record<string, string> = {
   read_file_range: "Read Workspace File Range",
   run_command: "Run Workspace Command",
   search_text: "Search Workspace Text",
+  view_image: "View Workspace Image",
   write_file: "Create or Replace Workspace File",
 };
 const expectedToolAnnotations: Record<string, {
@@ -64,6 +67,7 @@ const expectedToolAnnotations: Record<string, {
   read_file_range: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   run_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   search_text: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  view_image: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   write_file: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
 };
 const accountId = "00000000-0000-4000-8000-000000000001";
@@ -125,14 +129,20 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "3.0.0");
+  assert.equal(MCP_SERVER_VERSION, "3.1.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only to work in a local development workspace/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /do not use it for general questions, web research, built-in ChatGPT tasks/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for a local development workspace/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use Glossa for general questions, web research, built-in ChatGPT tasks/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /The Glossa CLI shows a short pairing code that the user redeems on the Glossa control panel; pairing never happens through an MCP tool/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Never attempt a write when writeFiles is false or a command when runCommands is false/);
+  assert.match(MCP_SERVER_INSTRUCTIONS, /never write when writeFiles is false or run commands when runCommands is false/);
+  const instructionPrefix = MCP_SERVER_INSTRUCTIONS.slice(0, 512);
+  assert.match(instructionPrefix, /list_workspaces/);
+  assert.match(instructionPrefix, /accessProfile and permissions/);
+  assert.match(instructionPrefix, /never write when writeFiles is false or run commands when runCommands is false/);
+  assert.match(instructionPrefix, /untrusted data/);
+  assert.match(instructionPrefix, /Restricted Data/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use commands to inspect secrets, bypass file-tool boundaries/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
@@ -144,8 +154,28 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     MCP_SERVER_INSTRUCTIONS,
-    /local worker suppresses recognizable credential material.*defense in depth, not a sandbox/,
+    /local worker suppresses recognizable credential material.*view_image.*opaque.*Restricted Data.*defense in depth, not a sandbox/,
   );
+
+  const openAIToolListSchema = z.object({
+    tools: z.array(z.object({
+      name: z.string(),
+      securitySchemes: z.array(z.object({
+        type: z.literal("oauth2"),
+        scopes: z.array(z.string()),
+      })),
+    }).passthrough()),
+  }).passthrough();
+  const openAIToolList = await client.request(
+    { method: "tools/list", params: {} },
+    openAIToolListSchema,
+  );
+  assert.equal(openAIToolList.tools.length, expectedTools.length);
+  for (const tool of openAIToolList.tools) {
+    assert.deepEqual(tool.securitySchemes, [
+      { type: "oauth2", scopes: ["glossa:access"] },
+    ]);
+  }
 
   const { tools } = await client.listTools();
   assert.deepEqual(
@@ -183,6 +213,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   for (const toolName of [
     "read_file",
+    "view_image",
     "list_files",
     "search_text",
     "read_file_range",
@@ -279,7 +310,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   );
   assert.match(
     byName.get("list_workspaces")?.description ?? "",
-    /no earlier Glossa result identifies.*required permission is unknown.*worker versions, access profiles, permissions, and protocol capabilities.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
+    /no earlier Glossa result identifies.*required permission is unknown.*only the routing identifier, optional user-chosen label, access profile, and permissions.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
   );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_workspaces")?.outputSchema),
@@ -292,8 +323,17 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.workspaceLabel,
   );
-  assert.ok(
+  assert.equal(
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.name,
+    undefined,
+  );
+  assert.equal(
+    listWorkspacesSchema.properties?.workspaces?.items?.properties?.path,
+    undefined,
+  );
+  assert.equal(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.workerVersion,
+    undefined,
   );
   assert.ok(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.accessProfile,
@@ -301,8 +341,9 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.permissions,
   );
-  assert.ok(
+  assert.equal(
     listWorkspacesSchema.properties?.workspaces?.items?.properties?.capabilities,
+    undefined,
   );
 
   for (const toolName of ["get_command", "cancel_command"]) {
@@ -344,6 +385,15 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("edit_file")?.annotations?.openWorldHint, false);
   assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
   assert.match(byName.get("read_file")?.description ?? "", /access credentials or authentication secrets.*use read_file_range/);
+  assert.match(
+    byName.get("view_image")?.description ?? "",
+    /PNG, JPEG, or WebP.*native MCP image content.*does not OCR or transform.*opaque to Glossa's text secret detector.*Restricted Data/,
+  );
+  const viewImageOutput = byName.get("view_image")?.outputSchema as JsonSchemaNode;
+  assert.ok(viewImageOutput.properties?.mimeType);
+  assert.ok(viewImageOutput.properties?.bytes);
+  assert.ok(viewImageOutput.properties?.sha256);
+  assert.equal(viewImageOutput.properties?.data, undefined);
   assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
   assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
@@ -414,20 +464,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     documentationUrl: managedDocumentationUrl,
     workspaces: [{
       workspaceId: onlineWorkerId,
-      name: "Test PC",
-      path: ".",
       accessProfile: "system",
       permissions: {
         readFiles: true,
         writeFiles: true,
         runCommands: true,
-      },
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-        structuredMutations: true,
-        commandOutputRanges: true,
       },
     }],
     availability: "online",
@@ -513,21 +554,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     }).workspaces,
     [{
       workspaceId: "00000000-0000-4000-8000-000000000005",
-      name: "Self-hosted PC",
-      path: ".",
-      workerVersion: "1.0.0",
       accessProfile: "workspace",
       permissions: {
         readFiles: true,
         writeFiles: true,
         runCommands: false,
-      },
-      capabilities: {
-        commandProgress: true,
-        concurrentJobs: true,
-        structuredReads: true,
-        structuredMutations: true,
-        commandOutputRanges: true,
       },
     }],
   );
@@ -555,6 +586,109 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
 
+
+test("returns workspace images as native MCP image content without duplicating bytes", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000090";
+  const workerId = "00000000-0000-4000-8000-000000000091";
+  const session = state.register(accountId, deviceId, "Review PC", workerId, {
+    accessProfile: "read-only",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-image-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const data = "iVBORw0KGgo=";
+  const call = client.callTool({
+    name: "view_image",
+    arguments: { workspaceId: workerId, path: "screenshots/home.png" },
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(job?.type, "view_image");
+  assert.ok(job && job.type === "view_image");
+  assert.equal(job.path, "screenshots/home.png");
+  state.complete(accountId, workerId, {
+    requestId: job.requestId,
+    ok: true,
+    value: {
+      data,
+      mimeType: "image/png",
+      sha256: "0".repeat(64),
+      bytes: Buffer.byteLength(data, "base64"),
+    },
+  });
+
+  const result = await call;
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.structuredContent, {
+    mimeType: "image/png",
+    sha256: "0".repeat(64),
+    bytes: Buffer.byteLength(data, "base64"),
+  });
+  assert.deepEqual(result.content, [{
+    type: "image",
+    data,
+    mimeType: "image/png",
+  }]);
+  assert.doesNotMatch(JSON.stringify(result.structuredContent), new RegExp(data));
+});
+
+test("returns an actionable upgrade error instead of dispatching images to legacy workers", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000092";
+  const workerId = "00000000-0000-4000-8000-000000000093";
+  const session = state.register(accountId, deviceId, "Legacy PC", workerId, {
+    accessProfile: "read-only",
+    capabilities: {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      imageReads: false,
+      structuredMutations: true,
+      commandOutputRanges: true,
+    },
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-image-legacy-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "view_image",
+    arguments: { workspaceId: workerId, path: "screenshots/home.png" },
+  });
+  assert.equal(result.isError, true);
+  const content = JSON.stringify(result.content);
+  assert.match(content, /worker_protocol_unsupported/);
+  assert.match(content, /older Glossa CLI/);
+  assert.match(content, /Update Glossa/);
+  assert.equal(
+    await state.poll(
+      accountId,
+      deviceId,
+      workerId,
+      session.generation,
+      5,
+      new Set(["view_image"]),
+    ),
+    null,
+  );
+});
 
 test("returns actionable permission errors without dispatching forbidden work", async (context) => {
   const state = new RouterState();
@@ -904,6 +1038,10 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
       arguments: { workspaceId: workerId, path: key },
     }),
     client.callTool({
+      name: "view_image",
+      arguments: { workspaceId: workerId, path: key },
+    }),
+    client.callTool({
       name: "search_text",
       arguments: { workspaceId: workerId, query: key },
     }),
@@ -1050,7 +1188,7 @@ test("returns safe actionable messages for public file-policy errors", async (co
   assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
 });
 
-test("redacts restricted device metadata from list_workspaces", async (context) => {
+test("minimizes list_workspaces metadata and drops restricted labels", async (context) => {
   const state = new RouterState();
   const key = "sk-proj-" + "A".repeat(32);
   const workerId = "00000000-0000-4000-8000-000000000042";
@@ -1077,7 +1215,16 @@ test("redacts restricted device metadata from list_workspaces", async (context) 
   assert.equal(result.isError, undefined);
   const serialized = JSON.stringify(result.structuredContent);
   assert.doesNotMatch(serialized, new RegExp(key));
-  assert.match(serialized, /restricted device name blocked/);
+  assert.doesNotMatch(serialized, /"path"/);
+  assert.doesNotMatch(serialized, /workerVersion/);
+  assert.doesNotMatch(serialized, /capabilities/);
+  const content = result.structuredContent as {
+    workspaces?: Array<Record<string, unknown>>;
+  };
+  assert.deepEqual(
+    Object.keys(content.workspaces?.[0] ?? {}).sort(),
+    ["accessProfile", "permissions", "workspaceId"],
+  );
   assert.doesNotMatch(serialized, /workspaceLabel/);
 });
 

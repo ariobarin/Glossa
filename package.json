@@ -27,9 +27,11 @@
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "integration:smoke": "node --import tsx scripts/integration-smoke.ts",
     "test": "npm run test --workspace @glossa/relay && npm run test --workspace @ariobarin/glossa",
-    "review:check": "node scripts/check-review-readiness.mjs && node --import tsx scripts/check-restricted-data-corpus.ts",
+    "review:metadata:check": "node scripts/check-metadata-golden.mjs",
+    "review:check": "npm run review:metadata:check && node scripts/check-review-readiness.mjs && node --import tsx scripts/check-restricted-data-corpus.ts",
     "review:check:production": "node scripts/check-production-review-surface.mjs",
-    "review:check:submission": "npm run check && npm run review:check:production && npm pack --workspace @ariobarin/glossa --dry-run && git diff --check",
+    "review:check:plugin": "node scripts/check-plugin-package.mjs",
+    "review:check:submission": "npm run check && npm run review:check:production && npm audit --audit-level=high && npm run review:check:plugin && npm pack --workspace @ariobarin/glossa --dry-run && git diff --check",
     "review:fixture:prepare": "node scripts/prepare-app-review-workspace.mjs --reset"
   },
   "license": "MIT",

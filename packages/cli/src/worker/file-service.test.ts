@@ -4,7 +4,7 @@ import { chmod, lstat, mkdtemp, mkdir, opendir, readFile, readdir, rm, stat, sym
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { MAX_READ_FILE_RANGE_BYTES, MAX_SEARCH_TEXT_SNIPPET_CHARS } from "@glossa/protocol";
+import { MAX_IMAGE_BYTES, MAX_READ_FILE_RANGE_BYTES, MAX_SEARCH_TEXT_SNIPPET_CHARS } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
 import { PathPolicy, validateRelativePath } from "./path-policy.js";
@@ -239,6 +239,45 @@ test("writes atomically and rejects stale revisions", async (context) => {
   const second = await files.writeText("note.txt", "second", first.sha256);
   assert.equal(second.bytes, 6);
   assert.equal(await readFile(path.join(root, "note.txt"), "utf8"), "second");
+});
+
+test("reads bounded PNG, JPEG, and WebP images by file signature", async (context) => {
+  const root = await temporaryDirectory(context);
+  const files = new FileService(await PathPolicy.create(root));
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZfKkAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await writeFile(path.join(root, "image.bin"), png);
+
+  const result = await files.readImage("image.bin");
+  assert.equal(result.mimeType, "image/png");
+  assert.equal(result.data, png.toString("base64"));
+  assert.equal(result.bytes, png.byteLength);
+  assert.match(result.sha256, /^[a-f0-9]{64}$/);
+
+  await writeFile(path.join(root, "photo.dat"), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  assert.equal((await files.readImage("photo.dat")).mimeType, "image/jpeg");
+  await writeFile(
+    path.join(root, "preview.dat"),
+    Buffer.from("RIFF0000WEBP", "ascii"),
+  );
+  assert.equal((await files.readImage("preview.dat")).mimeType, "image/webp");
+
+  await writeFile(path.join(root, "unsupported.gif"), Buffer.from("GIF89a", "ascii"));
+  await assert.rejects(files.readImage("unsupported.gif"), {
+    code: "unsupported_image",
+  });
+  await writeFile(
+    path.join(root, "oversized.png"),
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(MAX_IMAGE_BYTES - 7),
+    ]),
+  );
+  await assert.rejects(files.readImage("oversized.png"), {
+    code: "image_too_large",
+  });
 });
 
 test("serializes guarded writes across file service instances", async (context) => {

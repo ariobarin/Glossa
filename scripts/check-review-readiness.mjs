@@ -51,11 +51,11 @@ const repositoryTextPaths = [
 const forbiddenLanguage = [
   ["open-beta positioning", /\bopen beta\b/i],
   ["usage-plan workaround positioning", /other 50% of your plan/i],
-  ["Codex-limit positioning", /\bcodex\b/i],
+  ["Codex-limit positioning", /(?:\bcodex\b.{0,80}\b(?:limit|quota|plan)\b|\b(?:limit|quota|plan)\b.{0,80}\bcodex\b)/i],
   ["prerelease install command", /@ariobarin\/glossa@beta/i],
   ["prerelease MCP contract", /0\.1\.0-beta/i],
   ["submission packet marked not ready", /status:\s*draft,\s*not ready/i],
-  ["non-production product label", /\b(?:experimental|prototype|demo)\b/i],
+  ["non-production product label", /(?:\b(?:experimental|prototype)\b|\bdemo\b(?![\s-]+recording))/i],
 ];
 
 for (const path of repositoryTextPaths) {
@@ -126,7 +126,15 @@ for (const [path, maximum] of [
 const cliPackage = JSON.parse(
   await readFile(join(repositoryRoot, "packages", "cli", "package.json"), "utf8"),
 );
-assert.match(cliPackage.version, /^\d+\.\d+\.\d+$/, "CLI version must be stable SemVer");
+const stableCliVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const prereleaseCliVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*$/;
+if (process.env.GLOSSA_ALLOW_PRERELEASE === "1") {
+  assert.match(cliPackage.version, prereleaseCliVersionPattern,
+    "explicit prerelease release checks require a valid prerelease SemVer CLI version",
+  );
+} else {
+  assert.match(cliPackage.version, stableCliVersionPattern, "CLI version must be stable SemVer");
+}
 assert.equal(cliPackage.publishConfig?.tag, "latest", "CLI must publish to npm latest");
 
 const mcpSource = await readFile(
@@ -134,12 +142,13 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "3.0.0", "MCP public contract must be 3.0.0");
+assert.equal(contractVersion, "3.1.0", "MCP public contract must be 3.1.0");
 
 const expectedTools = [
   "list_workspaces",
   "get_logout_instructions",
   "read_file",
+  "view_image",
   "list_files",
   "search_text",
   "read_file_range",
@@ -157,6 +166,7 @@ const expectedToolAnnotations = {
   list_workspaces: [true, false, true, false],
   get_logout_instructions: [true, false, true, false],
   read_file: [true, false, true, false],
+  view_image: [true, false, true, false],
   list_files: [true, false, true, false],
   search_text: [true, false, true, false],
   read_file_range: [true, false, true, false],
@@ -241,6 +251,8 @@ await requiredText("site/pages/privacy.md", [
   "The relay is not a durable job queue",
   "may check text for recognizable authentication-secret patterns",
   "matched content is not returned to the client",
+  "bounded image bytes returned by `view_image`",
+  "not OCR-scanned or metadata-scrubbed",
 ]);
 await requiredText("site/pages/terms.md", [
   "System-command authority",
@@ -270,12 +282,31 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `3.0.0`",
+  "MCP tool contract: `3.1.0`",
   "Portal-ready MCP values",
   "MCP Server URL type: Universal",
   "global data residency",
   "Recommended portal test subset",
-  "Eleven positive reviewer tests",
+  "exactly five positive and exactly three negative",
+  "Demo recording URL",
+  "Plugin package gate",
+  "Post-registration packaging sequence",
+  "@modelcontextprotocol/inspector@latest",
+  "API Playground",
+  "@plugin-creator",
+  "site/glossa-symbol-badge.svg",
+  "OAuth 2.1",
+  "OAuth scope rationale",
+  "A token with `glossa:access` therefore cannot turn a `read-only` or `workspace` worker into a command-capable worker",
+  "Package name: `glossa`",
+  "Package description:",
+  "author.name` and `interface.developerName` must match",
+  "Category: `Developer Tools`",
+  "interface.logo",
+  "interface.composerIcon",
+  "Submission annotation justifications",
+  "Idempotency annotation justifications",
+  "Twelve positive reviewer tests",
   "Eight negative reviewer tests",
   "Release-owner permission tests",
   "dedicated reviewer account",
@@ -283,8 +314,16 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "What's the weather tomorrow?",
   "use a shell command instead",
   "npm run restricted-output",
-  "actual ChatGPT confirmation test",
+  "host-confirmation regression suite",
   "`make_directory` and `move_path` are writes but not destructive",
+]);
+await requiredText("docs/demo-recording.md", [
+  "# Plugin submission demo recording",
+  "installed Glossa plugin",
+  "ChatGPT",
+  "Codex",
+  "Run npm test",
+  "no password, pairing code, token",
 ]);
 await requiredText("docs/submission-readiness.md", [
   "# Plugin submission readiness",
@@ -293,11 +332,139 @@ await requiredText("docs/submission-readiness.md", [
   "global data residency",
   "make_directory` scans as `readOnlyHint: false`, `destructiveHint: false",
   "Restricted Data decision",
+  "plugin_asdk_app...",
+  "Exactly five positive and exactly three negative",
+  "interface.logo",
+  "interface.composerIcon",
+  "ChatGPT and Codex behavior gates",
   "only when every source/deployment",
 ]);
+const shortDescription = submissionPacket.match(
+  /Proposed short description:\r?\n\r?\n> ([^\r\n]+)/,
+)?.[1] ?? "";
+assert.ok(shortDescription.length > 0 && shortDescription.length <= 30,
+  `submission short description must be 1-30 characters; got ${shortDescription.length}`,
+);
+const fullDescription = submissionPacket.match(
+  /Proposed full description:\r?\n\r?\n> ([\s\S]*?)\r?\n\r?\n## Distinct product purpose/,
+)?.[1]?.replace(/^> /gm, "").trim() ?? "";
+assert.ok(fullDescription.length > 0 && fullDescription.length <= 4000,
+  `submission full description must be 1-4000 characters; got ${fullDescription.length}`,
+);
+const packageName = submissionPacket.match(/- Package name: `([^`]+)`/)?.[1] ?? "";
+assert.match(packageName, /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+  "plugin package name must start alphanumeric and contain only ASCII letters, digits, underscores, or hyphens",
+);
+const pluginVersion = submissionPacket.match(/- Initial plugin version: `([^`]+)`/)?.[1] ?? "";
+const semanticVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+for (const validVersion of ["0.0.0", "1.2.3-alpha.1", "1.0.0+build.1", "1.2.3-alpha+build.01"]) {
+  assert.match(validVersion, semanticVersionPattern, `SemVer validator must accept ${validVersion}`);
+}
+for (const invalidVersion of ["01.0.0", "1.01.0", "1.0.01", "1.0.0-01", "1.0", "1.0.0+"]) {
+  assert.doesNotMatch(invalidVersion, semanticVersionPattern, `SemVer validator must reject ${invalidVersion}`);
+}
+assert.match(pluginVersion, semanticVersionPattern,
+  "plugin version must be valid Semantic Versioning, including prerelease/build rules and no leading-zero numeric components",
+);
+assert.ok(pluginVersion.length <= 64, "plugin version must be at most 64 characters");
+const packageDescription = submissionPacket.match(/- Package description: `([^`]+)`/)?.[1] ?? "";
+assert.ok(packageDescription.length > 0 && packageDescription.length <= 1024,
+  `plugin package description must be 1-1024 characters; got ${packageDescription.length}`,
+);
+const capabilityLine = submissionPacket.match(/- Capabilities: ([^\r\n]+)/)?.[1] ?? "";
+const capabilities = [...capabilityLine.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+const requiredCapabilities = [
+  "Read local project files",
+  "Edit local project files",
+  "Run local project commands",
+];
+assert.equal(new Set(capabilities).size, capabilities.length,
+  "plugin capabilities must not contain duplicates",
+);
+assert.deepEqual(
+  [...capabilities].sort(),
+  [...requiredCapabilities].sort(),
+  "plugin capabilities must match the three reviewed Glossa capabilities exactly",
+);
+for (const capability of capabilities) {
+  assert.ok(capability.length <= 120, `capability exceeds 120 characters: ${capability}`);
+}
+const manifestUrlLine = submissionPacket.match(/- Plugin manifest URLs: ([^\r\n]+)/)?.[1] ?? "";
+const manifestUrlEntries = [...manifestUrlLine.matchAll(
+  /`(websiteURL|privacyPolicyURL|termsOfServiceURL|supportURL)=(https:\/\/[^`\s]+)`/g,
+)].map((match) => ({ field: match[1], url: match[2] }));
+const requiredManifestUrlFields = [
+  "websiteURL",
+  "privacyPolicyURL",
+  "termsOfServiceURL",
+  "supportURL",
+];
+assert.equal(manifestUrlEntries.length, requiredManifestUrlFields.length,
+  "plugin manifest must provide each of the four listing URL fields exactly once",
+);
+assert.equal(new Set(manifestUrlEntries.map(({ field }) => field)).size, manifestUrlEntries.length,
+  "plugin manifest listing URL fields must not contain duplicates",
+);
+assert.deepEqual(
+  manifestUrlEntries.map(({ field }) => field).sort(),
+  [...requiredManifestUrlFields].sort(),
+  "plugin manifest must provide websiteURL, privacyPolicyURL, termsOfServiceURL, and supportURL",
+);
+for (const { url } of manifestUrlEntries) assert.equal(new URL(url).protocol, "https:");
+const starterSection = submissionPacket.match(
+  /## Starter prompts\r?\n([\s\S]*?)\r?\n## Agent-routing evaluation set/,
+)?.[1] ?? "";
+const starterPrompts = starterSection.split(/\r?\n/).filter((line) => line.startsWith("- "))
+  .map((line) => line.slice(2));
+assert.ok(starterPrompts.length > 0 && starterPrompts.length <= 3,
+  `submission must have 1-3 starter prompts; got ${starterPrompts.length}`,
+);
+assert.equal(new Set(starterPrompts).size, starterPrompts.length,
+  "submission starter prompts must be unique",
+);
+for (const prompt of starterPrompts) {
+  assert.ok(prompt.length <= 128, `starter prompt exceeds 128 characters: ${prompt}`);
+  assert.ok(!/@[A-Za-z0-9_-]+/.test(prompt), `starter prompt must not contain an app @mention: ${prompt}`);
+}
+assert.equal(
+  (submissionPacket.match(/^Portal positive \d+:/gm) ?? []).length,
+  5,
+  "final submission must define exactly five portal-positive cases",
+);
+assert.equal(
+  (submissionPacket.match(/^Portal negative \d+:/gm) ?? []).length,
+  3,
+  "final submission must define exactly three portal-negative cases",
+);
+const annotationJustifications = submissionPacket.match(
+  /### Submission annotation justifications\r?\n([\s\S]*?)\r?\n### Idempotency annotation justifications/,
+)?.[1] ?? "";
+const annotationRows = annotationJustifications
+  .split(/\r?\n/)
+  .filter((line) => /^\|\s*`[^`]+`\s*\|/.test(line))
+  .map((line) => {
+    const match = line.match(/^\|\s*`([^`]+)`\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|$/);
+    assert.ok(match, `invalid submission annotation justification row: ${line}`);
+    const [, tool, readOnly, destructive, openWorld] = match;
+    assert.ok(readOnly.trim(), `${tool} must justify readOnlyHint`);
+    assert.ok(destructive.trim(), `${tool} must justify destructiveHint`);
+    assert.ok(openWorld.trim(), `${tool} must justify openWorldHint`);
+    return tool;
+  });
+assert.equal(annotationRows.length, expectedTools.length,
+  "submission packet must provide one annotation justification row for every MCP tool",
+);
+assert.equal(new Set(annotationRows).size, annotationRows.length,
+  "submission annotation justification rows must not contain duplicate tools",
+);
+assert.deepEqual(
+  [...annotationRows].sort(),
+  [...expectedTools].sort(),
+  "submission annotation justification rows must match the MCP tool set exactly",
+);
 assert.ok(
-  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 11,
-  "submission packet must retain at least eleven explicit positive prompt cases",
+  (submissionPacket.match(/^\d+\. Prompt:/gm) ?? []).length >= 12,
+  "submission packet must retain at least twelve explicit positive prompt cases",
 );
 assert.ok(
   (submissionPacket.match(/^\| \d+ \|/gm) ?? []).length >= 8,

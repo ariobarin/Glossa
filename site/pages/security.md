@@ -27,7 +27,7 @@ The selected profile appears in the local terminal and in `list_workspaces`. Bot
 
 The public Glossa app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Keep these categories out of the exposed project.
 
-Glossa blocks recognizable authentication-secret patterns in text inputs and results, including every retained command-output range. This can prevent common accidental disclosures, but it is not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, or transformed values may not be recognized, and a command can send data over the network without printing it.
+Glossa blocks recognizable authentication-secret patterns in text inputs and results, including every retained command-output range. `view_image` is an explicit exception: it validates a bounded PNG, JPEG, or WebP file but does not OCR pixels or scrub embedded metadata, so visual or metadata-based secrets are not covered by the text detector. These controls can prevent common accidental disclosures, but they are not a complete data-loss-prevention system or sandbox. Unknown, encoded, encrypted, fragmented, transformed, or visual values may not be recognized, and a command can send data over the network without printing it.
 
 When credentials must be unreachable, run `system` in a credential-free dedicated operating-system account, container, or virtual machine with only the project and tools it needs.
 

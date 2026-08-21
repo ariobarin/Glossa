@@ -1,6 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import type { RelayConfig } from "./config.js";
+import {
+  consoleRelaySecuritySink,
+  emitRelaySecurityEvent,
+  type RelaySecuritySink,
+  type RelaySecuritySurface,
+} from "./security-event.js";
 
 const jwksByIssuer = new Map<
   string,
@@ -64,11 +70,27 @@ function authenticationChallenge(
   return `Bearer ${parameters.join(", ")}`;
 }
 
-export function requireAuth(config: RelayConfig, requiredScope?: string) {
+function securitySurface(
+  config: RelayConfig,
+  requiredScope: string | undefined,
+): RelaySecuritySurface {
+  return requiredScope === config.GLOSSA_MCP_REQUIRED_SCOPE
+    ? "mcp_oauth"
+    : "device_enrollment_oauth";
+}
+
+export function requireAuth(
+  config: RelayConfig,
+  requiredScope?: string,
+  securitySink?: RelaySecuritySink,
+) {
   const issuer = config.GLOSSA_AUTH0_ISSUER.endsWith("/")
     ? config.GLOSSA_AUTH0_ISSUER
     : `${config.GLOSSA_AUTH0_ISSUER}/`;
   const jwks = jwksForIssuer(issuer);
+  const surface = securitySurface(config, requiredScope);
+  const activeSecuritySink = securitySink ??
+    (config.NODE_ENV === "production" ? consoleRelaySecuritySink : undefined);
 
   return async (
     request: AuthenticatedRequest,
@@ -77,6 +99,11 @@ export function requireAuth(config: RelayConfig, requiredScope?: string) {
   ): Promise<void> => {
     const token = bearerToken(request);
     if (!token) {
+      emitRelaySecurityEvent(
+        activeSecuritySink,
+        surface,
+        "authentication_required",
+      );
       response.setHeader(
         "WWW-Authenticate",
         authenticationChallenge(config),
@@ -92,11 +119,21 @@ export function requireAuth(config: RelayConfig, requiredScope?: string) {
       });
       if (!verified.payload.sub) throw new Error("Missing subject.");
       if (!subjectIsAllowedIdentity(config, verified.payload.sub)) {
+        emitRelaySecurityEvent(
+          activeSecuritySink,
+          surface,
+          "identity_not_allowed",
+        );
         response.status(403).json({ error: "identity_provider_not_allowed" });
         return;
       }
       const grantedScopes = scopes(verified.payload);
       if (requiredScope && !grantedScopes.has(requiredScope)) {
+        emitRelaySecurityEvent(
+          activeSecuritySink,
+          surface,
+          "insufficient_scope",
+        );
         response.setHeader(
           "WWW-Authenticate",
           authenticationChallenge(config, "insufficient_scope", requiredScope),
@@ -111,6 +148,11 @@ export function requireAuth(config: RelayConfig, requiredScope?: string) {
       };
       next();
     } catch {
+      emitRelaySecurityEvent(
+        activeSecuritySink,
+        surface,
+        "invalid_token",
+      );
       response.setHeader(
         "WWW-Authenticate",
         authenticationChallenge(config, "invalid_token"),

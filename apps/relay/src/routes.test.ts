@@ -41,6 +41,35 @@ const unusedStore: RelayStore = {
   redeemPairing: unused,
 };
 
+test("publishes protected-resource documentation for MCP OAuth clients", async (context) => {
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(buildRoutes(config, unusedStore, new RouterState()));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/.well-known/oauth-protected-resource`,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    resource: "https://relay.glossa.test/",
+    authorization_servers: ["https://identity.glossa.test/"],
+    scopes_supported: ["glossa:access"],
+    bearer_methods_supported: ["header"],
+    resource_documentation: "https://glossa.sh/security",
+  });
+});
+
 test("serves the exact OpenAI apps challenge only when configured", async (context) => {
   const challenge = "openai-plugin-domain-challenge-test";
   const config = loadConfig({
@@ -339,6 +368,32 @@ test("uses worker credentials without repeating device authentication", async (c
   });
   assert.equal(retiredRegistration.status, 400);
 
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000004";
+  const legacy = await register({
+    workerId: legacyWorkerId,
+    accessProfile: "read-only",
+    capabilities: {
+      commandProgress: true,
+      concurrentJobs: true,
+      structuredReads: true,
+      structuredMutations: true,
+      commandOutputRanges: true,
+    },
+  });
+  assert.equal(
+    state.listDevices(accountId)
+      .find((entry) => entry.deviceId === legacyWorkerId)
+      ?.capabilities.imageReads,
+    false,
+  );
+  assert.deepEqual((legacy.capabilities as Record<string, unknown>).imageReads, true);
+  state.unregisterWorker(
+    accountId,
+    deviceId,
+    legacyWorkerId,
+    String(legacy.generation),
+  );
+
   const current = await register({
     workerId,
     workspaceLabel: "frontend",
@@ -348,6 +403,7 @@ test("uses worker credentials without repeating device authentication", async (c
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
+      imageReads: true,
       structuredMutations: true,
       commandOutputRanges: true,
     },
@@ -369,10 +425,11 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    imageReads: true,
     structuredMutations: true,
     commandOutputRanges: true,
   });
-  assert.equal(deviceAuthentications, 2);
+  assert.equal(deviceAuthentications, 3);
   assert.equal(typeof current.workerToken, "string");
   assert.equal(typeof current.generation, "string");
   assert.equal(current.accessProfile, "workspace");
@@ -381,6 +438,7 @@ test("uses worker credentials without repeating device authentication", async (c
     commandProgress: true,
     concurrentJobs: true,
     structuredReads: true,
+    imageReads: true,
     structuredMutations: true,
     commandOutputRanges: true,
   });
@@ -408,7 +466,7 @@ test("uses worker credentials without repeating device authentication", async (c
     body: JSON.stringify({ workerId, generation: current.generation }),
   });
   assert.equal(invalidWorker.status, 401);
-  assert.equal(deviceAuthentications, 2);
+  assert.equal(deviceAuthentications, 3);
 
   const heartbeat = await fetch(`${origin}/device/heartbeat`, {
     method: "POST",
@@ -469,7 +527,7 @@ test("uses worker credentials without repeating device authentication", async (c
   });
   assert.equal(repeated.status, 202);
   assert.deepEqual(await repeated.json(), { accepted: false });
-  assert.equal(deviceAuthentications, 2);
+  assert.equal(deviceAuthentications, 3);
   assert.equal(deviceTouches, 0);
 
   now += 30_000;
@@ -565,6 +623,7 @@ test("rejects a worker revoked during device authentication", async (context) =>
           commandProgress: true,
           concurrentJobs: true,
           structuredReads: true,
+          imageReads: true,
           structuredMutations: true,
           commandOutputRanges: true,
         },

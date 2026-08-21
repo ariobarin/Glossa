@@ -15,9 +15,14 @@ export const CURRENT_WORKER_CAPABILITIES = {
   commandProgress: true,
   concurrentJobs: true,
   structuredReads: true,
+  imageReads: true,
   structuredMutations: true,
   commandOutputRanges: true,
 } as const;
+export type WorkerCapabilities =
+  Omit<typeof CURRENT_WORKER_CAPABILITIES, "imageReads"> & {
+    imageReads: boolean;
+  };
 
 function workerTokenDigest(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -41,6 +46,7 @@ interface ConnectedWorker {
   accessProfile: WorkerAccessProfile;
   workspaceLabel?: string;
   workerVersion?: string;
+  capabilities: WorkerCapabilities;
   sessionDigest: string;
   lastSeenAt: number;
   pendingJobs: WorkerJob[];
@@ -73,7 +79,14 @@ export class RevokedDeviceRegistrationError extends Error {
 function jobPermissionError(
   worker: ConnectedWorker,
   job: WorkerJob,
-): "write_access_disabled" | "command_access_disabled" | null {
+):
+  | "write_access_disabled"
+  | "command_access_disabled"
+  | "worker_protocol_unsupported"
+  | null {
+  if (job.type === "view_image" && !worker.capabilities.imageReads) {
+    return "worker_protocol_unsupported";
+  }
   const permissions = workerPermissions(worker.accessProfile);
   if (
     (job.type === "write_file" ||
@@ -116,6 +129,7 @@ export class RouterState {
       accessProfile: WorkerAccessProfile;
       workspaceLabel?: string;
       workerVersion?: string;
+      capabilities?: WorkerCapabilities;
     } = { accessProfile: "system" },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
@@ -151,6 +165,7 @@ export class RouterState {
       workerId,
       generation,
       accessProfile: options.accessProfile,
+      capabilities: options.capabilities ?? CURRENT_WORKER_CAPABILITIES,
       ...(options.workerVersion ? { workerVersion: options.workerVersion } : {}),
       ...(options.workspaceLabel
         ? { workspaceLabel: options.workspaceLabel }
@@ -373,7 +388,7 @@ export class RouterState {
     workerVersion?: string;
     accessProfile: WorkerAccessProfile;
     permissions: WorkerPermissions;
-    capabilities: typeof CURRENT_WORKER_CAPABILITIES;
+    capabilities: WorkerCapabilities;
   }> {
     this.#pruneStaleWorkers();
     return [...this.#workers.values()]
@@ -385,7 +400,7 @@ export class RouterState {
         ...(worker.workerVersion ? { workerVersion: worker.workerVersion } : {}),
         accessProfile: worker.accessProfile,
         permissions: workerPermissions(worker.accessProfile),
-        capabilities: CURRENT_WORKER_CAPABILITIES,
+        capabilities: worker.capabilities,
         ...(worker.workspaceLabel
           ? { workspaceLabel: worker.workspaceLabel }
           : {}),

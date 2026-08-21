@@ -44,6 +44,7 @@ const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
 const workerJobTypeSchema = z.enum([
   "read_file",
+  "view_image",
   "list_files",
   "search_text",
   "read_file_range",
@@ -70,6 +71,7 @@ const registerSchema = z.object({
     commandProgress: z.literal(true),
     concurrentJobs: z.literal(true),
     structuredReads: z.literal(true),
+    imageReads: z.literal(true).optional(),
     structuredMutations: z.literal(true),
     commandOutputRanges: z.literal(true),
   }).strict(),
@@ -77,7 +79,7 @@ const registerSchema = z.object({
 const pollSchema = z.object({
   workerId: workerIdSchema,
   generation: z.string().uuid(),
-  acceptedTypes: z.array(workerJobTypeSchema).min(1).max(13).optional(),
+  acceptedTypes: z.array(workerJobTypeSchema).min(1).max(14).optional(),
   waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
 }).strict();
 const workerResultRequestSchema = z.object({
@@ -418,6 +420,7 @@ export function buildRoutes(
       authorization_servers: [config.GLOSSA_AUTH0_ISSUER],
       scopes_supported: [config.GLOSSA_MCP_REQUIRED_SCOPE],
       bearer_methods_supported: ["header"],
+      resource_documentation: "https://glossa.sh/security",
     });
   });
 
@@ -685,6 +688,14 @@ export function buildRoutes(
           ...(parsed.data.workspaceLabel
             ? { workspaceLabel: parsed.data.workspaceLabel }
             : {}),
+          capabilities: {
+            commandProgress: true,
+            concurrentJobs: true,
+            structuredReads: true,
+            imageReads: parsed.data.capabilities.imageReads === true,
+            structuredMutations: true,
+            commandOutputRanges: true,
+          },
         },
       );
     } catch (error) {

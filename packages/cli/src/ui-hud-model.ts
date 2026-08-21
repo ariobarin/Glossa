@@ -109,7 +109,7 @@ export function initialHudState(workspace: string): HudState {
   };
 }
 
-const MAX_STORED_ACTIVITIES = 999;
+const MAX_STORED_ACTIVITIES = 9_999;
 const MAX_STORED_ACTIVITY_TARGET_CHARS = 512;
 
 function truncate(value: string, width: number): string {
@@ -210,6 +210,7 @@ function assertNever(_value: never): never {
 function summarizeJob(job: WorkerJob): HudActivitySummary {
   switch (job.type) {
     case "read_file":
+    case "view_image":
       return pathSummary(job.path);
     case "list_files":
       return pathSummary(workspacePath(job.path), [

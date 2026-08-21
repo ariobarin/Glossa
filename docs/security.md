@@ -162,7 +162,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 - disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
 - tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
 - reject recognizable authentication-secret inputs at the relay and worker;
-- scan file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
+- scan textual file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
 - never enumerate, persist, or log environment variables automatically;
 - keep default command snapshots bounded; cap each retained range at 64 KiB, each retained stream at 1 MiB, terminal records at five minutes, and recent command records at eight; also bound command duration, concurrency, and status waits;
 - terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;
@@ -182,14 +182,15 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 - reject recognizable secret-bearing structured mutation paths plus `write_file`, `edit_file`, and `run_command` inputs in the relay before queueing a worker job;
 - repeat input checks locally so older or compromised relay behavior cannot bypass the worker boundary;
 - preflight an edited file before mutation and bind the edit to the scanned SHA-256 when the caller did not already provide one;
-- inspect content-bearing file results, command snapshots, and every retained command-output range before they leave the worker;
+- inspect textual content-bearing file results, command snapshots, and every retained command-output range before they leave the worker;
+- treat `view_image` as an explicit opaque-media exception: validate the root-confined regular-file path, a 4 MiB compressed-byte ceiling, and PNG/JPEG/WebP signatures locally, but do not claim to inspect pixels or embedded metadata for Restricted Data;
 - inspect command output incrementally with overlap across chunks so a token split across writes is still detected;
 - clear captured and retained output, stop the command process tree, and return a fixed safe error without the matched value;
 - redact restricted command inputs from local activity events;
 - permit explicit placeholders such as `<redacted>` and `replace-me` so documentation and fixtures remain usable;
 - test the detector against the repository corpus to prevent ordinary source code from becoming unreadable.
 
-**Limits:** the worker necessarily handles local bytes while deciding whether to block them, unknown formats can evade recognition, and a command can transmit data without printing it. The only dependable boundary against those cases is an isolated credential-free account or runtime with enforceable filesystem, agent, metadata-service, and network restrictions.
+**Limits:** the worker necessarily handles local bytes while deciding whether to block them, unknown formats can evade recognition, and a command can transmit data without printing it. Images returned by `view_image` are not OCR-scanned or metadata-scrubbed; visible text and embedded image metadata can therefore leave the worker without passing through the textual authentication-secret detector. The only dependable boundary against those cases is an isolated credential-free account or runtime with enforceable filesystem, agent, metadata-service, and network restrictions.
 
 ### Logging leakage
 
@@ -203,6 +204,8 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 - never add local absolute paths or path-derived repository names to relay metadata or logs;
 - retain an optional workspace label only when the user supplies it explicitly and only for the active worker lifetime;
 - omit file contents, command arguments, output, environment variables, and bearer tokens from durable audit events;
+- in production, emit OAuth authentication-failure security events containing only a fixed surface (`mcp_oauth` or `device_enrollment_oauth`) and fixed failure category; never include a token, subject, IP address, path, request body, or arbitrary error text;
+- configure the hosting/log-drain layer to alert when `relay_security_event` volume or repeated failure categories exceed the deployment's normal baseline, and verify that alert path before marketplace submission;
 - verify log scrubbing before deployment.
 
 ### Relay compromise
@@ -227,7 +230,8 @@ Durably retain only what is needed for account, device, and security operation:
 - device ID, user-supplied name, platform, created, last-seen, and revoked timestamps;
 - OAuth subject identifier;
 - metadata-only audit event type, status, and timestamp;
-- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies.
+- optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies;
+- production OAuth failure events limited to the fixed `relay_security_event` name, a bounded authentication surface, and a bounded failure category, with platform timestamps supplied by the hosting/logging layer.
 
 Do not durably retain:
 

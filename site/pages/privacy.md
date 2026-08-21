@@ -2,9 +2,9 @@
 
 Glossa routes requests between an authenticated ChatGPT or MCP client and a local project that you explicitly expose from your computer.
 
-*Last updated August 14, 2026*
+*Last updated August 17, 2026*
 
-The public app is not intended for payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. See [Security and permissions](/security).
+Public Glossa does not support processing payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Do not expose a workspace containing those categories to the public app. See [Security and permissions](/security).
 
 ## Data Glossa processes
 
@@ -14,7 +14,7 @@ Glossa processes:
 - Device metadata such as a device ID, chosen name, platform, creation time, last-seen time, and revocation status.
 - Active routing metadata such as an ephemeral worker ID, selected access profile, optional user-supplied label, worker version, capabilities, connection generation, and liveness state. Glossa does not derive or transmit a repository name or local absolute root.
 - Metadata-only security audit records, limited to event type, status, timestamp, and related account or device identifiers.
-- Tool requests and responses in transit, including relative paths, text file contents, command arguments, command input, and captured command output. Glossa may check text for recognizable authentication-secret patterns so it can block accidental disclosure.
+- Tool requests and responses in transit, including relative paths, text file contents, bounded image bytes returned by `view_image`, command arguments, command input, and captured command output. Glossa may check text for recognizable authentication-secret patterns so it can block accidental disclosure. Image pixels and embedded metadata are not OCR-scanned or metadata-scrubbed by that text detector.
 - Network and service metadata processed by hosting and authentication providers, such as IP address, request time, client information, and error status.
 
 ## How data is used

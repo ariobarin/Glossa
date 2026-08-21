@@ -109,9 +109,9 @@ test("activity view keeps state and age on the activity row", () => {
   );
 });
 
-test("activity history is bounded to 999 entries", () => {
+test("activity history is bounded to 9,999 entries", () => {
   let state = connectedState();
-  for (let index = 1; index <= 1_002; index += 1) {
+  for (let index = 1; index <= 10_002; index += 1) {
     state = applyHudEvent(state, {
       type: "activity",
       phase: "returned",
@@ -123,9 +123,9 @@ test("activity history is bounded to 999 entries", () => {
       ok: true,
     });
   }
-  assert.equal(state.activities.length, 999);
+  assert.equal(state.activities.length, 9_999);
   assert.equal(state.activities[0]!.requestId, "request-4");
-  assert.equal(state.activities.at(-1)!.requestId, "request-1002");
+  assert.equal(state.activities.at(-1)!.requestId, "request-10002");
 });
 
 test("shows the selected access boundary in the workspace screen", () => {
