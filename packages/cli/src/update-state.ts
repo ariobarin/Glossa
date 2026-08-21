@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { withProcessLease } from "./process-lease.js";
 import { configDirectory } from "./secure-store.js";
 
 export type UpdateChannel = "beta" | "stable";
@@ -9,9 +10,13 @@ export interface UpdateState {
   policy: UpdatePolicy;
   channel: UpdateChannel;
   lastCheckedAt?: string;
+  mcpContractVersion?: string;
 }
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const UPDATE_STATE_LOCK_POLL_MS = 25;
+const UPDATE_STATE_LOCK_MAX_AGE_MS = 60_000;
+const UPDATE_STATE_GUARD_MAX_AGE_MS = 30_000;
 
 export function defaultUpdateChannel(version: string): UpdateChannel {
   return version.includes("-") ? "beta" : "stable";
@@ -33,6 +38,23 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+export async function withUpdateStateLease<T>(
+  action: () => Promise<T>,
+  file = updateStateFile(),
+): Promise<T> {
+  return await withProcessLease(
+    action,
+    {
+      lockName: `${path.basename(file)}.lock`,
+      pollMs: UPDATE_STATE_LOCK_POLL_MS,
+      maxAgeMs: UPDATE_STATE_LOCK_MAX_AGE_MS,
+      guardMaxAgeMs: UPDATE_STATE_GUARD_MAX_AGE_MS,
+    },
+    undefined,
+    path.dirname(file),
+  );
+}
+
 export async function loadUpdateState(
   currentVersion: string,
   file = updateStateFile(),
@@ -44,10 +66,12 @@ export async function loadUpdateState(
   try {
     const parsed = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
     const lastCheckedAt = optionalString(parsed.lastCheckedAt);
+    const mcpContractVersion = optionalString(parsed.mcpContractVersion);
     return {
       policy: isPolicy(parsed.policy) ? parsed.policy : defaults.policy,
       channel: isChannel(parsed.channel) ? parsed.channel : defaults.channel,
       ...(lastCheckedAt ? { lastCheckedAt } : {}),
+      ...(mcpContractVersion ? { mcpContractVersion } : {}),
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) {
@@ -57,9 +81,9 @@ export async function loadUpdateState(
   }
 }
 
-export async function saveUpdateState(
+async function saveUpdateState(
   state: UpdateState,
-  file = updateStateFile(),
+  file: string,
 ): Promise<void> {
   const directory = path.dirname(file);
   const temporary = `${file}.${process.pid}.tmp`;
@@ -81,13 +105,18 @@ export async function configureUpdates(
   changes: Partial<Pick<UpdateState, "policy" | "channel">>,
   file = updateStateFile(),
 ): Promise<UpdateState> {
-  const previous = await loadUpdateState(currentVersion, file);
-  const state: UpdateState = {
-    policy: changes.policy ?? previous.policy,
-    channel: changes.channel ?? previous.channel,
-  };
-  await saveUpdateState(state, file);
-  return state;
+  return await withUpdateStateLease(async () => {
+    const previous = await loadUpdateState(currentVersion, file);
+    const state: UpdateState = {
+      policy: changes.policy ?? previous.policy,
+      channel: changes.channel ?? previous.channel,
+      ...(previous.mcpContractVersion
+        ? { mcpContractVersion: previous.mcpContractVersion }
+        : {}),
+    };
+    await saveUpdateState(state, file);
+    return state;
+  }, file);
 }
 
 export async function recordUpdateCheck(
@@ -95,12 +124,27 @@ export async function recordUpdateCheck(
   checkedAt = new Date(),
   file = updateStateFile(),
 ): Promise<UpdateState> {
-  const state = {
-    ...await loadUpdateState(currentVersion, file),
-    lastCheckedAt: checkedAt.toISOString(),
-  };
-  await saveUpdateState(state, file);
-  return state;
+  return await withUpdateStateLease(async () => {
+    const state = {
+      ...await loadUpdateState(currentVersion, file),
+      lastCheckedAt: checkedAt.toISOString(),
+    };
+    await saveUpdateState(state, file);
+    return state;
+  }, file);
+}
+
+export async function observeMcpContractVersion(
+  currentVersion: string,
+  mcpContractVersion: string,
+  file = updateStateFile(),
+): Promise<boolean> {
+  return await withUpdateStateLease(async () => {
+    const previous = await loadUpdateState(currentVersion, file);
+    if (previous.mcpContractVersion === mcpContractVersion) return false;
+    await saveUpdateState({ ...previous, mcpContractVersion }, file);
+    return previous.mcpContractVersion !== undefined;
+  }, file);
 }
 
 export function isUpdateCheckDue(

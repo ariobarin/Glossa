@@ -29,6 +29,7 @@ interface RegisteredSession {
   generation: string;
   workerToken: string;
   imageReads: boolean;
+  mcpContractVersion?: string;
 }
 
 type JobLane = "status" | "cancel" | "read" | "mutation";
@@ -64,6 +65,7 @@ export type RemoteWorkerStatus =
   | {
       state: "connected";
       reconnected: boolean;
+      mcpContractVersion?: string;
     }
   | { state: "retrying"; error: Error; retryInMs: number }
   | { state: "disconnected" };
@@ -245,6 +247,9 @@ export class RemoteWorker {
           this.#onStatus({
             state: "connected",
             reconnected: connectedBefore,
+            ...(session.mcpContractVersion
+              ? { mcpContractVersion: session.mcpContractVersion }
+              : {}),
           });
           connectedBefore = true;
           failures = 0;
@@ -338,10 +343,17 @@ export class RemoteWorker {
     ) {
       throw new RelayProtocolUnsupportedError();
     }
+    const mcpContractVersion = "mcpContractVersion" in value &&
+        typeof value.mcpContractVersion === "string" &&
+        value.mcpContractVersion.length > 0 &&
+        value.mcpContractVersion.length <= 32
+      ? value.mcpContractVersion
+      : undefined;
     return {
       generation: value.generation,
       workerToken: requiredWorkerToken(value.workerToken),
       imageReads,
+      ...(mcpContractVersion ? { mcpContractVersion } : {}),
     };
   }
 

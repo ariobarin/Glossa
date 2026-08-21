@@ -402,6 +402,7 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
     {
       workspace: "C:\\code\\glossa",
       workspaceLabel: "ink-test",
+      initialNotice: "Glossa 0.2.4 is available. Run glossa update after disconnecting.",
       run: async (signal, onEvent) => {
         onEvent({
           type: "status",
@@ -435,6 +436,7 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
   await run;
   assert.equal(input.isRaw, false);
   assert.ok(rendered.includes("\u001b]0;Glossa | ink-test\u0007"));
+  assert.match(rendered, /Glossa 0\.2\.4 is available\. Run glossa update after disconnecting\./);
   assert.match(rendered, /\u001b\[\?1049h/);
   assert.match(rendered, /\u001b\[\?1049l/);
 });

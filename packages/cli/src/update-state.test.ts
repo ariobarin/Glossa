@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import {
   configureUpdates,
   isUpdateCheckDue,
   loadUpdateState,
+  observeMcpContractVersion,
   recordUpdateCheck,
   UPDATE_CHECK_INTERVAL_MS,
+  withUpdateStateLease,
 } from "./update-state.js";
 
 test("uses version-aware defaults and persists update settings", async () => {
@@ -39,13 +42,76 @@ test("uses version-aware defaults and persists update settings", async () => {
       file,
     );
     assert.equal(recorded.lastCheckedAt, checkedAt.toISOString());
+    assert.equal(
+      await observeMcpContractVersion("0.1.0-beta.13", "3.1.0", file),
+      false,
+    );
+    assert.equal(
+      await observeMcpContractVersion("0.1.0-beta.13", "3.1.0", file),
+      false,
+    );
+    assert.equal(
+      await observeMcpContractVersion("0.1.0-beta.13", "3.2.0", file),
+      true,
+    );
     assert.match(await readFile(file, "utf8"), /"policy": "auto"/);
     const reset = await configureUpdates(
       "0.1.0-beta.13",
       { policy: "off" },
       file,
     );
-    assert.deepEqual(reset, { policy: "off", channel: "stable" });
+    assert.deepEqual(reset, {
+      policy: "off",
+      channel: "stable",
+      mcpContractVersion: "3.2.0",
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("serializes update state read-modify-writes", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "glossa-update-state-lock-"));
+  const file = path.join(directory, "updates.json");
+  try {
+    await configureUpdates("0.1.0", { policy: "auto" }, file);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding = false;
+    const holder = withUpdateStateLease(async () => {
+      holding = true;
+      await gate;
+    }, file);
+    while (!holding) await delay(1);
+
+    const checkedAt = new Date("2026-08-21T12:00:00.000Z");
+    let checkFinished = false;
+    let contractFinished = false;
+    const check = recordUpdateCheck("0.1.0", checkedAt, file).then((state) => {
+      checkFinished = true;
+      return state;
+    });
+    const contract = observeMcpContractVersion("0.1.0", "3.1.0", file).then((changed) => {
+      contractFinished = true;
+      return changed;
+    });
+
+    await delay(50);
+    assert.equal(checkFinished, false);
+    assert.equal(contractFinished, false);
+    release();
+    await holder;
+    await Promise.all([check, contract]);
+
+    assert.deepEqual(await loadUpdateState("0.1.0", file), {
+      policy: "auto",
+      channel: "stable",
+      lastCheckedAt: checkedAt.toISOString(),
+      mcpContractVersion: "3.1.0",
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

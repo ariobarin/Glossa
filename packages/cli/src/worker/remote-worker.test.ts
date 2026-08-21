@@ -16,6 +16,7 @@ function registrationResponse(
     generation,
     workerToken,
     accessProfile: body.accessProfile,
+    mcpContractVersion: "3.1.0",
     ...(body.workspaceLabel ? { workspaceLabel: body.workspaceLabel } : {}),
     capabilities: {
       commandProgress: true,
@@ -122,7 +123,10 @@ test("advertises and verifies the selected worker access profile", async () => {
   assert.equal(registerBodies[0]?.workerVersion, "1.0.0");
   assert.equal(registerBodies[0]?.workspaceLabel, "review");
   assert.equal(registerBodies[0]?.accessProfile, "system");
-  assert.equal(statuses.some((status) => status.state === "connected"), true);
+  assert.deepEqual(
+    statuses.find((status) => status.state === "connected"),
+    { state: "connected", reconnected: false, mcpContractVersion: "3.1.0" },
+  );
 });
 
 
