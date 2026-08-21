@@ -420,6 +420,7 @@ export function buildRoutes(
       authorization_servers: [config.GLOSSA_AUTH0_ISSUER],
       scopes_supported: [config.GLOSSA_MCP_REQUIRED_SCOPE],
       bearer_methods_supported: ["header"],
+      resource_documentation: "https://glossa.sh/security",
     });
   });
 
