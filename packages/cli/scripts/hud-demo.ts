@@ -137,7 +137,8 @@ await runSessionHud({
             name: deviceName,
             platform: `${process.platform}-${process.arch}`,
             lastSeen: "just now",
-            status: "1 active worker",
+            status: "1 active workspace",
+            current: true,
           }],
     };
   },

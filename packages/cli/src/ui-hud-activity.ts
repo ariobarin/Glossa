@@ -491,30 +491,30 @@ export function activityCallDetailFields(call: HudActivityCall): HudActivityDeta
       return [{ label: "path", value: quote(call.path) }];
     case "list_files":
       return [
-        { label: "path", value: call.path === undefined ? '"." · default' : quote(call.path) },
-        { label: "recursive", value: call.recursive === undefined ? "false · default" : String(call.recursive) },
+        { label: "path", value: call.path === undefined ? '"."' : quote(call.path) },
+        ...(call.recursive ? [{ label: "recursive", value: "true" }] : []),
         ...(call.cursor === undefined ? [] : [{ label: "cursor", value: quote(call.cursor) }]),
         ...(call.limit === undefined ? [] : [{ label: "limit", value: String(call.limit) }]),
-        { label: "timeoutMs", value: String(call.timeoutMs) },
+        ...(call.timeoutMs === MAX_STRUCTURED_READ_TIMEOUT_MS ? [] : [{ label: "timeoutMs", value: String(call.timeoutMs) }]),
       ];
     case "search_text":
       return [
         { label: "query", value: quote(call.query) },
-        { label: "path", value: call.path === undefined ? '"." · default' : quote(call.path) },
-        { label: "matchMode", value: call.matchMode ?? "literal · default" },
-        { label: "caseSensitive", value: call.caseSensitive === undefined ? "false · default" : String(call.caseSensitive) },
+        { label: "path", value: call.path === undefined ? '"."' : quote(call.path) },
+        ...(call.matchMode === "regex" ? [{ label: "matchMode", value: "regex" }] : []),
+        ...(call.caseSensitive ? [{ label: "caseSensitive", value: "true" }] : []),
         ...(call.maxResults === undefined ? [] : [{ label: "maxResults", value: String(call.maxResults) }]),
         ...(call.extensions === undefined ? [] : [{ label: "extensions", value: listValue(call.extensions) }]),
         ...(call.includeGlobs === undefined ? [] : [{ label: "includeGlobs", value: listValue(call.includeGlobs) }]),
         ...(call.excludeGlobs === undefined ? [] : [{ label: "excludeGlobs", value: listValue(call.excludeGlobs) }]),
-        { label: "timeoutMs", value: String(call.timeoutMs) },
+        ...(call.timeoutMs === MAX_STRUCTURED_READ_TIMEOUT_MS ? [] : [{ label: "timeoutMs", value: String(call.timeoutMs) }]),
       ];
     case "read_file_range":
       return [
         { label: "path", value: quote(call.path) },
-        { label: "startLine", value: call.startLine === undefined ? "1 · default" : String(call.startLine) },
-        { label: "lineCount", value: call.lineCount === undefined ? "200 · default" : String(call.lineCount) },
-        { label: "timeoutMs", value: String(call.timeoutMs) },
+        ...(call.startLine === undefined ? [] : [{ label: "startLine", value: String(call.startLine) }]),
+        ...(call.lineCount === undefined ? [] : [{ label: "lineCount", value: String(call.lineCount) }]),
+        ...(call.timeoutMs === MAX_STRUCTURED_READ_TIMEOUT_MS ? [] : [{ label: "timeoutMs", value: String(call.timeoutMs) }]),
       ];
     case "write_file":
       return [
@@ -532,7 +532,7 @@ export function activityCallDetailFields(call: HudActivityCall): HudActivityDeta
     case "delete_path":
       return [
         { label: "path", value: quote(call.path) },
-        { label: "recursive", value: call.recursive === undefined ? "false · default" : String(call.recursive) },
+        ...(call.recursive ? [{ label: "recursive", value: "true" }] : []),
       ];
     case "move_path":
       return [
@@ -544,8 +544,8 @@ export function activityCallDetailFields(call: HudActivityCall): HudActivityDeta
         ...(call.argv === undefined ? [] : [{ label: "argv", value: listValue(call.argv) }]),
         ...(call.shellCommand === undefined ? [] : [{ label: "shellCommand", value: quote(call.shellCommand) }]),
         ...(call.stdinBytes === undefined ? [] : [{ label: "stdin", value: `${formatByteCount(call.stdinBytes)} · content not retained in Activity` }]),
-        { label: "timeoutMs", value: String(call.timeoutMs) },
-        { label: "waitMs", value: call.waitMs === undefined ? `${DEFAULT_COMMAND_FAST_WAIT_MS} · default` : String(call.waitMs) },
+        ...(call.timeoutMs === DEFAULT_COMMAND_TIMEOUT_MS ? [] : [{ label: "timeoutMs", value: String(call.timeoutMs) }]),
+        ...(call.waitMs === undefined || call.waitMs === DEFAULT_COMMAND_FAST_WAIT_MS ? [] : [{ label: "waitMs", value: String(call.waitMs) }]),
       ];
     case "get_command":
       return [
@@ -557,8 +557,8 @@ export function activityCallDetailFields(call: HudActivityCall): HudActivityDeta
       return [
         { label: "commandId", value: call.commandId },
         { label: "stream", value: call.stream },
-        { label: "offset", value: call.offset === undefined ? "0 · default" : String(call.offset) },
-        { label: "maxBytes", value: call.maxBytes === undefined ? `${DEFAULT_COMMAND_OUTPUT_RANGE_BYTES} · default` : String(call.maxBytes) },
+        ...(call.offset === undefined || call.offset === 0 ? [] : [{ label: "offset", value: String(call.offset) }]),
+        ...(call.maxBytes === undefined || call.maxBytes === DEFAULT_COMMAND_OUTPUT_RANGE_BYTES ? [] : [{ label: "maxBytes", value: String(call.maxBytes) }]),
       ];
     case "cancel_command":
       return [{ label: "commandId", value: call.commandId }];

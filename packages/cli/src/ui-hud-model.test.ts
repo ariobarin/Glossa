@@ -17,20 +17,18 @@ function connectedState(): HudState {
   };
 }
 
-test("workspace is the default view with an activity preview", () => {
+test("workspace is quiet until there is activity", () => {
   const output = renderHud(connectedState(), 60, false, 16);
   const lines = output.split("\n");
 
   assert.equal(lines.length, 16);
   assert.match(lines[0]!, /Glossa \/ Workspace\s+Connected/);
-  assert.match(output, /WORKSPACE/);
-  assert.match(output, /DEVICE/);
-  assert.match(output, /ACTIVITY\s+A View all/);
-  assert.match(output, /No activity yet/);
+  assert.match(output, /C:\\code\\glossa/);
+  assert.match(output, /Device\s+Desk/);
+  assert.doesNotMatch(output, /ACTIVITY|No activity yet|View all|AGENT/);
   assert.match(lines.slice(-3).join("\n"), /A Activity/);
   assert.match(lines.slice(-3).join("\n"), /W Workspace/);
   assert.match(lines.slice(-3).join("\n"), /D Devices/);
-  assert.doesNotMatch(output, /AGENT/);
   assert.match(lines.slice(-3).join("\n"), /Q Quit/);
 });
 
@@ -49,6 +47,7 @@ test("workspace activity preview shows only the newest rows", () => {
   }));
   const output = renderHud({ ...connectedState(), activities }, 80, false, 24, now);
 
+  assert.match(output, /ACTIVITY\s+A View all/);
   assert.match(output, /file-3\.txt/);
   assert.match(output, /file-4\.txt/);
   assert.match(output, /file-5\.txt/);
@@ -148,15 +147,16 @@ test("shows the selected access boundary in the workspace screen", () => {
     20,
   );
 
-  assert.match(output, /ACCESS\s+←\s+Switch/);
-  assert.match(output, /System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
-  assert.doesNotMatch(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
+  assert.match(output, /Access\s+System · read \+ write files \+ commands/);
+  assert.match(output, /OS permissions · credentials · network/);
+  assert.match(output, /← Switch/);
 });
 
-test("access handoff keeps connection health stable until replacement connects", () => {
+test("access handoff keeps the old authority visible until replacement connects", () => {
   let state: HudState = {
     ...connectedState(),
     view: "workspace",
+    connection: "connecting",
     accessProfile: "workspace",
     pendingAccessProfile: "system",
   };
@@ -167,23 +167,23 @@ test("access handoff keeps connection health stable until replacement connects",
     deviceName: "Desk",
     accessProfile: "system",
   });
-  assert.equal(state.connection, "connected");
-  assert.equal(state.accessProfile, "system");
+  assert.equal(state.connection, "connecting");
+  assert.equal(state.accessProfile, "workspace");
   assert.equal(state.pendingAccessProfile, "system");
 
   const connecting = applyHudEvent(state, {
     type: "status",
     status: { state: "connecting" },
   });
-  assert.equal(connecting.connection, "connected");
-  assert.equal(connecting.pendingAccessProfile, "system");
+  assert.equal(connecting.connection, "connecting");
+  assert.equal(connecting.accessProfile, "workspace");
 
   const retrying = applyHudEvent(connecting, {
     type: "status",
     status: { state: "retrying", error: new Error("handoff"), retryInMs: 500 },
   });
-  assert.equal(retrying.connection, "connected");
-  assert.equal(retrying.message, undefined);
+  assert.equal(retrying.connection, "retrying");
+  assert.match(retrying.message ?? "", /Connection lost: handoff\. Retrying in 1 second\./);
 
   const connected = applyHudEvent(retrying, {
     type: "status",
@@ -193,6 +193,7 @@ test("access handoff keeps connection health stable until replacement connects",
     },
   });
   assert.equal(connected.connection, "connected");
+  assert.equal(connected.accessProfile, "system");
   assert.equal(connected.pendingAccessProfile, undefined);
 });
 
@@ -876,7 +877,7 @@ test("activity inspect renders complete safe invocation metadata", () => {
   assert.doesNotMatch(output, new RegExp(stdin));
 });
 
-test("devices page shows pairing overview and active devices", () => {
+test("devices page shows the device table without redundant overview copy", () => {
   const output = renderHud(
     {
       ...connectedState(),
@@ -889,7 +890,8 @@ test("devices page shows pairing overview and active devices", () => {
           name: "Laptop",
           platform: "win32-x64",
           lastSeen: "just now",
-          status: "3 active workers",
+          status: "3 active workspaces",
+          current: true,
         }],
       },
     },
@@ -899,14 +901,12 @@ test("devices page shows pairing overview and active devices", () => {
   );
 
   assert.match(output.split("\n")[0]!, /Glossa \/ Devices\s+Connected/);
-  assert.match(output, /3 Active workspaces/);
-  assert.match(output, /1 Devices/);
-  assert.match(output, /Device\s+Workers\s+Platform\s+Last seen/);
+  assert.match(output, /Device\s+Workspaces\s+Platform\s+Last seen/);
   assert.match(
     output,
-    /Laptop\s+3 active workers\s+win32-x64\s+just now/,
+    /Laptop · this device\s+3 active workspaces\s+win32-x64\s+just now/,
   );
-  assert.doesNotMatch(output, /revoked/i);
+  assert.doesNotMatch(output, /OVERVIEW|PAIRED|Active workspaces\n|Devices\n|revoked/i);
 });
 
 test("devices use a compact readable row in narrow terminals", () => {
@@ -922,7 +922,7 @@ test("devices use a compact readable row in narrow terminals", () => {
           name: "Laptop",
           platform: "win32-x64",
           lastSeen: "just now",
-          status: "1 active worker",
+          status: "1 active workspace",
         }],
       },
     },
@@ -933,7 +933,7 @@ test("devices use a compact readable row in narrow terminals", () => {
 
   assert.match(
     output,
-    /›\s+Laptop · 1 active worker · win32-x64 · just now/,
+    /›\s+Laptop · 1 active workspace · win32-x64 · just now/,
   );
   assert.doesNotMatch(output, /Device\s+Workers\s+Platform\s+Last seen/);
 });
@@ -993,7 +993,6 @@ test("every view stays within a narrow terminal and retains its footer", () => {
         devices: [],
       },
     },
-    { ...state, view: "help" },
   ];
 
   for (const view of views) {
@@ -1003,23 +1002,4 @@ test("every view stays within a narrow terminal and retains its footer", () => {
     assert.match(lines.slice(-3).join("\n"), /Q Quit/);
   }
 });
-
-test("help keeps the useful navigation without removed commands", () => {
-  const output = renderHud(
-    { ...connectedState(), view: "help" },
-    60,
-    false,
-    20,
-  );
-
-  assert.match(output, /A\s+Activity/);
-  assert.match(output, /D\s+Devices/);
-  assert.match(output, /\?\s+Help/);
-  assert.match(output, /Esc\s+Workspace/);
-  assert.match(output, /Enter\/R\s+Revoke selected device/);
-  assert.match(output, /Q\s+Disconnect and quit/);
-  assert.doesNotMatch(output, /sign out/i);
-  assert.doesNotMatch(output, /update/i);
-});
-
 

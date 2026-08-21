@@ -64,11 +64,10 @@ Keys:
   a  activity
   w  workspace
   d  devices
-  ↑↓ select or browse
+  ↑↓ browse or select the current list
   ←→ change workspace access
-  Enter/r  revoke selected device
-  Esc  workspace
-  ?  help
+  Enter  select, inspect, or revoke
+  Esc  back to the previous view or workspace
   q  disconnect and quit`;
 
 async function runWorkspaceSession(
@@ -146,6 +145,7 @@ async function runWorkspaceSession(
             platform: entry.platform ?? "Unknown platform",
             lastSeen: formatRelativeTime(entry.lastSeenAt),
             status: deviceStatus(entry),
+            ...(entry.id === device.deviceId ? { current: true } : {}),
           })),
         };
       },

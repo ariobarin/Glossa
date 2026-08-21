@@ -493,7 +493,9 @@ export function statusMessage(status: RemoteWorkerStatus, connectedBefore: boole
   }
   if (status.state === "retrying") {
     const prefix = connectedBefore ? "Connection lost" : "Could not connect";
-    return `${prefix}: ${status.error.message} ${retryMessage(status.retryInMs)}`;
+    const message = status.error.message.trim();
+    const reason = /[.!?]$/.test(message) ? message : `${message}.`;
+    return `${prefix}: ${reason} ${retryMessage(status.retryInMs)}`;
   }
   return "Disconnected from Glossa.";
 }

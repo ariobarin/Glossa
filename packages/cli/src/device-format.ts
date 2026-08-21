@@ -2,9 +2,9 @@ import type { RelayDevice } from "./relay-client.js";
 
 export function deviceStatus(device: RelayDevice): string {
   if (device.revokedAt) return "revoked";
-  if (device.activeWorkers === null) return "worker count unavailable";
+  if (device.activeWorkers === null) return "workspace count unavailable";
   if (device.activeWorkers === 0) return "offline";
-  return `${device.activeWorkers} active ${device.activeWorkers === 1 ? "worker" : "workers"}`;
+  return `${device.activeWorkers} active ${device.activeWorkers === 1 ? "workspace" : "workspaces"}`;
 }
 
 export function formatRelativeTime(iso: string | null, now: number = Date.now()): string {
