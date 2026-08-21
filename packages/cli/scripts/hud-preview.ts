@@ -36,6 +36,13 @@ interface PreviewOptions {
   clean: boolean;
 }
 
+class UsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UsageError";
+  }
+}
+
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const previewDirectory = path.join(repositoryRoot, ".hud-preview");
 const previewImage = path.join(previewDirectory, "current.png");
@@ -53,9 +60,9 @@ function usage(): string {
 }
 
 function boundedInteger(value: string | undefined, label: string, min: number, max: number): number {
-  if (!value || !/^\d+$/.test(value)) throw new Error(`${label} must be an integer from ${min} through ${max}.`);
+  if (!value || !/^\d+$/.test(value)) throw new UsageError(`${label} must be an integer from ${min} through ${max}.`);
   const parsed = Number(value);
-  if (parsed < min || parsed > max) throw new Error(`${label} must be from ${min} through ${max}.`);
+  if (parsed < min || parsed > max) throw new UsageError(`${label} must be from ${min} through ${max}.`);
   return parsed;
 }
 
@@ -74,7 +81,7 @@ function parseArgs(args: string[]): PreviewOptions | "help" {
     } else if (argument === "--screen") {
       const value = args[++index];
       if (!value || !SCREENS.includes(value as PreviewScreen)) {
-        throw new Error(`--screen must be one of: ${SCREENS.join(", ")}.`);
+        throw new UsageError(`--screen must be one of: ${SCREENS.join(", ")}.`);
       }
       options.screen = value as PreviewScreen;
     } else if (argument === "--width") {
@@ -82,7 +89,7 @@ function parseArgs(args: string[]): PreviewOptions | "help" {
     } else if (argument === "--height") {
       options.rows = boundedInteger(args[++index], "--height", MIN_ROWS, MAX_ROWS);
     } else {
-      throw new Error(`Unknown option: ${argument}`);
+      throw new UsageError(`Unknown option: ${argument}`);
     }
   }
   return options;
@@ -220,8 +227,12 @@ async function main(): Promise<void> {
 }
 
 await main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  console.error("");
-  console.error(usage());
+  if (error instanceof UsageError) {
+    console.error(error.message);
+    console.error("");
+    console.error(usage());
+  } else {
+    console.error(error);
+  }
   process.exitCode = 1;
 });
