@@ -147,7 +147,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use commands to inspect secrets, bypass file-tool boundaries/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Change and fix requests authorize only scoped edits/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /every new command still requires approval in the worker's local terminal/);
+  assert.match(
+    MCP_SERVER_INSTRUCTIONS,
+    /every new command still requires its complete escaped process input to be reviewable and approved in the worker's local terminal/,
+  );
+  assert.match(MCP_SERVER_INSTRUCTIONS, /commands that cannot be fully shown are denied/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /A build request authorizes requesting the build command only when system access is already enabled/);
   assert.match(MCP_SERVER_INSTRUCTIONS, /local terminal still makes the final start decision/);
   assert.match(

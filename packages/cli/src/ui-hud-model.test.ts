@@ -3,6 +3,7 @@ import test from "node:test";
 import { renderHud } from "./ui-hud.js";
 import {
   applyHudEvent,
+  formatCommandApprovalLines,
   initialHudState,
   retainPostExitNotice,
   type HudState,
@@ -286,6 +287,25 @@ test("activity command summaries preserve argv endpoints without stdin content",
   );
   assert.deepEqual(summary.details, ["stdin 16 B", "timeout 30000 ms"]);
   assert.doesNotMatch(`${summary.target} ${summary.details.join(" ")}`, /do not show this/);
+});
+
+test("command approvals preserve complete escaped process input", () => {
+  const longArgument = `start-${"x".repeat(600)}-end`;
+  const lines = formatCommandApprovalLines({
+    type: "run_command",
+    requestId: "request-approval",
+    argv: ["node", longArgument],
+    stdin: "first line\nλ second line",
+    timeoutMs: 30_000,
+    waitMs: 0,
+  });
+
+  assert.equal(lines[0], 'argv[0] "node"');
+  assert.equal(lines[1], `argv[1] "${longArgument}"`);
+  assert.equal(lines[2], 'stdin "first line\\n\\u03bb second line"');
+  assert.deepEqual(lines.slice(3), ["timeout 30000 ms", "wait 0 ms"]);
+  assert.ok(lines[1]!.length > 512);
+  assert.match(lines[1]!, /start-x+.*x+-end/);
 });
 
 test("activity summaries preserve search boundaries and command ids", () => {

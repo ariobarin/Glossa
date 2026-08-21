@@ -445,9 +445,15 @@ test("system command approval is decided locally in the HUD", async () => {
     type: "run_command",
     requestId: "request-denied",
     argv: ["npm", "test"],
+    stdin: "first line\nλ",
     timeoutMs: 30_000,
   });
-  await waitFor(() => rendered.includes('Run system command? argv ["npm", "test"]'));
+  await waitFor(() =>
+    rendered.includes("Run system command?") &&
+    rendered.includes('argv[0] "npm"') &&
+    rendered.includes('argv[1] "test"') &&
+    rendered.includes('stdin "first line\\n\\u03bb"')
+  );
   input.write("n");
   assert.equal(await denied, false);
 
@@ -457,9 +463,24 @@ test("system command approval is decided locally in the HUD", async () => {
     argv: ["git", "status"],
     timeoutMs: 30_000,
   });
-  await waitFor(() => rendered.includes('Run system command? argv ["git", "status"]'));
+  await waitFor(() =>
+    rendered.includes('argv[0] "git"') && rendered.includes('argv[1] "status"')
+  );
   input.write("y");
   assert.equal(await approved, true);
+
+  const oversized = authorizeCommand!({
+    type: "run_command",
+    requestId: "request-oversized",
+    argv: ["node", "-e", "x".repeat(3_000)],
+    timeoutMs: 30_000,
+  });
+  assert.equal(await oversized, false);
+  await waitFor(() =>
+    rendered.includes(
+      "Command denied because its complete input does not fit this terminal.",
+    )
+  );
 
   input.write("q");
   await run;

@@ -115,7 +115,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 - enforce the selected authority in both the relay and local worker;
 - treat startup as authorization for operations inside the selected profile, while requiring a fresh local approval before every new `run_command` under `system`;
 - fail closed when a system command has no local approval handler, is denied, or the interactive session disconnects before approval;
-- show the selected profile, the exact command summary awaiting approval, and compact write or command activity locally;
+- show the selected profile and the complete escaped command input awaiting approval locally; if the full input cannot fit the terminal, deny the command rather than truncating it; keep the separate activity history compact and payload-minimized;
 - provide visible status, immediate disconnect, logout, and device revocation;
 - treat all file and command output as untrusted data rather than instructions;
 - reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.

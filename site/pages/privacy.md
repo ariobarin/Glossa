@@ -2,7 +2,7 @@
 
 Glossa routes requests between an authenticated ChatGPT or MCP client and a local project that you explicitly expose from your computer.
 
-*Last updated August 17, 2026*
+*Last updated August 21, 2026*
 
 Public Glossa does not support processing payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Do not expose a workspace containing those categories to the public app. See [Security and permissions](/security).
 
@@ -41,7 +41,7 @@ ChatGPT or another connected MCP client receives the file contents, command deta
 
 ## Your controls
 
-- Choose `read-only`, `workspace`, or explicit `system` access for each worker; every new system command also requires approval in the local terminal before it starts.
+- Choose `read-only`, `workspace`, or explicit `system` access for each worker; every new system command requires the complete escaped command input to be reviewable and approved in the local terminal before it starts.
 - Stop the worker with Ctrl+C or `q`.
 - Run `glossa unpair` to revoke this computer's device credential and remove its local copy.
 - Press `d` in any paired Glossa terminal to list and revoke the account's devices.
@@ -50,7 +50,7 @@ ChatGPT or another connected MCP client receives the file contents, command deta
 
 ## Security
 
-The relay and worker independently enforce the selected access profile. Every new `system` command requires local terminal approval before process creation. An approved command inherits the operating-system authority of the account that starts the worker and is not confined to the selected root. HTTPS protects data in transit, but the managed relay processes tool requests and responses in plaintext while routing them; this is not end-to-end encryption between the MCP client and local worker. Read [Security and permissions](/security) before enabling commands.
+The relay and worker independently enforce the selected access profile. Every new `system` command requires the complete command input to be shown locally without truncation and approved before process creation; commands that cannot be fully presented in the terminal are denied. An approved command inherits the operating-system authority of the account that starts the worker and is not confined to the selected root. HTTPS protects data in transit, but the managed relay processes tool requests and responses in plaintext while routing them; this is not end-to-end encryption between the MCP client and local worker. Read [Security and permissions](/security) before enabling commands.
 
 ## Children
 

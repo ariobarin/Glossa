@@ -12,12 +12,12 @@ Glossa connects one project folder to an authenticated client through a local wo
 
 The selected profile appears in the local terminal and in `list_workspaces`. Both the relay and the local worker enforce it.
 
-> **`system` is powerful and is not sandboxed.** Each command needs local approval. Approved commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the project.
+> **`system` is powerful and is not sandboxed.** Each command needs local approval after its complete escaped process input is shown without truncation. If the terminal cannot display the full input, Glossa denies the command. Approved commands inherit the worker account's environment, credentials, filesystem permissions, and network access and are not confined to the project.
 
 ## What Glossa enforces
 
 - Structured file tools stay inside one selected root and reject absolute paths, parent traversal, and linked-path escapes. Workspace mode can create directories, move files or directories, and delete paths without enabling commands.
-- File changes require `workspace` or `system`; commands require `system` plus local approval.
+- File changes require `workspace` or `system`; commands require `system` plus local approval of the complete command input.
 - OAuth, account scoping, device credentials, and HTTPS protect the connection. HTTPS encrypts transport; the managed relay still processes plaintext tool traffic.
 - The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
 - The local worker keeps command state only transiently. Default command responses remain bounded; when output is truncated, up to 1 MiB of stdout and 1 MiB of stderr can be read back in bounded ranges without rerunning the command. Terminal command records last no more than five minutes, at most eight recent records are kept, and retained output is deleted with its record.

@@ -17,6 +17,7 @@ import {
 
 import {
   applyHudEvent,
+  formatCommandApprovalLines,
   initialHudState,
   summarizeJob,
   type HudActivity,
@@ -105,8 +106,7 @@ class HudStore {
     if (signal.aborted || this.#commandApprovals.size > 0) {
       return Promise.resolve(false);
     }
-    const summary = summarizeJob(job);
-    const label = [summary.target, ...summary.details].join(" · ");
+    const lines = formatCommandApprovalLines(job);
     return new Promise((resolve) => {
       let settled = false;
       const onAbort = (): void => finish(false);
@@ -130,7 +130,7 @@ class HudStore {
         prompt: {
           type: "command-confirm",
           requestId: job.requestId,
-          summary: label,
+          lines,
         },
         notice: undefined,
       }));
@@ -140,6 +140,17 @@ class HudStore {
   resolveCommandApproval(requestId: string, approved: boolean): void {
     this.#commandApprovals.get(requestId)?.(approved);
   }
+}
+
+function denyUnreviewableCommand(
+  store: HudStore,
+  prompt: CommandApprovalPrompt,
+): void {
+  store.resolveCommandApproval(prompt.requestId, false);
+  store.update((state) => ({
+    ...state,
+    notice: "Command denied because its complete input does not fit this terminal. Increase the terminal size and retry.",
+  }));
 }
 
 function terminalTitleSequence(label: string | undefined): string {
@@ -315,12 +326,7 @@ function promptText(
       choices: "Y confirm  N cancel",
     };
   }
-  if (state.prompt.type === "command-confirm") {
-    return {
-      message: `Run system command? ${state.prompt.summary}`,
-      choices: "Y run  N deny",
-    };
-  }
+  if (state.prompt.type === "command-confirm") return undefined;
   const device = state.status?.devices[state.prompt.deviceIndex];
   return {
     message: `Revoke ${device?.name ?? "this device"}?`,
@@ -342,6 +348,57 @@ function screenMetrics(state: HudState, columns: number, rows: number): HudScree
     terminalRows - 2 - overlayRows - 1 - footerRows.length,
   );
   return { usable, bodyBudget, footerRows, overlayRows };
+}
+
+type CommandApprovalPrompt = Extract<
+  NonNullable<HudState["prompt"]>,
+  { type: "command-confirm" }
+>;
+
+const COMMAND_APPROVAL_FIXED_ROWS = 4;
+const COMMAND_APPROVAL_MIN_USABLE = 24;
+
+function commandApprovalUsable(columns: number): number {
+  const margin = columns >= 24 ? 2 : 0;
+  return Math.max(8, columns - margin * 2);
+}
+
+function commandApprovalPayloadRowCount(
+  prompt: CommandApprovalPrompt,
+  usable: number,
+): number {
+  return prompt.lines.reduce(
+    (total, line) => total + Math.max(1, Math.ceil(line.length / usable)),
+    0,
+  );
+}
+
+function commandApprovalFits(
+  prompt: CommandApprovalPrompt,
+  columns: number,
+  rows: number,
+): boolean {
+  const usable = commandApprovalUsable(columns);
+  if (usable < COMMAND_APPROVAL_MIN_USABLE) return false;
+  const available = Math.max(0, Math.max(6, rows) - COMMAND_APPROVAL_FIXED_ROWS);
+  return commandApprovalPayloadRowCount(prompt, usable) <= available;
+}
+
+function commandApprovalPayloadRows(
+  prompt: CommandApprovalPrompt,
+  usable: number,
+): string[] {
+  const rows: string[] = [];
+  for (const line of prompt.lines) {
+    if (line.length === 0) {
+      rows.push("");
+      continue;
+    }
+    for (let offset = 0; offset < line.length; offset += usable) {
+      rows.push(line.slice(offset, offset + usable));
+    }
+  }
+  return rows;
 }
 
 function activityPageCapacity(bodyBudget: number): number {
@@ -860,6 +917,43 @@ function HelpView({ bodyBudget, color }: { bodyBudget: number; color: boolean })
   );
 }
 
+function CommandApprovalView({
+  prompt,
+  usable,
+  height,
+  color,
+}: {
+  prompt: CommandApprovalPrompt;
+  usable: number;
+  height: number;
+  color: boolean;
+}): React.ReactNode {
+  const fits = usable >= COMMAND_APPROVAL_MIN_USABLE &&
+    commandApprovalPayloadRowCount(prompt, usable) <=
+      Math.max(0, height - COMMAND_APPROVAL_FIXED_ROWS);
+  const payloadRows = fits ? commandApprovalPayloadRows(prompt, usable) : [];
+  return (
+    <Box width={usable} height={height} flexDirection="column" flexShrink={0}>
+      <Text bold color={color ? COLORS.coral : undefined} wrap="truncate">
+        {fits ? "Run system command?" : "System command denied"}
+      </Text>
+      <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+        {fits
+          ? "Review the complete command input below. Nothing is omitted."
+          : "Complete command input does not fit this terminal."}
+      </Text>
+      {payloadRows.map((row, index) => (
+        <Text key={index} wrap="truncate">{row}</Text>
+      ))}
+      <Box flexGrow={1} />
+      <Line usable={usable} color={color} />
+      <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+        {fits ? "Y run   N deny" : "Increase terminal size and retry."}
+      </Text>
+    </Box>
+  );
+}
+
 function Overlay({ state, usable, color }: {
   state: HudState;
   usable: number;
@@ -932,6 +1026,22 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
   now?: number;
 }): React.ReactNode {
   const margin = columns >= 24 ? 2 : 0;
+  if (state.prompt?.type === "command-confirm") {
+    const usable = commandApprovalUsable(columns);
+    const approval = (
+      <CommandApprovalView
+        prompt={state.prompt}
+        usable={usable}
+        height={Math.max(6, rows)}
+        color={color}
+      />
+    );
+    return (
+      <Box width={Math.max(8, columns)} height={Math.max(6, rows)} flexDirection="column">
+        {margin > 0 ? <Box marginLeft={margin}>{approval}</Box> : approval}
+      </Box>
+    );
+  }
   const metrics = screenMetrics(state, columns, rows);
   const inner = (
     <Box width={metrics.usable} height={Math.max(6, rows)} flexDirection="column">
@@ -1072,6 +1182,16 @@ function HudRuntime({ store, actions, signal, stop }: {
   }, [state.view, state.activities.length]);
 
   useEffect(() => {
+    const prompt = state.prompt;
+    if (
+      prompt?.type === "command-confirm" &&
+      !commandApprovalFits(prompt, columns, rows)
+    ) {
+      denyUnreviewableCommand(store, prompt);
+    }
+  }, [columns, rows, state.prompt, store]);
+
+  useEffect(() => {
     store.update((current) => {
       let next = current;
       const metrics = screenMetrics(current, columns, rows);
@@ -1116,7 +1236,11 @@ function HudRuntime({ store, actions, signal, stop }: {
       }
       if (value !== "y") return;
       if (current.prompt.type === "command-confirm") {
-        store.resolveCommandApproval(current.prompt.requestId, true);
+        if (!commandApprovalFits(current.prompt, columns, rows)) {
+          denyUnreviewableCommand(store, current.prompt);
+        } else {
+          store.resolveCommandApproval(current.prompt.requestId, true);
+        }
         return;
       }
       if (current.prompt.type === "access-confirm") {

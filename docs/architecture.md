@@ -111,9 +111,9 @@ The hosting layer imposes a bounded request window. Therefore:
 - worker long polls return within 20 seconds; when a concurrent lane becomes free, the worker supersedes a stale capacity poll with a one-shot refresh for only the newly available job types;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
-- `run_command` is available only to a worker registered with `system` access; before process creation the local interactive terminal must approve the exact command summary, and the request returns only after approval plus command acceptance supplies the worker ID and command ID;
+- `run_command` is available only to a worker registered with `system` access; before process creation the local interactive terminal must display the complete command input and approve it without truncation, and the public result carries the `workspaceId` and `commandId` used for follow-up operations;
 - command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
-- command follow-ups always carry both the worker ID and command ID, so routing is explicit and remains valid across relay restarts;
+- command follow-ups always carry both the public `workspaceId` and `commandId`; the relay resolves that public workspace handle to the current ephemeral worker internally, so clients never route by worker ID;
 - `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;
 - `read_command_output` returns at most 64 KiB of one retained stream per request, reports a continuation offset, and never reruns the command;
 - `cancel_command` uses a separate bounded request;
