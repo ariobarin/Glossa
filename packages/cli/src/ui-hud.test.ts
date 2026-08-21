@@ -3,7 +3,8 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import type { ReadStream, WriteStream } from "node:tty";
 import { applyHudEvent, initialHudState, type HudState } from "./ui-hud-model.js";
-import { renderHud, runSessionHud } from "./ui-hud.js";
+import { renderHud } from "./ui-hud-render.test-support.js";
+import { runSessionHud } from "./ui-hud.js";
 
 function connectedState(): HudState {
   return {
@@ -264,6 +265,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
   );
 
   await waitFor(() => rendered.includes("Glossa / Workspace"));
+  assert.match(rendered, /\u001B\[\?1049h/);
   input.write("d");
   await waitFor(() => rendered.includes("Glossa / Devices"));
   input.write("\u001b[B");
@@ -276,6 +278,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
 
   input.write("q");
   await run;
+  assert.match(rendered, /\u001B\[\?1049l/);
 });
 
 test("workspace access controls deescalate directly and confirm escalation", async () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderHud } from "./ui-hud.js";
+import { renderHud } from "./ui-hud-render.test-support.js";
 import {
   applyHudEvent,
   initialHudState,

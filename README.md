@@ -6,7 +6,7 @@ Use it when a task depends on local state such as an existing checkout, uncommit
 
 ## Quick start
 
-Install the CLI with Node.js 22.9 or newer:
+Install with Node.js 18 or newer:
 
 ```shell
 npm install --global @ariobarin/glossa

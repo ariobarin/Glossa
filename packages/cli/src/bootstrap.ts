@@ -3,7 +3,7 @@
 // so it parses on old Node.js releases, then checks the version BEFORE loading
 // the application bundle (dist/app.js). That way a user on an unsupported Node
 // gets the actionable message below instead of a syntax or module error from
-// the node22.9-targeted app bundle.
+// the node18-targeted app bundle.
 import { nodeVersionSatisfies, unsupportedNodeMessage } from "./node-version.js";
 
 const nodeVersion = process.versions.node;

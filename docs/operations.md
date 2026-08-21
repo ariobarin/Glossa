@@ -4,7 +4,7 @@ This guide covers installation, workspace selection, access profiles, account co
 
 ## Install
 
-The npm package supports Windows, macOS, and Linux and requires Node.js 22.9 or newer:
+The npm package supports Windows, macOS, and Linux and requires Node.js 18 or newer:
 
 ```shell
 npm install --global @ariobarin/glossa

@@ -23,8 +23,8 @@ test("rejects older releases and unparseable versions", () => {
 });
 
 test("the unsupported message names the running and required versions", () => {
-  const message = unsupportedNodeMessage("20.5.0");
-  assert.match(message, /Node\.js 22\.9 or newer/);
-  assert.match(message, /running Node 20\.5\.0/);
+  const message = unsupportedNodeMessage("16.20.2");
+  assert.match(message, /Node\.js 18\.0 or newer/);
+  assert.match(message, /running Node 16\.20\.2/);
   assert.match(message, /https:\/\/nodejs\.org\//);
 });
