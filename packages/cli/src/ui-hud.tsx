@@ -1,6 +1,5 @@
 import type { ReadStream, WriteStream } from "node:tty";
 import type { WorkerAccessProfile } from "@glossa/protocol";
-import { stripVTControlCharacters } from "node:util";
 import React, {
   useEffect,
   useState,
@@ -10,9 +9,8 @@ import {
   Box,
   Text as InkText,
   render,
-  renderToString,
   useInput,
-  useWindowSize,
+  useStdout,
 } from "ink";
 
 import {
@@ -926,20 +924,6 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
   );
 }
 
-export function renderHud(
-  state: HudState,
-  width = 80,
-  color = true,
-  height = 24,
-  now = Date.now(),
-): string {
-  const output = renderToString(
-    <HudScreen state={state} columns={width} rows={height} color={color} now={now} />,
-    { columns: width },
-  );
-  return color ? output : stripVTControlCharacters(output);
-}
-
 async function loadDevices(
   store: HudStore,
   actions: HudUiActions,
@@ -1000,6 +984,25 @@ function beginAccessChange(
   }));
 }
 
+function useTerminalSize(): { columns: number; rows: number } {
+  const { stdout } = useStdout();
+  const readSize = (): { columns: number; rows: number } => ({
+    columns: stdout.columns ?? 80,
+    rows: stdout.rows ?? 24,
+  });
+  const [size, setSize] = useState(readSize);
+
+  useEffect(() => {
+    const onResize = (): void => setSize(readSize());
+    stdout.on("resize", onResize);
+    return () => {
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
+
+  return size;
+}
+
 function HudRuntime({ store, actions, signal, stop }: {
   store: HudStore;
   actions: HudUiActions;
@@ -1007,7 +1010,7 @@ function HudRuntime({ store, actions, signal, stop }: {
   stop: () => void;
 }): React.ReactNode {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const { columns, rows } = useWindowSize();
+  const { columns, rows } = useTerminalSize();
   const [, setClock] = useState(0);
 
   useEffect(() => {
@@ -1231,24 +1234,26 @@ export async function runSessionHud(
   process.once("SIGTERM", stopFromSignal);
 
   output.write(terminalTitleSequence(actions.workspaceLabel));
-  instance = render(
-    <HudRuntime
-      store={store}
-      actions={actions}
-      signal={controller.signal}
-      stop={stop}
-    />,
-    {
-      stdin: input,
-      stdout: output,
-      exitOnCtrlC: false,
-      patchConsole: false,
-      alternateScreen: true,
-      incrementalRendering: true,
-      interactive: true,
-      maxFps: 30,
-    },
-  );
+  output.write("\u001B[?1049h");
+  try {
+    instance = render(
+      <HudRuntime
+        store={store}
+        actions={actions}
+        signal={controller.signal}
+        stop={stop}
+      />,
+      {
+        stdin: input,
+        stdout: output,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
+  } catch (error) {
+    output.write("\u001B[?1049l");
+    throw error;
+  }
 
   const session = actions.run(controller.signal, (event) => store.event(event)).then(() => {
     if (!controller.signal.aborted) {
@@ -1274,5 +1279,6 @@ export async function runSessionHud(
     controller.abort();
     process.removeListener("SIGINT", stopFromSignal);
     process.removeListener("SIGTERM", stopFromSignal);
+    output.write("\u001B[?1049l");
   }
 }

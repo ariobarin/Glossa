@@ -1,5 +1,5 @@
-export const MIN_NODE_MAJOR = 22;
-export const MIN_NODE_MINOR = 9;
+export const MIN_NODE_MAJOR = 18;
+export const MIN_NODE_MINOR = 0;
 
 export function nodeVersionSatisfies(version: string): boolean {
   const match = /^v?(\d+)\.(\d+)/.exec(version.trim());

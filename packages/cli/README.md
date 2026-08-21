@@ -1,6 +1,6 @@
 # @ariobarin/glossa
 
-The `glossa` CLI connects one project on your computer to the Glossa MCP relay through an authenticated outbound worker. The npm package supports Windows, macOS, and Linux and requires Node.js 22.9 or newer.
+The `glossa` CLI connects one project on your computer to the Glossa MCP relay through an authenticated outbound worker. The npm package supports Windows, macOS, and Linux and requires Node.js 18 or newer.
 
 ```shell
 npm install --global @ariobarin/glossa

@@ -31,6 +31,33 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  cli-node-floor:
+    name: CLI compatibility (Node 18.0 / npm 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace @glossa/protocol
+      - name: Pack CLI
+        shell: bash
+        run: echo "CLI_TARBALL=$(npm pack --workspace @ariobarin/glossa --silent)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "18.0.0"
+      - name: Smoke packed CLI on minimum Node
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          npm install --global --engine-strict "./$CLI_TARBALL"
+          glossa --version
+          glossa --help >/dev/null
+
   check-windows:
     name: Full repository check (Windows)
     runs-on: windows-latest

@@ -33,7 +33,7 @@ await build({
   outfile: "dist/app.js",
   bundle: true,
   platform: "node",
-  target: "node22.9",
+  target: "node18",
   format: "esm",
   external: ["@napi-rs/keyring"],
   define: applicationDefine,
@@ -45,13 +45,13 @@ await build({
 
 // Tiny bootstrap entry (the published bin). Built against a conservative target
 // so it parses on old Node.js and prints the version requirement before it
-// loads the node22.9-targeted app bundle.
+// loads the node18-targeted app bundle.
 await build({
   entryPoints: ["src/bootstrap.ts"],
   outfile: "dist/main.js",
   bundle: true,
   platform: "node",
-  target: "node18",
+  target: "node16",
   format: "esm",
   define: {
     __GLOSSA_VERSION__: JSON.stringify(packageJson.version),

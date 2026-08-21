@@ -4,7 +4,7 @@ Install Glossa, add it to ChatGPT, then pair the computer that will expose your 
 
 ## 1. Install
 
-Requires Node.js 22.9 or newer.
+Requires Node.js 18 or newer.
 
 ```shell
 npm install --global @ariobarin/glossa
