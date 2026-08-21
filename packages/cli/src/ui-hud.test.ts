@@ -310,13 +310,20 @@ test("workspace access controls only advertise available changes", () => {
   assert.doesNotMatch(footer("workspace", { connection: "retrying" }), /← Read only|→ System/);
 });
 
-test("workspace access handoff stays truthful until the replacement connects", () => {
+test("workspace access handoff stays truthful without moving the body", () => {
+  const steadyState = applyHudEvent(
+    { ...connectedState(), view: "workspace", accessProfile: "workspace" },
+    {
+      type: "activity",
+      phase: "started",
+      job: { type: "read_file", requestId: "layout-anchor", path: "README.md" },
+    },
+  );
+  const steady = renderHud(steadyState, 110, false, 20);
   const pending = renderHud(
     {
-      ...connectedState(),
-      view: "workspace",
+      ...steadyState,
       connection: "connecting",
-      accessProfile: "workspace",
       pendingAccessProfile: "system",
     },
     110,
@@ -337,10 +344,22 @@ test("workspace access handoff stays truthful until the replacement connects", (
 
   assert.match(pending.split("\n")[0] ?? "", /Connecting$/);
   assert.match(pending, /Access\s+Workspace · read \+ write files/);
-  assert.match(pending, /Switching to System…/);
+  assert.doesNotMatch(pending, /Switching/);
   assert.doesNotMatch(pending, /Access\s+System/);
   assert.match(confirmed, /Access\s+System · read \+ write files \+ commands/);
   assert.doesNotMatch(confirmed, /Switching/);
+
+  const lineOf = (output: string, pattern: RegExp): number =>
+    output.split("\n").findIndex((line) => pattern.test(line));
+  for (const pattern of [
+    /C:\\\\code\\\\glossa/,
+    /Device\s+Desk/,
+    /Access\s+Workspace/,
+    /ACTIVITY/,
+    /read_file/,
+  ]) {
+    assert.equal(lineOf(pending, pattern), lineOf(steady, pattern));
+  }
 });
 
 test("activity layout aligns tool arguments and timestamps", () => {

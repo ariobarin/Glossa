@@ -752,7 +752,6 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
   if (hasFacts) fixedLines += 1;
   if (state.deviceName) fixedLines += 1;
   if (state.accessProfile) fixedLines += 2;
-  if (state.pendingAccessProfile) fixedLines += 1;
   if (showConnectionMessage) fixedLines += 2;
   const activityCapacity = !state.prompt && !state.busy && state.activities.length > 0
     ? Math.min(3, Math.max(0, bodyBudget - fixedLines - 3))
@@ -804,15 +803,6 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
             color={color}
           />
         </>
-      ) : null}
-      {state.pendingAccessProfile ? (
-        <WorkspaceFact
-          label=""
-          value={`Switching to ${accessProfileLabel(state.pendingAccessProfile)}…`}
-          usable={usable}
-          color={color}
-          tone={COLORS.purpleReadable}
-        />
       ) : null}
       {showConnectionMessage ? (
         <>
