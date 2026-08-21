@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import type { ReadStream, WriteStream } from "node:tty";
 import { applyHudEvent, initialHudState, type HudState } from "./ui-hud-model.js";
-import { renderHud, runSessionHud } from "./ui-hud.js";
+import { renderHud, runSessionHud, shouldUseHudColor } from "./ui-hud.js";
 
 function connectedState(): HudState {
   return {
@@ -13,6 +13,12 @@ function connectedState(): HudState {
     connectedBefore: true,
   };
 }
+
+test("NO_COLOR disables HUD color even when its value is empty", () => {
+  assert.equal(shouldUseHudColor(undefined), true);
+  assert.equal(shouldUseHudColor(""), false);
+  assert.equal(shouldUseHudColor("1"), false);
+});
 
 async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
