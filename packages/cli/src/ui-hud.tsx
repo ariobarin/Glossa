@@ -323,7 +323,7 @@ function activityPageInfo(state: HudState, bodyBudget: number): {
 }
 
 function statusDeviceCapacity(state: HudState, bodyBudget: number, usable: number): number {
-  if (!state.status || state.statusLoading || state.status.devices.length === 0) return 0;
+  if (!state.status || state.status.devices.length === 0) return 0;
   const preamble = usable >= 64 ? 10 : 9;
   return Math.min(9, state.status.devices.length, Math.max(0, bodyBudget - preamble));
 }

@@ -50,6 +50,33 @@ test("HUD breadcrumbs identify every top-level view", () => {
   assert.match(help.split("\n")[0] ?? "", /Glossa \/ Help\s+Connected/);
 });
 
+test("keeps cached device rows visible during background refresh", () => {
+  const output = renderHud(
+    {
+      ...connectedState(),
+      view: "devices",
+      statusLoading: true,
+      status: {
+        relay: "https://relay.example",
+        activeWorkers: 1,
+        devices: [{
+          id: "device-1",
+          name: "Laptop",
+          platform: "win32-x64",
+          lastSeenAt: "2026-08-17T21:00:00.000Z",
+          status: "active",
+        }],
+      },
+    },
+    110,
+    false,
+    24,
+  );
+
+  assert.match(output, /Laptop/);
+  assert.match(output, /win32-x64/);
+});
+
 test("footer keeps navigation left and contextual controls right", () => {
   const width = 110;
   const activity = renderHud(
