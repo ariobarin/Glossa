@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import type { ReadStream, WriteStream } from "node:tty";
-import { applyHudEvent, initialHudState, type HudState } from "./ui-hud-model.js";
+import {
+  applyHudEvent,
+  initialHudState,
+  type HudState,
+  type SystemCommandJob,
+} from "./ui-hud-model.js";
 import { renderHud, runSessionHud } from "./ui-hud.js";
 
 function connectedState(): HudState {
@@ -364,6 +369,118 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   input.write("\u001b[D");
   await waitFor(() => changes.length === 3);
   assert.deepEqual(changes, ["system", "workspace", "read-only"]);
+
+  input.write("q");
+  await run;
+});
+
+test("system command approval is decided locally in the HUD", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+    ref(): unknown;
+    unref(): unknown;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+  input.ref = () => input;
+  input.unref = () => input;
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 110;
+  output.rows = 24;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  let authorizeCommand:
+    | ((job: SystemCommandJob) => Promise<boolean>)
+    | undefined;
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent, authorize) => {
+        authorizeCommand = authorize;
+        onEvent({
+          type: "session",
+          root: "C:\\code\\glossa",
+          deviceName: "Desk",
+          accessProfile: "system",
+        });
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+          },
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => {
+        throw new Error("not used");
+      },
+      revokeDevice: async () => {
+        throw new Error("not used");
+      },
+      changeAccessProfile: () => undefined,
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  await waitFor(() => authorizeCommand !== undefined);
+  const denied = authorizeCommand!({
+    type: "run_command",
+    requestId: "request-denied",
+    argv: ["npm", "test"],
+    stdin: "first line\nλ",
+    timeoutMs: 30_000,
+  });
+  await waitFor(() =>
+    rendered.includes("Run system command?") &&
+    rendered.includes('argv[0] "npm"') &&
+    rendered.includes('argv[1] "test"') &&
+    rendered.includes('stdin "first line\\n\\u03bb"')
+  );
+  input.write("n");
+  assert.equal(await denied, false);
+
+  const approved = authorizeCommand!({
+    type: "run_command",
+    requestId: "request-approved",
+    argv: ["git", "status"],
+    timeoutMs: 30_000,
+  });
+  await waitFor(() =>
+    rendered.includes('argv[0] "git"') && rendered.includes('argv[1] "status"')
+  );
+  input.write("y");
+  assert.equal(await approved, true);
+
+  const oversized = authorizeCommand!({
+    type: "run_command",
+    requestId: "request-oversized",
+    argv: ["node", "-e", "x".repeat(3_000)],
+    timeoutMs: 30_000,
+  });
+  assert.equal(await oversized, false);
+  await waitFor(() =>
+    rendered.includes(
+      "Command denied because its complete input does not fit this terminal.",
+    )
+  );
 
   input.write("q");
   await run;

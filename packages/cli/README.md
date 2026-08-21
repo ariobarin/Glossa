@@ -18,11 +18,11 @@ glossa
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
-| `system` | Yes | Yes | Yes |
+| `system` | Yes | Yes | Yes, after local approval |
 
-Use `glossa --access read-only` for inspection. Use `glossa --access system` only when the task needs local tests, builds, Git, or another project command.
+Use `glossa --access read-only` for inspection. Use `glossa --access system` only for project commands; each new command also needs local approval.
 
-> **`system` is not sandboxed.** Commands inherit the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. They are not confined to the selected root.
+> **`system` is not sandboxed.** Approved commands inherit the worker account's full environment, credentials, filesystem permissions, and network access and are not confined to the selected root.
 
 Expose only a narrow project you trust. Keep credentials and regulated or sensitive data out of the workspace. Review the [security overview](https://glossa.sh/security) before enabling commands.
 

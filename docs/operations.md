@@ -35,7 +35,7 @@ glossa
 
 The default `workspace` profile permits structured reads and guarded writes inside the selected root, with commands disabled. Use `glossa --access read-only` for inspection. Use `glossa --access system` only when the task requires local commands.
 
-A `system` command has the full operating-system authority of the account that started Glossa and is not confined to the selected root. See [Security and permissions](https://glossa.sh/security) for the complete boundary.
+Each `system` command needs local approval before it starts. An approved command has the full operating-system authority of the account that started Glossa and is not confined to the selected root. Approval is not a sandbox: inspect routine-looking commands carefully when workspace files may have changed. See [Security and permissions](https://glossa.sh/security) for the complete boundary.
 
 The terminal displays the selected root and access profile. Keep it open while using Glossa. Press `q` or Ctrl+C to disconnect.
 
@@ -100,7 +100,7 @@ A paired computer manages the account's devices from the devices view in its ter
 3. Read a non-sensitive file from the selected project.
 4. Under `read-only`, confirm a write is rejected.
 5. Under the default `workspace` profile, confirm a guarded edit succeeds and a command is rejected.
-6. Under `system`, run only a bounded, non-destructive project command.
+6. Under `system`, request a bounded, non-destructive project command, confirm its exact local approval prompt, then approve it and verify it runs once.
 7. Stop the worker and confirm the workspace becomes unavailable.
 
 ## Troubleshooting
@@ -108,6 +108,7 @@ A paired computer manages the account's devices from the devices view in its ter
 - **No online workspace:** keep the terminal open, redeem any pending pairing code on the control panel, or confirm the stored pairing is still valid.
 - **Wrong workspace:** stop it and restart in the intended project with a unique `--label`.
 - **Permission error:** restart with broader access only if the task genuinely requires it.
+- **`command_not_approved`:** the local command start was denied or could not obtain local approval. Do not retry or work around the denial.
 - **`restricted_data_blocked`:** remove the credential or use a non-sensitive placeholder. Do not retry with encoding, another tool, or a shell fallback.
 - **Wrong paired account:** stop workers, run `glossa unpair`, restart, and redeem the new pairing code on the control panel while signed in to the intended account.
 - **Tool definitions changed:** run **Scan Tools** again.

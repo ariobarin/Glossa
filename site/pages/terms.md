@@ -2,15 +2,15 @@
 
 These terms govern use of the managed Glossa relay, website, app, and published command-line client.
 
-*Last updated August 7, 2026*
+*Last updated August 21, 2026*
 
 ## Service
 
 Glossa connects an authenticated MCP client to a local development project that the user explicitly exposes. Glossa is an execution bridge. It does not provide a model, agent loop, planner, conversation store, or command sandbox.
 
-The user selects an access profile for each worker session. `read-only` permits structured file inspection, `workspace` permits structured reads and writes inside the exposed root, and `system` additionally permits local commands.
+The user selects an access profile for each worker session. `read-only` permits structured file inspection, `workspace` permits structured reads and writes inside the exposed root, and `system` additionally permits command requests. Every new system command requires its complete escaped process input to be reviewable and separately approved in the local terminal before the worker starts it; commands that cannot be fully presented are denied.
 
-> **System-command authority:** `glossa --access system` authorizes connected clients to run commands with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands can reach files outside the exposed root and may affect local or external systems.
+> **System-command authority:** `glossa --access system` or a local HUD escalation allows connected clients to request commands. Each new command's complete process input is shown locally without truncation and starts only after approval; if the terminal cannot present all of it, Glossa denies the command. An approved command runs with the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched Glossa. Commands can reach files outside the exposed root and may affect local or external systems. Approval prevents silent starts but is not a sandbox or guarantee that previously modified scripts are safe.
 
 ## Eligibility and authority
 
@@ -26,7 +26,7 @@ Do not use the public Glossa app to request, transmit, discover, or return payme
 
 - Expose only a narrow project appropriate for the requested task.
 - Select the least-privileged access profile that can complete the task.
-- Understand system-command authority before enabling it.
+- Understand system-command authority before enabling it, and review each local command prompt before approving it.
 - Protect your computer, Glossa credentials, OAuth account, and connected MCP clients.
 - Use a dedicated operating-system account, container, or virtual machine when stronger isolation is required.
 - Stop the worker immediately if activity is unexpected.

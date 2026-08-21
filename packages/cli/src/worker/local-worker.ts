@@ -13,6 +13,11 @@ import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
 import { PathPolicy } from "./path-policy.js";
 
+export type SystemCommandJob = Extract<WorkerJob, { type: "run_command" }>;
+export type CommandAuthorizer = (
+  job: SystemCommandJob,
+) => boolean | Promise<boolean>;
+
 function restrictedDataError(): WorkerError {
   return new WorkerError(
     RESTRICTED_DATA_ERROR_CODE,
@@ -93,11 +98,13 @@ export class LocalWorker {
     readonly policy: PathPolicy,
     readonly files: FileService,
     readonly commands: CommandService,
+    readonly authorizeCommand: CommandAuthorizer | undefined,
   ) {}
 
   static async create(
     root: string,
     accessProfile: WorkerAccessProfile = DEFAULT_WORKER_ACCESS_PROFILE,
+    authorizeCommand?: CommandAuthorizer,
   ): Promise<LocalWorker> {
     const policy = await PathPolicy.create(root);
     return new LocalWorker(
@@ -105,6 +112,7 @@ export class LocalWorker {
       policy,
       new FileService(policy),
       new CommandService(policy),
+      authorizeCommand,
     );
   }
 
@@ -138,6 +146,15 @@ export class LocalWorker {
       }
 
       if (jobInputContainsRestrictedData(job)) throw restrictedDataError();
+      if (
+        job.type === "run_command" &&
+        (!this.authorizeCommand || !(await this.authorizeCommand(job)))
+      ) {
+        throw new WorkerError(
+          "command_not_approved",
+          "The local user did not approve this system command.",
+        );
+      }
 
       let value: unknown;
       switch (job.type) {

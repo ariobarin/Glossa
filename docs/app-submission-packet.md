@@ -84,7 +84,7 @@ Run this set in a fresh ChatGPT conversation after a material routing or metadat
 
 ## OAuth scope rationale
 
-All 16 MCP tools advertise the single `glossa:access` OAuth scope. That scope authorizes the authenticated client to use the signed-in account's Glossa MCP surface; it does **not** by itself grant file-write or command authority. Per-workspace authority is selected locally when the user starts the worker and is independently enforced by both relay and worker through `accessProfile` plus the `readFiles`, `writeFiles`, and `runCommands` booleans. A token with `glossa:access` therefore cannot turn a `read-only` or `workspace` worker into a command-capable worker. `system` command authority requires the user to start or explicitly escalate the local worker to `system`, and command tools remain unavailable otherwise.
+All 16 MCP tools advertise the single `glossa:access` OAuth scope. That scope authorizes the authenticated client to use the signed-in account's Glossa MCP surface; it does **not** by itself grant file-write or command authority. Per-workspace authority is selected locally when the user starts or explicitly changes the worker profile and is independently enforced by both relay and worker through `accessProfile` plus the `readFiles`, `writeFiles`, and `runCommands` booleans. A token with `glossa:access` therefore cannot turn a `read-only` or `workspace` worker into a command-capable worker. `system` command capability requires the user to start or explicitly escalate the local worker to `system`, and every new `run_command` then requires a second local terminal approval before process creation.
 
 This two-layer design keeps the OAuth scope stable for account access while the user's local worker remains the least-privilege authority boundary for each exposed workspace.
 
@@ -94,11 +94,11 @@ This two-layer design keeps the OAuth scope stable for account access while the 
 | --- | --- | --- | --- |
 | `read-only` | Yes | No | No |
 | `workspace` (default) | Yes | Yes | No |
-| `system` | Yes | Yes | Yes |
+| `system` | Yes | Yes | Yes, after local approval |
 
 The relay rejects forbidden operations before queueing them, and the local worker independently enforces the same profile. `list_workspaces` exposes the profile and exact `readFiles`, `writeFiles`, and `runCommands` booleans so the model and reviewer can verify authority before acting.
 
-Glossa deliberately retains arbitrary local command execution under `system` because using the user's existing toolchain is a core product function. It is not presented as sandboxed. The user must explicitly start `glossa --access system`; commands inherit the worker account's environment, credentials, filesystem permissions, and network access and may affect local or external systems. The safer `workspace` profile remains the product default and supports useful code changes without command authority.
+Glossa deliberately retains arbitrary local command execution under `system` because using the user's existing toolchain is a core product function. It is not presented as sandboxed. The user must explicitly start or locally escalate to `system`, and every new command is shown in the local terminal for an additional approval before it starts. An approved command inherits the worker account's environment, credentials, filesystem permissions, and network access and may affect local or external systems. Local approval prevents silent starts but is not a code-integrity guarantee: a prior workspace mutation can alter a script or executable that a later approved command invokes. The safer `workspace` profile remains the product default and supports useful code changes without command authority.
 
 ## Restricted Data and confirmation gate
 
@@ -126,7 +126,7 @@ ChatGPT confirmation must also be observed in the actual draft app after a fresh
 | `make_directory` | No | No | No | Creates a relative directory inside the root, optionally including missing parents, when `writeFiles` and `structuredMutations` are true. It does not delete or overwrite existing data and is normally reversible. |
 | `delete_path` | No | Yes | No | Deletes a relative regular file or directory inside the root, refuses the root itself, and requires an explicit recursive flag for non-empty directories. |
 | `move_path` | No | No | No | Renames or moves a relative regular file or directory inside the root, rejects links and existing destinations, and prevents self-nesting moves. Because it cannot overwrite the destination, the move is normally reversible. |
-| `run_command` | No | Yes | Yes | Starts a local process only when `runCommands` is true. Its public `command` field is a schema-level union of direct `argv` and `shellCommand`, so both/neither forms are invalid. It inherits operating-system authority, credentials, environment, and network access, is not root-confined, and can affect external systems. |
+| `run_command` | No | Yes | Yes | Requests a local process only when `runCommands` is true, then starts it only after a worker-local terminal approval. Its public `command` field is a schema-level union of direct `argv` and `shellCommand`, so both/neither forms are invalid. An approved process inherits operating-system authority, credentials, environment, and network access, is not root-confined, and can affect external systems. |
 | `get_command` | Yes | No | No | Reads status and bounded captured output for a command previously started through Glossa. |
 | `read_command_output` | Yes | No | No | Reads one bounded retained stdout or stderr range without rerunning the command when `commandOutputRanges` is true; output remains transient and capped per stream. |
 | `cancel_command` | No | Yes | No | Terminates a running process tree but does not reverse effects already caused. |
@@ -250,8 +250,8 @@ All positive cases use the dedicated reviewer account and deterministic `.review
 6. Prompt: `Read src/math.js and explain its exported functions.` Expected: the response identifies `add` and `multiply` and accurately summarizes both.
 7. Prompt: `Read notes/review.txt, then replace it with "OpenAI review completed." using the returned SHA, and read it back.` Expected: the client reads the current revision, writes with `expectedSha256`, and returns the exact new content.
 8. Prompt: `Create notes/archive, move notes/review.txt to notes/archive/review.txt, then delete notes/archive recursively.` Expected: the client uses `make_directory`, `move_path`, and `delete_path` without a shell command; every path stays inside the root and the final directory is absent.
-9. Prompt: `Run npm test in my Glossa workspace, wait for completion, and summarize the result.` Expected: the command succeeds with two passing tests and bounded captured output. A longer-running variant returns a handle and is followed with `get_command` rather than starting a duplicate command.
-10. Prompt: `Run npm run long-output. When stdout is truncated, retrieve the omitted range containing MIDDLE-MARKER without rerunning the command.` Expected: `run_command` executes exactly once, reports `stdoutTruncated: true`, and `read_command_output` follows bounded `nextOffset` values until it returns `MIDDLE-MARKER`; stdout and stderr remain independently addressed.
+9. Prompt: `Run npm test in my Glossa workspace, wait for completion, and summarize the result.` Expected: the local terminal shows every command argument and any stdin in a complete escaped approval view with no truncation; after the reviewer approves it, the command succeeds with two passing tests and bounded captured output. A longer-running variant returns a handle and is followed with `get_command` rather than starting a duplicate command.
+10. Prompt: `Run npm run long-output. When stdout is truncated, retrieve the omitted range containing MIDDLE-MARKER without rerunning the command.` Expected: the reviewer approves one local start prompt, `run_command` executes exactly once, reports `stdoutTruncated: true`, and `read_command_output` follows bounded `nextOffset` values until it returns `MIDDLE-MARKER`; stdout and stderr remain independently addressed and no second approval appears for follow-up reads.
 11. Prompt: `View assets/review.png from my Glossa workspace and describe what is visible.` Expected: `view_image` returns native MCP `image` content plus only MIME type, byte length, and SHA-256 in `structuredContent`; the image bytes are not duplicated into JSON or text content.
 12. Prompt: `Sign me out of Glossa.` Expected: the response gives the Auth0 browser logout URL, tells the reviewer to open it, and does not claim logout is complete before the reviewer follows the link. Run this case last.
 
@@ -276,8 +276,8 @@ These checks verify profile behavior before the reviewer worker is returned to `
 
 1. Start the fixture with `glossa --access read-only --label openai-review .review-workspace`. Confirm reading works, `write_file` returns `write_access_disabled`, and `run_command` returns `command_access_disabled` without a queued worker job.
 2. Start the fixture with `glossa --access workspace --label openai-review .review-workspace`. Confirm a guarded fixture edit plus create/move/delete lifecycle flow works and `run_command` returns `command_access_disabled` without a queued worker job.
-3. Start the fixture with `glossa --access system --label openai-review .review-workspace`. Confirm the same guarded edit and `npm test` work.
-4. Run `npm run long-output`, verify the default response is truncated, and recover `MIDDLE-MARKER` through bounded `read_command_output` calls without a second process start.
+3. Start the fixture with `glossa --access system --label openai-review .review-workspace`. Confirm the same guarded edit works, then request `npm test`, verify the local approval view shows the complete escaped process input, approve it, and confirm the process runs once. Also verify that an intentionally oversized input is denied when the terminal cannot display it completely.
+4. Request `npm run long-output`, approve its one local start prompt, verify the default response is truncated, and recover `MIDDLE-MARKER` through bounded `read_command_output` calls without a second process start or another approval prompt.
 5. On that isolated `system` fixture, run `npm run restricted-output`. Expected: `restricted_data_blocked`, no synthetic token in the result or local activity history, and no `notes/restricted-output-should-not-exist.txt` after the process has stopped.
 6. Confirm the local terminal and `list_workspaces` report the same profile for every run.
 

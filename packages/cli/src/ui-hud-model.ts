@@ -40,9 +40,11 @@ export interface HudStatus {
 }
 
 type HudView = "activity" | "workspace" | "devices" | "help";
+export type SystemCommandJob = Extract<WorkerJob, { type: "run_command" }>;
 type HudPrompt =
   | { type: "revoke-confirm"; deviceIndex: number }
-  | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
+  | { type: "access-confirm"; accessProfile: WorkerAccessProfile }
+  | { type: "command-confirm"; requestId: string; lines: string[] };
 
 export interface HudState {
   workspace: string;
@@ -75,6 +77,7 @@ export interface HudUiActions {
   run(
     signal: AbortSignal,
     onEvent: (event: ManagedSessionEvent) => void,
+    authorizeCommand: (job: SystemCommandJob) => Promise<boolean>,
   ): Promise<void>;
   loadStatus(signal: AbortSignal): Promise<HudStatus>;
   revokeDevice(deviceId: string, signal: AbortSignal): Promise<void>;
@@ -142,7 +145,7 @@ function escapeCodePoint(codePoint: number): string {
     : `\\u{${hexadecimal}}`;
 }
 
-function escapeInline(value: string, quote = false): string {
+function escapeInline(value: string, quote = false, asciiOnly = false): string {
   let escaped = "";
   for (const character of value) {
     const codePoint = character.codePointAt(0)!;
@@ -158,7 +161,8 @@ function escapeInline(value: string, quote = false): string {
       (codePoint >= 0x7f && codePoint <= 0x9f) ||
       INLINE_DEFAULT_IGNORABLE.test(character) ||
       codePoint === 0x2028 ||
-      codePoint === 0x2029
+      codePoint === 0x2029 ||
+      (asciiOnly && codePoint > 0x7e)
     ) {
       escaped += escapeCodePoint(codePoint);
     } else escaped += character;
@@ -168,6 +172,20 @@ function escapeInline(value: string, quote = false): string {
 
 function quoteInline(value: string): string {
   return `"${escapeInline(value, true)}"`;
+}
+
+function quoteApprovalInput(value: string): string {
+  return `"${escapeInline(value, true, true)}"`;
+}
+
+export function formatCommandApprovalLines(job: SystemCommandJob): string[] {
+  const lines = job.argv
+    ? job.argv.map((argument, index) => `argv[${index}] ${quoteApprovalInput(argument)}`)
+    : [`shell ${quoteApprovalInput(job.shellCommand ?? "")}`];
+  if (job.stdin !== undefined) lines.push(`stdin ${quoteApprovalInput(job.stdin)}`);
+  lines.push(`timeout ${job.timeoutMs} ms`);
+  lines.push(`wait ${job.waitMs ?? DEFAULT_COMMAND_FAST_WAIT_MS} ms`);
+  return lines;
 }
 
 function boundInlineInput(value: string): string {
@@ -207,7 +225,7 @@ function assertNever(_value: never): never {
   throw new Error("Unsupported activity type.");
 }
 
-function summarizeJob(job: WorkerJob): HudActivitySummary {
+export function summarizeJob(job: WorkerJob): HudActivitySummary {
   switch (job.type) {
     case "read_file":
     case "view_image":

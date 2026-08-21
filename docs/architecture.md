@@ -23,12 +23,13 @@ glossa process on user device
   +-- independent permission enforcement
   +-- linked-path enforcement
   +-- atomic file operations
+  +-- local approval gate for each system command start
   +-- optional bounded commands under system access
 ```
 
 ## Why the relay stays small
 
-The relay must be publicly reachable, while the user's computer makes outbound connections only. One hosted relay process supplies the rendezvous point and OAuth-protected MCP endpoint. Postgres stores identity and lifecycle metadata. Active routing state remains in memory.
+The relay must be publicly reachable, while the user's computer makes outbound connections only. One hosted relay process supplies the rendezvous point and OAuth-protected MCP endpoint. Postgres stores identity and lifecycle metadata. Active routing state remains in memory. HTTPS protects both network hops, but the managed relay is an application-layer trust boundary: MCP arguments and worker results are plaintext in relay process memory while they are routed.
 
 Users do not operate networking, identity, or database infrastructure.
 
@@ -88,14 +89,14 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - selected `read-only`, `workspace`, or `system` profile
 - local permission enforcement independent of the relay
 - path enforcement and atomic structured file operations, including guarded directory creation, deletion, and moves without command authority
-- local process execution only under `system`
-- complete inherited local environment, credentials, operating-system permissions, and network access only when a system command is started
+- local process execution only under `system`, with a local interactive approval required before every new command start
+- complete inherited local environment, credentials, operating-system permissions, and network access only after a system command is approved and started
 - high-confidence authentication-secret input and result checks, including bounded per-stream command scan tails and every retained output window
 - temporary command state, including at most 1 MiB of independently retained stdout and stderr per record for bounded range retrieval, with terminal records limited to five minutes and eight recent records
 
 One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path.
 
-Workers report their CLI package version, selected access profile, and current protocol capabilities. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false, command lifecycle operations when `runCommands` is false, and recognizable authentication-secret material in mutation or command inputs. The worker repeats the permission and restricted-input checks locally and suppresses recognizable credential material in textual content-bearing results. `view_image` is a bounded read-only exception: image bytes are validated as PNG, JPEG, or WebP and returned as opaque MCP image content without OCR or metadata scrubbing, so visible text and embedded metadata are outside that textual detector.
+Workers report their CLI package version, selected access profile, and current protocol capabilities. The relay echoes the accepted profile during registration and exposes the profile plus derived `readFiles`, `writeFiles`, and `runCommands` booleans only as active routing metadata. Before queueing a job, the relay rejects writes when `writeFiles` is false, command lifecycle operations when `runCommands` is false, and recognizable authentication-secret material in mutation or command inputs. The worker repeats the permission and restricted-input checks locally. For `run_command`, a `system` profile is necessary but not sufficient: the local worker asks its interactive terminal approval handler and fails closed if the handler is missing, denies the command, or disconnects. Status, retained-output reads, and cancellation do not trigger another approval because they can only address an already-started command. The worker suppresses recognizable credential material in textual content-bearing results. `view_image` is a bounded read-only exception: image bytes are validated as PNG, JPEG, or WebP and returned as opaque MCP image content without OCR or metadata scrubbing, so visible text and embedded metadata are outside that textual detector.
 
 Command status, retained output reads, cancellation, repository reads, and mutations use separate local capacity lanes; file listing, bounded text search, ranged reads, and bounded image reads share the read lane, while file writes, edits, directory creation, deletion, moves, and command starts share the serialized mutation lane. Text search supports literal or regex matching plus root-relative include/exclude globs, uses directory-entry type metadata to avoid a redundant metadata syscall for regular files and directories, and still resolves each discovered directory or file through the linked-path policy before traversing or reading it. Contract `3.1.0` keeps the baseline worker protocol fail-closed while allowing a rolling `imageReads` transition: a new relay keeps legacy workers online for non-image tools, and a new worker can fall back once to the legacy registration shape when it encounters the older strict relay.
 
@@ -110,9 +111,9 @@ The hosting layer imposes a bounded request window. Therefore:
 - worker long polls return within 20 seconds; when a concurrent lane becomes free, the worker supersedes a stale capacity poll with a one-shot refresh for only the newly available job types;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
-- `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
+- `run_command` is available only to a worker registered with `system` access; before process creation the local interactive terminal must display the complete command input and approve it without truncation, and the public result carries the `workspaceId` and `commandId` used for follow-up operations;
 - command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
-- command follow-ups always carry both the worker ID and command ID, so routing is explicit and remains valid across relay restarts;
+- command follow-ups always carry both the public `workspaceId` and `commandId`; the relay resolves that public workspace handle to the current ephemeral worker internally, so clients never route by worker ID;
 - `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;
 - `read_command_output` returns at most 64 KiB of one retained stream per request, reports a continuation offset, and never reruns the command;
 - `cancel_command` uses a separate bounded request;
