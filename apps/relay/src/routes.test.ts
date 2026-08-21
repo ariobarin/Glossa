@@ -6,6 +6,7 @@ import express from "express";
 import { MAX_TEXT_BYTES, type WorkerJob } from "@glossa/protocol";
 import type { AuthenticatedRequest } from "./auth.js";
 import { loadConfig } from "./config.js";
+import { MCP_SERVER_VERSION } from "./mcp.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { RouterState } from "./router-state.js";
 import { buildRoutes, MAX_RELAY_JSON_BYTES } from "./routes.js";
@@ -434,6 +435,7 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(typeof current.generation, "string");
   assert.equal(current.accessProfile, "workspace");
   assert.equal(current.workspaceLabel, "frontend");
+  assert.equal(current.mcpContractVersion, MCP_SERVER_VERSION);
   assert.deepEqual(current.capabilities, {
     commandProgress: true,
     concurrentJobs: true,

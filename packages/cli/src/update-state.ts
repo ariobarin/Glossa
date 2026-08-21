@@ -9,6 +9,7 @@ export interface UpdateState {
   policy: UpdatePolicy;
   channel: UpdateChannel;
   lastCheckedAt?: string;
+  mcpContractVersion?: string;
 }
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -44,10 +45,12 @@ export async function loadUpdateState(
   try {
     const parsed = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
     const lastCheckedAt = optionalString(parsed.lastCheckedAt);
+    const mcpContractVersion = optionalString(parsed.mcpContractVersion);
     return {
       policy: isPolicy(parsed.policy) ? parsed.policy : defaults.policy,
       channel: isChannel(parsed.channel) ? parsed.channel : defaults.channel,
       ...(lastCheckedAt ? { lastCheckedAt } : {}),
+      ...(mcpContractVersion ? { mcpContractVersion } : {}),
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) {
@@ -85,6 +88,9 @@ export async function configureUpdates(
   const state: UpdateState = {
     policy: changes.policy ?? previous.policy,
     channel: changes.channel ?? previous.channel,
+    ...(previous.mcpContractVersion
+      ? { mcpContractVersion: previous.mcpContractVersion }
+      : {}),
   };
   await saveUpdateState(state, file);
   return state;
@@ -101,6 +107,17 @@ export async function recordUpdateCheck(
   };
   await saveUpdateState(state, file);
   return state;
+}
+
+export async function observeMcpContractVersion(
+  currentVersion: string,
+  mcpContractVersion: string,
+  file = updateStateFile(),
+): Promise<boolean> {
+  const previous = await loadUpdateState(currentVersion, file);
+  if (previous.mcpContractVersion === mcpContractVersion) return false;
+  await saveUpdateState({ ...previous, mcpContractVersion }, file);
+  return previous.mcpContractVersion !== undefined;
 }
 
 export function isUpdateCheckDue(

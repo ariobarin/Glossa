@@ -75,6 +75,7 @@ async function runWorkspaceSession(
   path: string | undefined,
   label: string | undefined,
   accessProfile: WorkerAccessProfile,
+  initialNotice?: string,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
   const lease = await acquireWorkspaceLease(root);
@@ -87,6 +88,7 @@ async function runWorkspaceSession(
     await runSessionHud({
       workspace: root,
       ...(label ? { workspaceLabel: label } : {}),
+      ...(initialNotice ? { initialNotice } : {}),
       run: async (signal, onEvent) => {
         while (!signal.aborted) {
           const sessionAccessProfile = requestedAccessProfile;
@@ -171,9 +173,10 @@ async function runWorkspace(
   path: string | undefined,
   label: string | undefined,
   accessProfile: WorkerAccessProfile,
+  initialNotice?: string,
 ): Promise<void> {
   await withWorkspaceLease(
-    async () => await runWorkspaceSession(path, label, accessProfile),
+    async () => await runWorkspaceSession(path, label, accessProfile, initialNotice),
   );
 }
 
@@ -223,10 +226,15 @@ async function runUpdateCommand(
   console.log(`Updated Glossa to ${info.availableVersion}. Run glossa again.`);
 }
 
-async function updateBeforeWorkspace(): Promise<boolean> {
+interface WorkspaceUpdateResult {
+  exit: boolean;
+  notice?: string;
+}
+
+async function updateBeforeWorkspace(): Promise<WorkspaceUpdateResult> {
   const state = await loadUpdateState(VERSION);
   if (state.policy === "off" || !isUpdateCheckDue(state.lastCheckedAt)) {
-    return false;
+    return { exit: false };
   }
 
   let info: UpdateInfo;
@@ -239,19 +247,19 @@ async function updateBeforeWorkspace(): Promise<boolean> {
         `Glossa could not check for an automatic update: ${message} Continuing with ${VERSION}.`,
       );
     }
-    return false;
+    return { exit: false };
   }
   if (!info.updateAvailable) {
     await recordUpdateCheck(VERSION);
-    return false;
+    return { exit: false };
   }
 
   if (state.policy === "notify") {
     await recordUpdateCheck(VERSION);
-    console.error(
-      `Glossa ${info.availableVersion} is available. Run glossa update after disconnecting.`,
-    );
-    return false;
+    return {
+      exit: false,
+      notice: `Glossa ${info.availableVersion} is available. Run glossa update after disconnecting.`,
+    };
   }
 
   try {
@@ -260,13 +268,13 @@ async function updateBeforeWorkspace(): Promise<boolean> {
       async () => await installUpdate(info, DISTRIBUTION),
     );
     console.error(`Updated Glossa to ${info.availableVersion}. Run glossa again.`);
-    return true;
+    return { exit: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(
       `Glossa could not update automatically: ${message} Continuing with ${VERSION}.`,
     );
-    return false;
+    return { exit: false };
   }
 }
 
@@ -278,11 +286,13 @@ async function main(): Promise<void> {
   } else if (invocation.command === "version") {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
-    if (await updateBeforeWorkspace()) return;
+    const update = await updateBeforeWorkspace();
+    if (update.exit) return;
     await runWorkspace(
       invocation.path,
       invocation.label,
       invocation.accessProfile,
+      update.notice,
     );
   } else if (invocation.command === "unpair") {
     await unpairComputer();

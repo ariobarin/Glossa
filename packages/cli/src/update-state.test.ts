@@ -7,6 +7,7 @@ import {
   configureUpdates,
   isUpdateCheckDue,
   loadUpdateState,
+  observeMcpContractVersion,
   recordUpdateCheck,
   UPDATE_CHECK_INTERVAL_MS,
 } from "./update-state.js";
@@ -39,13 +40,29 @@ test("uses version-aware defaults and persists update settings", async () => {
       file,
     );
     assert.equal(recorded.lastCheckedAt, checkedAt.toISOString());
+    assert.equal(
+      await observeMcpContractVersion("0.1.0-beta.13", "3.1.0", file),
+      false,
+    );
+    assert.equal(
+      await observeMcpContractVersion("0.1.0-beta.13", "3.1.0", file),
+      false,
+    );
+    assert.equal(
+      await observeMcpContractVersion("0.1.0-beta.13", "3.2.0", file),
+      true,
+    );
     assert.match(await readFile(file, "utf8"), /"policy": "auto"/);
     const reset = await configureUpdates(
       "0.1.0-beta.13",
       { policy: "off" },
       file,
     );
-    assert.deepEqual(reset, { policy: "off", channel: "stable" });
+    assert.deepEqual(reset, {
+      policy: "off",
+      channel: "stable",
+      mcpContractVersion: "3.2.0",
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

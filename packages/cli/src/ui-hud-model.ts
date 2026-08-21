@@ -72,6 +72,7 @@ export interface HudState {
 export interface HudUiActions {
   workspace: string;
   workspaceLabel?: string;
+  initialNotice?: string;
   run(
     signal: AbortSignal,
     onEvent: (event: ManagedSessionEvent) => void,

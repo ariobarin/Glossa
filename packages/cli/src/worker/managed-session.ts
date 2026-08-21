@@ -6,6 +6,7 @@ import {
   type WorkerResult,
 } from "@glossa/protocol";
 import { announceConnectHint, connectHintStore, shouldShowConnectHint } from "../first-run.js";
+import { observeMcpContractVersion } from "../update-state.js";
 import {
   deleteDeviceCredential,
   loadDeviceCredential,
@@ -259,6 +260,8 @@ async function connectRemoteWorker(
   let connectionState: RemoteWorkerStatus["state"] | undefined;
   let connectedBefore = false;
   let connectHintTask: Promise<void> | undefined;
+  let mcpContractTask = Promise.resolve();
+  let observedMcpContractVersion: string | undefined;
   const remoteWorker = new RemoteWorker({
     origin: endpoints.workerOrigin,
     deviceToken: device.token,
@@ -278,6 +281,20 @@ async function connectRemoteWorker(
         report(options, { type: "status", status }, statusMessage(status, connectedBefore));
       } else {
         options.onEvent?.({ type: "status", status });
+      }
+      if (
+        status.state === "connected" &&
+        options.workerVersion &&
+        status.mcpContractVersion &&
+        status.mcpContractVersion !== observedMcpContractVersion
+      ) {
+        observedMcpContractVersion = status.mcpContractVersion;
+        const mcpContractVersion = status.mcpContractVersion;
+        mcpContractTask = mcpContractTask.then(async () => {
+          if (!await observeMcpContractVersion(options.workerVersion!, mcpContractVersion)) return;
+          const message = "Glossa's ChatGPT tools changed. Refresh or rescan the Glossa app in ChatGPT before using new tools.";
+          report(options, { type: "notice", message }, message);
+        }).catch(() => undefined);
       }
       if (
         status.state === "connected" &&
@@ -303,6 +320,7 @@ async function connectRemoteWorker(
     await remoteWorker.run();
   } finally {
     await connectHintTask;
+    await mcpContractTask;
   }
 }
 

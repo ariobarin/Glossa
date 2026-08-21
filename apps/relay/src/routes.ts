@@ -15,7 +15,7 @@ import { requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { parseDeviceToken } from "./device-token.js";
 import { generatePairingCode, pairingCodeHash } from "./pairing-code.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
-import { handleMcpRequest } from "./mcp.js";
+import { handleMcpRequest, MCP_SERVER_VERSION } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import {
   CURRENT_WORKER_CAPABILITIES,
@@ -709,6 +709,7 @@ export function buildRoutes(
       generation: session.generation,
       workerToken: session.workerToken,
       accessProfile: parsed.data.accessProfile,
+      mcpContractVersion: MCP_SERVER_VERSION,
       capabilities: CURRENT_WORKER_CAPABILITIES,
       ...(parsed.data.workspaceLabel
         ? { workspaceLabel: parsed.data.workspaceLabel }

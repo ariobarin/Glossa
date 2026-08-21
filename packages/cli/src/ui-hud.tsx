@@ -73,8 +73,11 @@ class HudStore {
   #state: HudState;
   #listeners = new Set<() => void>();
 
-  constructor(workspace: string) {
-    this.#state = initialHudState(workspace);
+  constructor(workspace: string, initialNotice?: string) {
+    this.#state = {
+      ...initialHudState(workspace),
+      ...(initialNotice ? { notice: initialNotice } : {}),
+    };
   }
 
   getSnapshot = (): HudState => this.#state;
@@ -1219,7 +1222,7 @@ export async function runSessionHud(
   }
 
   const controller = new AbortController();
-  const store = new HudStore(actions.workspace);
+  const store = new HudStore(actions.workspace, actions.initialNotice);
   let instance: ReturnType<typeof render> | undefined;
 
   const stop = (): void => {
