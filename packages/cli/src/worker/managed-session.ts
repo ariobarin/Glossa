@@ -27,6 +27,12 @@ import {
   type RemoteWorkerStatus,
 } from "./remote-worker.js";
 
+export interface ManagedActivityOutput {
+  kind: "success" | "error" | "running";
+  preview?: string;
+  truncated?: boolean;
+}
+
 export type ManagedSessionEvent =
   | {
       type: "session";
@@ -36,7 +42,13 @@ export type ManagedSessionEvent =
     }
   | { type: "status"; status: RemoteWorkerStatus }
   | { type: "activity"; phase: "started"; job: WorkerJob }
-  | { type: "activity"; phase: "returned"; job: WorkerJob; ok: boolean }
+  | {
+      type: "activity";
+      phase: "returned";
+      job: WorkerJob;
+      ok: boolean;
+      output?: ManagedActivityOutput;
+    }
   | { type: "notice"; message: string; persistAfterExit?: boolean };
 
 export interface ManagedSessionOptions {
@@ -74,6 +86,236 @@ function activityResultLabel(
     return "run_command started";
   }
   return `${job.type} completed`;
+}
+
+const MAX_ACTIVITY_OUTPUT_CHARS = 512;
+const OUTPUT_TRUNCATION_MARKER = "… output truncated …";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function escapeActivityOutputControls(text: string): string {
+  let escaped = "";
+  for (const character of text) {
+    const code = character.codePointAt(0)!;
+    if (character === "\n") {
+      escaped += character;
+    } else if (
+      code < 0x20 ||
+      code === 0x7f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      escaped += character;
+    }
+  }
+  return escaped;
+}
+
+function boundedActivityPreview(
+  text: string,
+  sourceTruncated = false,
+): { preview?: string; truncated?: boolean } {
+  const normalized = text.replaceAll("\r\n", "\n").trimEnd();
+  if (containsRestrictedAuthenticationData(normalized)) {
+    return { preview: "[restricted output blocked]" };
+  }
+  const safe = escapeActivityOutputControls(normalized);
+  if (!safe) return sourceTruncated
+    ? { preview: OUTPUT_TRUNCATION_MARKER, truncated: true }
+    : {};
+  const characters = Array.from(safe);
+  if (
+    characters.length <= MAX_ACTIVITY_OUTPUT_CHARS &&
+    (!sourceTruncated || characters.length + OUTPUT_TRUNCATION_MARKER.length + 1 <= MAX_ACTIVITY_OUTPUT_CHARS)
+  ) {
+    return sourceTruncated
+      ? { preview: `${safe}\n${OUTPUT_TRUNCATION_MARKER}`, truncated: true }
+      : { preview: safe };
+  }
+  const marker = `\n${OUTPUT_TRUNCATION_MARKER}\n`;
+  const remaining = Math.max(2, MAX_ACTIVITY_OUTPUT_CHARS - marker.length);
+  const headLength = Math.floor(remaining * 0.7);
+  const tailLength = remaining - headLength;
+  return {
+    preview: `${characters.slice(0, headLength).join("")}${marker}${characters.slice(-tailLength).join("")}`,
+    truncated: true,
+  };
+}
+
+function formatOutputBytes(bytes: unknown): string | undefined {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return undefined;
+  if (bytes < 1024) return `${bytes} B`;
+  const kibibytes = bytes / 1024;
+  if (kibibytes < 1024) return `${kibibytes.toFixed(kibibytes < 10 ? 1 : 0)} KiB`;
+  return `${(kibibytes / 1024).toFixed(1)} MiB`;
+}
+
+function activitySuccess(preview: string, sourceTruncated = false): ManagedActivityOutput {
+  return {
+    kind: "success",
+    ...boundedActivityPreview(preview, sourceTruncated),
+  };
+}
+
+function commandActivityOutput(value: unknown): ManagedActivityOutput | undefined {
+  if (!isRecord(value) || typeof value.status !== "string") return undefined;
+  const status = value.status;
+  let kind: ManagedActivityOutput["kind"];
+  let fallback: string;
+  if (status === "running") {
+    kind = "running";
+    fallback = "Command started and is still running.";
+  } else if (status === "succeeded") {
+    kind = "success";
+    fallback = "Command completed successfully.";
+  } else if (status === "canceled") {
+    kind = "success";
+    fallback = "Command canceled.";
+  } else if (status === "timed_out") {
+    kind = "error";
+    fallback = "Command timed out.";
+  } else if (status === "failed") {
+    kind = "error";
+    fallback = typeof value.exitCode === "number"
+      ? `Command failed with exit code ${value.exitCode}.`
+      : "Command failed.";
+  } else {
+    return undefined;
+  }
+
+  const stdout = typeof value.stdout === "string" ? value.stdout : "";
+  const stderr = typeof value.stderr === "string" ? value.stderr : "";
+  const preferError = kind === "error";
+  const previewText = preferError
+    ? stderr || stdout
+    : stdout || stderr;
+  const sourceTruncated = previewText === stderr
+    ? value.stderrTruncated === true
+    : value.stdoutTruncated === true;
+  return {
+    kind,
+    ...boundedActivityPreview(previewText || fallback, sourceTruncated),
+  };
+}
+
+function listFilesActivityOutput(value: unknown): ManagedActivityOutput | undefined {
+  if (!isRecord(value) || !Array.isArray(value.entries)) return undefined;
+  const lines = value.entries.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.path !== "string") return [];
+    const suffix = entry.type === "directory"
+      ? "/"
+      : formatOutputBytes(entry.bytes)
+        ? ` · ${formatOutputBytes(entry.bytes)}`
+        : "";
+    return [`${entry.path}${suffix}`];
+  });
+  return activitySuccess(
+    lines.length > 0 ? lines.join("\n") : "No entries.",
+    value.truncated === true,
+  );
+}
+
+function searchTextActivityOutput(value: unknown): ManagedActivityOutput | undefined {
+  if (!isRecord(value) || !Array.isArray(value.matches)) return undefined;
+  const lines = value.matches.flatMap((match) => {
+    if (
+      !isRecord(match) ||
+      typeof match.path !== "string" ||
+      typeof match.line !== "number" ||
+      typeof match.column !== "number" ||
+      typeof match.text !== "string"
+    ) return [];
+    return [`${match.path}:${match.line}:${match.column}  ${match.text}${match.lineTruncated === true ? " …" : ""}`];
+  });
+  return activitySuccess(
+    lines.length > 0 ? lines.join("\n") : "No matches.",
+    value.truncated === true,
+  );
+}
+
+function activityOutput(job: WorkerJob, result: WorkerResult): ManagedActivityOutput {
+  if (!result.ok) {
+    return {
+      kind: "error",
+      ...boundedActivityPreview(result.error?.message ?? "The worker operation failed."),
+    };
+  }
+
+  const value = result.value;
+  switch (job.type) {
+    case "read_file":
+      if (isRecord(value) && typeof value.content === "string") {
+        return activitySuccess(value.content || "(empty file)");
+      }
+      break;
+    case "view_image":
+      if (isRecord(value)) {
+        const size = formatOutputBytes(value.bytes);
+        const mimeType = typeof value.mimeType === "string" ? value.mimeType : "image";
+        return activitySuccess(`Loaded ${mimeType}${size ? ` · ${size}` : ""}.`);
+      }
+      break;
+    case "list_files": {
+      const output = listFilesActivityOutput(value);
+      if (output) return output;
+      break;
+    }
+    case "search_text": {
+      const output = searchTextActivityOutput(value);
+      if (output) return output;
+      break;
+    }
+    case "read_file_range":
+      if (isRecord(value) && typeof value.content === "string") {
+        return activitySuccess(value.content || "(empty range)", value.nextLine !== undefined);
+      }
+      break;
+    case "write_file":
+      if (isRecord(value)) {
+        const size = formatOutputBytes(value.bytes);
+        return activitySuccess(size ? `Wrote ${size}.` : "File written.");
+      }
+      break;
+    case "edit_file":
+      if (isRecord(value) && typeof value.diff === "string") {
+        return activitySuccess(value.diff || "Edit applied.", value.diffTruncated === true);
+      }
+      break;
+    case "make_directory":
+      if (isRecord(value) && typeof value.created === "boolean") {
+        return activitySuccess(value.created ? "Directory created." : "Directory already existed.");
+      }
+      break;
+    case "delete_path":
+      if (isRecord(value) && typeof value.deletedType === "string") {
+        return activitySuccess(`Deleted ${value.deletedType}.`);
+      }
+      break;
+    case "move_path":
+      if (isRecord(value) && typeof value.movedType === "string") {
+        return activitySuccess(`Moved ${value.movedType}.`);
+      }
+      break;
+    case "run_command":
+    case "get_command":
+    case "cancel_command": {
+      const output = commandActivityOutput(value);
+      if (output) return output;
+      break;
+    }
+    case "read_command_output":
+      if (isRecord(value)) {
+        const content = typeof value.content === "string" ? value.content : "";
+        const sourceTruncated = value.nextOffset !== undefined || value.retentionTruncated === true;
+        return activitySuccess(content || "No output in this range.", sourceTruncated);
+      }
+      break;
+  }
+  return activitySuccess("Completed successfully.");
 }
 
 function activitySafeJob(job: WorkerJob): WorkerJob {
@@ -154,6 +396,7 @@ export function visibleWorker(
             phase: "returned",
             job: visibleJob,
             ok: result.ok,
+            output: activityOutput(job, result),
           },
           `${activityResultLabel(job, result)} (${job.requestId}).`,
         );
@@ -166,6 +409,12 @@ export function visibleWorker(
             phase: "returned",
             job: visibleJob,
             ok: false,
+            output: {
+              kind: "error",
+              ...boundedActivityPreview(
+                error instanceof Error ? error.message : "The worker operation failed.",
+              ),
+            },
           },
           `${job.type} failed (${job.requestId}).`,
         );

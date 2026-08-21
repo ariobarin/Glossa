@@ -14,10 +14,14 @@ function connectedState(): HudState {
   };
 }
 
-async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 1_000,
+  label = "HUD state",
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for HUD state.");
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}.`);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
 }
@@ -95,9 +99,139 @@ test("footer keeps navigation left and contextual controls right", () => {
   for (const footer of [activity, workspace, devices, help]) {
     assert.match(footer, regularNav);
   }
-  assert.match(activity, /↑ Older\s+↓ Newer$/);
+  assert.match(activity, /Tab Detailed\s+↑ Older\s+↓ Newer\s+Enter Select$/);
   assert.match(workspace, /← Read only\s+→ System$/);
   assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
+});
+
+test("activity footer keeps stable controls pinned across density toggles", () => {
+  const position = (output: string, value: string): [number, number] => {
+    const lines = output.split("\n");
+    const row = lines.findIndex((line) => line.includes(value));
+    assert.notEqual(row, -1, `Missing ${value}`);
+    return [row, lines[row]!.indexOf(value)];
+  };
+
+  for (const width of [54, 60, 70, 80, 90, 110]) {
+    const compact = renderHud(
+      { ...connectedState(), view: "activity", activityMode: "compact" },
+      width,
+      false,
+      20,
+    );
+    const detailed = renderHud(
+      { ...connectedState(), view: "activity", activityMode: "detailed" },
+      width,
+      false,
+      20,
+    );
+    for (const control of ["↑ Older", "↓ Newer", "Enter Select"]) {
+      assert.deepEqual(
+        position(compact, control),
+        position(detailed, control),
+        `${control} shifted at ${width} columns`,
+      );
+    }
+
+    const compactSelected = renderHud(
+      {
+        ...connectedState(),
+        view: "activity",
+        activityMode: "compact",
+        activitySelection: "selected",
+      },
+      width,
+      false,
+      20,
+    );
+    const detailedSelected = renderHud(
+      {
+        ...connectedState(),
+        view: "activity",
+        activityMode: "detailed",
+        activitySelection: "selected",
+      },
+      width,
+      false,
+      20,
+    );
+    for (const control of ["↑↓ Select", "Enter Inspect", "Esc Browse"]) {
+      assert.deepEqual(
+        position(compactSelected, control),
+        position(detailedSelected, control),
+        `${control} shifted in selection mode at ${width} columns`,
+      );
+    }
+  }
+});
+
+test("activating Activity selection does not shift row columns", () => {
+  const now = Date.now();
+  const activities = [
+    {
+      tool: "read_file" as const,
+      summary: { target: 'path "one.ts"', details: [], truncation: "middle" as const },
+      requestId: "one",
+      state: "returned" as const,
+      updatedAt: now - 15_000,
+    },
+    {
+      tool: "read_file" as const,
+      summary: { target: 'path "two.ts"', details: [], truncation: "middle" as const },
+      requestId: "two",
+      state: "returned" as const,
+      updatedAt: now - 10_000,
+    },
+    {
+      tool: "read_file" as const,
+      summary: { target: 'path "three.ts"', details: [], truncation: "middle" as const },
+      requestId: "three",
+      state: "returned" as const,
+      updatedAt: now - 5_000,
+    },
+  ];
+  const browse = renderHud(
+    { ...connectedState(), view: "activity", activities },
+    90,
+    false,
+    20,
+    now,
+  );
+  const selected = renderHud(
+    { ...connectedState(), view: "activity", activities, activitySelection: "two" },
+    90,
+    false,
+    20,
+    now,
+  );
+  const browseRow = browse.split("\n").find((line) => line.includes('path "two.ts"'))!;
+  const selectedRow = selected.split("\n").find((line) => line.includes('path "two.ts"'))!;
+
+  for (const token of ["✓", "read_file", 'path "two.ts"', "10s ago"]) {
+    assert.equal(
+      browseRow.indexOf(token),
+      selectedRow.indexOf(token),
+      `${token} shifted when selection activated`,
+    );
+  }
+  assert.match(selectedRow, /›\s+✓/);
+});
+
+test("workspace switch label stays pinned as arrow availability changes", () => {
+  const switchColumn = (accessProfile: "read-only" | "workspace" | "system"): number => {
+    const output = renderHud(
+      { ...connectedState(), view: "workspace", accessProfile },
+      100,
+      false,
+      20,
+    );
+    const line = output.split("\n").find((candidate) => candidate.includes("Switch"));
+    assert.ok(line);
+    return line.indexOf("Switch");
+  };
+
+  assert.equal(switchColumn("read-only"), switchColumn("workspace"));
+  assert.equal(switchColumn("workspace"), switchColumn("system"));
 });
 
 test("workspace access handoff has no visible intermediate frame", () => {
@@ -125,7 +259,7 @@ test("workspace access handoff has no visible intermediate frame", () => {
   );
 
   assert.equal(pending, confirmed);
-  assert.match(pending, /ACCESS\s+← Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
+  assert.match(pending, /ACCESS\s+←\s+Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
 });
 
@@ -173,7 +307,7 @@ test("activity layout aligns tool arguments and timestamps", () => {
   assert.match(rows[2]!, /○\s+run_command/);
 });
 
-test("activity view paginates newest-first without an agent block", () => {
+test("activity view follows newest activity without an agent block", () => {
   const activities = Array.from({ length: 30 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
@@ -191,10 +325,131 @@ test("activity view paginates newest-first without an agent block", () => {
     false,
     20,
   );
-  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(1-15\/30\)/);
+  assert.match(output.split("\n")[0] ?? "", /Glossa \/ Activity \(17-30\/30\)/);
   assert.doesNotMatch(output, /AGENT|last activity/);
-  assert.match(output, /file-30\.txt/);
+  assert.match(output, /✓\s+read_file\s+path "file-30\.txt"/);
+  assert.doesNotMatch(output, /›/);
   assert.doesNotMatch(output, /file-1\.txt/);
+});
+
+test("activity keyboard toggles density and inspects the selected call", async () => {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+    ref(): unknown;
+    unref(): unknown;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => {
+    input.isRaw = value;
+  };
+  input.ref = () => input;
+  input.unref = () => input;
+
+  const output = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    columns: number;
+    rows: number;
+  };
+  output.isTTY = true;
+  output.columns = 100;
+  output.rows = 28;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+
+  const run = runSessionHud(
+    {
+      workspace: "C:\\code\\glossa",
+      run: async (signal, onEvent) => {
+        onEvent({
+          type: "status",
+          status: {
+            state: "connected",
+            reconnected: false,
+          },
+        });
+        onEvent({
+          type: "activity",
+          phase: "returned",
+          job: {
+            type: "read_file",
+            requestId: "00000000-0000-4000-8000-000000000021",
+            path: "packages/cli/src/ui-hud.tsx",
+          },
+          ok: true,
+        });
+        onEvent({
+          type: "activity",
+          phase: "started",
+          job: {
+            type: "run_command",
+            requestId: "00000000-0000-4000-8000-000000000022",
+            argv: ["npm", "run", "check", "--workspace", "@ariobarin/glossa"],
+            timeoutMs: 120_000,
+          },
+        });
+        onEvent({
+          type: "activity",
+          phase: "returned",
+          job: {
+            type: "view_image",
+            requestId: "00000000-0000-4000-8000-000000000023",
+            path: ".hud-preview/current.png",
+          },
+          ok: true,
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+      loadStatus: async () => {
+        throw new Error("not used");
+      },
+      revokeDevice: async () => {
+        throw new Error("not used");
+      },
+      changeAccessProfile: () => undefined,
+    },
+    input as unknown as ReadStream,
+    output as unknown as WriteStream,
+  );
+
+  try {
+    await waitFor(() => rendered.includes("Glossa / Workspace"), 1_000, "Workspace view");
+    input.write("a");
+    await waitFor(() => rendered.includes("Enter Select"), 1_000, "browse Activity view");
+    assert.match(rendered, /npm run check/);
+
+    input.write("\t");
+    await waitFor(() => rendered.includes("Tab Compact"), 1_000, "detailed browse view");
+    assert.match(rendered, /argv \["npm"/);
+
+    input.write("\r");
+    await waitFor(() => rendered.includes("Enter Inspect"), 1_000, "selection Activity view");
+    assert.match(rendered, /›\s+○\s+run_command/);
+    assert.match(rendered, /Esc Browse/);
+
+    input.write("\r");
+    await waitFor(() => rendered.includes("Activity / Run Command"), 1_000, "Activity inspect view");
+    assert.match(rendered, /@ariobarin\/glossa/);
+    assert.match(rendered, /Esc Back/);
+    assert.doesNotMatch(rendered, /↑↓ Scroll|← Older|→ Newer/);
+
+    const beforeBack = rendered.length;
+    input.write("\r");
+    await waitFor(
+      () => rendered.slice(beforeBack).includes("Enter Inspect"),
+      1_000,
+      "selection view after Enter back",
+    );
+  } finally {
+    input.write("q");
+    await run;
+  }
 });
 
 test("devices keyboard navigation revokes the selected device", async () => {

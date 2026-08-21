@@ -83,10 +83,10 @@ test("activity view keeps state and age on the activity row", () => {
     false,
     22,
   );
-  const activeRow = active.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
+  const activeRow = active.split("\n").find((line) => line.includes("packages/cli/src/ui-hud.ts"));
   assert.match(
     activeRow ?? "",
-    /○\s+read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+now$/,
+    /○\s+read_file\s+packages\/cli\/src\/ui-hud\.ts\s+now$/,
   );
 
   const idleState = applyHudEvent(activeState, {
@@ -102,10 +102,11 @@ test("activity view keeps state and age on the activity row", () => {
     22,
   );
   assert.doesNotMatch(idle, /AGENT|last activity/);
-  const idleRow = idle.split("\n").find((line) => line.includes('path "packages/cli/src/ui-hud.ts"'));
+  assert.equal(idleState.activities[0]?.startedAt, activeState.activities[0]?.startedAt);
+  const idleRow = idle.split("\n").find((line) => line.includes("packages/cli/src/ui-hud.ts"));
   assert.match(
     idleRow ?? "",
-    /✓\s+read_file\s+path "packages\/cli\/src\/ui-hud\.ts"\s+just now$/,
+    /✓\s+read_file\s+packages\/cli\/src\/ui-hud\.ts\s+just now$/,
   );
 });
 
@@ -147,7 +148,7 @@ test("shows the selected access boundary in the workspace screen", () => {
     20,
   );
 
-  assert.match(output, /ACCESS\s+← Switch/);
+  assert.match(output, /ACCESS\s+←\s+Switch/);
   assert.match(output, /System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
   assert.doesNotMatch(output, /Read only\s+─\s+Workspace\s+─\s+\[ System \]/);
 });
@@ -260,7 +261,13 @@ test("activity view summarizes file writes without exposing content", () => {
   );
 
   assert.match(output, /write_file/);
-  assert.match(output, /path "packages\/cli\/src\/ui-hud\.ts" · 14 B · guarded/);
+  assert.match(output, /packages\/cli\/src\/ui-hud\.ts · 14 B · guarded/);
+  assert.deepEqual(withActivity.activities[0]?.call, {
+    type: "write_file",
+    path: "packages/cli/src/ui-hud.ts",
+    contentBytes: 14,
+    expectedSha256: "a".repeat(64),
+  });
   assert.doesNotMatch(output, /secret payload|content|[a-f0-9]{64}/);
   assert.doesNotMatch(output, /request-2/);
   assert.doesNotMatch(output, /tool call (started|completed)/i);
@@ -688,7 +695,7 @@ test("activity summaries skip oversized details and keep later metadata", () => 
     },
   });
   const output = renderHud(
-    { ...withActivity, view: "activity" },
+    { ...withActivity, view: "activity", activityMode: "detailed" },
     90,
     false,
     18,
@@ -721,7 +728,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
     },
   });
   const output = renderHud(
-    { ...commanded, view: "activity" },
+    { ...commanded, view: "activity", activityMode: "detailed" },
     120,
     false,
     22,
@@ -734,7 +741,7 @@ test("activity summaries hide edit text and escape terminal controls", () => {
   assert.doesNotMatch(output, /\u001b/);
 });
 
-test("activity pagination shows newest entries and range only when needed", () => {
+test("activity browse window follows the tail and anchors older pages", () => {
   const activities = Array.from({ length: 22 }, (_, index) => ({
     tool: "read_file" as const,
     summary: {
@@ -752,31 +759,121 @@ test("activity pagination shows newest entries and range only when needed", () =
     24,
   );
 
-  assert.match(newest.split("\n")[0]!, /Glossa \/ Activity \(1-18\/22\)/);
-  assert.doesNotMatch(newest, /file-[1234]\.txt/);
-  for (let index = 5; index <= 22; index += 1) {
-    assert.match(newest, new RegExp(`file-${index}\\.txt`));
-  }
+  assert.match(newest.split("\n")[0]!, /Glossa \/ Activity \(\d+-22\/22\)/);
+  assert.match(newest, /✓\s+read_file\s+file-22\.txt/);
+  assert.doesNotMatch(newest, /›/);
 
-  const older = renderHud(
-    { ...connectedState(), view: "activity", activityPage: 1, activities },
-    70,
-    false,
-    24,
-  );
-  assert.match(older.split("\n")[0]!, /Glossa \/ Activity \(19-22\/22\)/);
+  const anchoredState = {
+    ...connectedState(),
+    view: "activity" as const,
+    activityBrowseAnchor: "request-10",
+    activities,
+  };
+  const older = renderHud(anchoredState, 70, false, 24);
+  assert.match(older.split("\n")[0]!, /Glossa \/ Activity \(1-10\/22\)/);
   assert.match(older, /file-1\.txt/);
-  assert.match(older, /file-4\.txt/);
-  assert.doesNotMatch(older, /file-(?:5|22)\.txt/);
+  assert.match(older, /file-10\.txt/);
+  assert.doesNotMatch(older, /file-(?:11|22)\.txt/);
 
-  const unpaged = renderHud(
+  const appended = [
+    ...activities,
+    {
+      tool: "read_file" as const,
+      summary: { target: "file-23.txt", details: [], truncation: "middle" as const },
+      requestId: "request-23",
+      state: "returned" as const,
+    },
+  ];
+  const stable = renderHud({ ...anchoredState, activities: appended }, 70, false, 24);
+  assert.match(stable.split("\n")[0]!, /Glossa \/ Activity \(1-10\/23\)/);
+  assert.doesNotMatch(stable, /file-23\.txt/);
+
+  const unwindowed = renderHud(
     { ...connectedState(), view: "activity", activities: activities.slice(-4) },
     70,
     false,
     24,
   );
-  assert.match(unpaged.split("\n")[0]!, /Glossa \/ Activity\s+Connected/);
-  assert.doesNotMatch(unpaged.split("\n")[0]!, /Activity \(/);
+  assert.match(unwindowed.split("\n")[0]!, /Glossa \/ Activity\s+Connected/);
+  assert.doesNotMatch(unwindowed.split("\n")[0]!, /Activity \(/);
+});
+
+test("activity events never activate or move the selection cursor", () => {
+  let state = connectedState();
+  const event = (requestId: string, path: string) => ({
+    type: "activity" as const,
+    phase: "started" as const,
+    job: {
+      type: "read_file" as const,
+      requestId,
+      path,
+    },
+  });
+
+  state = applyHudEvent(state, event("request-1", "one.ts"));
+  state = applyHudEvent(state, event("request-2", "two.ts"));
+  assert.equal(state.activitySelection, undefined);
+  assert.equal(state.activityBrowseAnchor, undefined);
+
+  state = {
+    ...state,
+    activitySelection: "request-1",
+    activityBrowseAnchor: "request-1",
+  };
+  state = applyHudEvent(state, event("request-3", "three.ts"));
+  assert.equal(state.activitySelection, "request-1");
+  assert.equal(state.activityBrowseAnchor, "request-1");
+
+});
+
+test("activity inspect renders complete safe invocation metadata", () => {
+  const stdin = "private stdin body";
+  const job = {
+    type: "run_command" as const,
+    requestId: "00000000-0000-4000-8000-000000000009",
+    argv: [
+      "npm",
+      "run",
+      "check",
+      "--workspace",
+      "@ariobarin/glossa",
+      "--",
+      "--reporter",
+      "spec",
+    ],
+    stdin,
+    timeoutMs: 120_000,
+    waitMs: 0,
+  };
+  const state = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job,
+  });
+  const activity = state.activities[0]!;
+  const output = renderHud(
+    {
+      ...state,
+      view: "activity-detail",
+      activitySelection: activity.requestId,
+    },
+    100,
+    false,
+    28,
+    (activity.startedAt ?? Date.now()) + 18_000,
+  );
+
+  assert.match(output, /Glossa \/ Activity \/ Run Command/);
+  assert.ok(output.indexOf("argv") < output.indexOf("OUTPUT"));
+  assert.match(output, /started\s+\d\d:\d\d:\d\d/);
+  assert.doesNotMatch(output, /\n\s+(?:ACTIVITY|CALL)\b|request\s+00000000|result\s+|state\s+|finished\s+/);
+  assert.match(output, /\["npm", "run", "check", "--workspace", "@ariobarin\/glossa", "--",/);
+  assert.match(output, /"--reporter",\s+"spec"\]/);
+  assert.match(output, /stdin\s+18 B · content not retained in Activity/);
+  assert.match(output, /timeoutMs\s+120000/);
+  assert.match(output, /waitMs\s+0/);
+  assert.match(output, /duration\s+18s/);
+  assert.doesNotMatch(output, new RegExp(stdin));
 });
 
 test("devices page shows pairing overview and active devices", () => {

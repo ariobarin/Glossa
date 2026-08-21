@@ -7,8 +7,16 @@ import {
 } from "@glossa/protocol";
 import {
   statusMessage,
+  type ManagedActivityOutput,
   type ManagedSessionEvent,
 } from "./worker/managed-session.js";
+import {
+  activityCallByteLength,
+  activityCallFromJob,
+  formatActivityCall,
+  type HudActivityCall,
+  type HudActivityMode,
+} from "./ui-hud-activity.js";
 
 export interface HudActivitySummary {
   target: string;
@@ -20,8 +28,14 @@ export interface HudActivitySummary {
 export interface HudActivity {
   tool: WorkerJob["type"];
   summary: HudActivitySummary;
+  compactSummary?: string;
+  call?: HudActivityCall;
+  callBytes?: number;
+  callUnavailable?: "expired" | "oversized";
+  output?: ManagedActivityOutput;
   requestId: string;
   state: "working" | "returned" | "failed";
+  startedAt?: number;
   updatedAt?: number;
 }
 
@@ -39,7 +53,7 @@ export interface HudStatus {
   devices: HudDevice[];
 }
 
-type HudView = "activity" | "workspace" | "devices" | "help";
+type HudView = "activity" | "activity-detail" | "workspace" | "devices" | "help";
 type HudPrompt =
   | { type: "revoke-confirm"; deviceIndex: number }
   | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
@@ -58,7 +72,10 @@ export interface HudState {
   connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
-  activityPage: number;
+  activityMode: HudActivityMode;
+  activitySelection: string | undefined;
+  activityBrowseAnchor: string | undefined;
+  activityDetailScroll: number;
   view: HudView;
   status: HudStatus | undefined;
   deviceSelection: number;
@@ -98,7 +115,10 @@ export function initialHudState(workspace: string): HudState {
     connectedBefore: false,
     message: undefined,
     activities: [],
-    activityPage: 0,
+    activityMode: "compact",
+    activitySelection: undefined,
+    activityBrowseAnchor: undefined,
+    activityDetailScroll: 0,
     view: "workspace",
     status: undefined,
     deviceSelection: 0,
@@ -112,6 +132,7 @@ export function initialHudState(workspace: string): HudState {
 
 const MAX_STORED_ACTIVITIES = 9_999;
 const MAX_STORED_ACTIVITY_TARGET_CHARS = 512;
+const MAX_RETAINED_ACTIVITY_CALL_BYTES = 16 * 1024 * 1024;
 
 function truncate(value: string, width: number): string {
   if (width <= 0) return "";
@@ -370,6 +391,27 @@ function boundActivitySummary(summary: HudActivitySummary): HudActivitySummary {
   };
 }
 
+function pruneActivityCalls(activities: HudActivity[]): HudActivity[] {
+  let retainedBytes = 0;
+  const next = [...activities];
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const activity = next[index]!;
+    if (!activity.call || activity.callBytes === undefined) continue;
+    if (activity.callBytes > MAX_RETAINED_ACTIVITY_CALL_BYTES) {
+      const { call: _call, callBytes: _callBytes, ...summaryOnly } = activity;
+      next[index] = { ...summaryOnly, callUnavailable: "oversized" };
+      continue;
+    }
+    if (retainedBytes + activity.callBytes > MAX_RETAINED_ACTIVITY_CALL_BYTES) {
+      const { call: _call, callBytes: _callBytes, ...summaryOnly } = activity;
+      next[index] = { ...summaryOnly, callUnavailable: "expired" };
+      continue;
+    }
+    retainedBytes += activity.callBytes;
+  }
+  return next;
+}
+
 export function applyHudEvent(
   state: HudState,
   event: ManagedSessionEvent,
@@ -418,23 +460,58 @@ export function applyHudEvent(
   const existingIndex = state.activities.findIndex(
     (activity) => activity.requestId === requestId,
   );
+  const existing = existingIndex >= 0 ? state.activities[existingIndex] : undefined;
   const activityTimestamp = Date.now();
+  const freshCall = existing?.callUnavailable
+    ? undefined
+    : existing?.call ?? activityCallFromJob(event.job);
+  const freshCallBytes = existing?.callBytes ?? (freshCall ? activityCallByteLength(freshCall) : undefined);
+  const retainFreshCall = freshCall !== undefined && freshCallBytes !== undefined &&
+    freshCallBytes <= MAX_RETAINED_ACTIVITY_CALL_BYTES;
+  const formatCall = freshCall ?? activityCallFromJob(event.job);
+  const eventOutput = event.phase === "returned"
+    ? event.output ?? {
+        kind: event.ok ? "success" as const : "error" as const,
+        result: event.ok ? "Success" : "Failed",
+      }
+    : undefined;
   const activity: HudActivity = {
     tool: event.job.type,
     summary: boundActivitySummary(summarizeJob(event.job)),
+    compactSummary: existing?.compactSummary ?? formatActivityCall(
+      formatCall,
+      "compact",
+      MAX_STORED_ACTIVITY_TARGET_CHARS,
+    ),
+    ...(retainFreshCall ? { call: freshCall, callBytes: freshCallBytes } : {}),
+    ...(!retainFreshCall && !existing?.callUnavailable
+      ? { callUnavailable: "oversized" as const }
+      : existing?.callUnavailable
+        ? { callUnavailable: existing.callUnavailable }
+        : {}),
+    ...(eventOutput ? { output: eventOutput } : {}),
     requestId,
     state: event.phase === "started"
       ? "working"
-      : event.ok
-        ? "returned"
-        : "failed",
+      : eventOutput?.kind === "error"
+        ? "failed"
+        : "returned",
+    startedAt: existing?.startedAt ?? activityTimestamp,
     updatedAt: activityTimestamp,
   };
   const activities = [...state.activities];
   if (existingIndex >= 0) activities[existingIndex] = activity;
   else activities.push(activity);
+  const boundedActivities = pruneActivityCalls(activities.slice(-MAX_STORED_ACTIVITIES));
+  const activitySelection = state.activitySelection &&
+      boundedActivities.some((item) => item.requestId === state.activitySelection)
+    ? state.activitySelection
+    : undefined;
+
+
   return {
     ...state,
-    activities: activities.slice(-MAX_STORED_ACTIVITIES),
+    activities: boundedActivities,
+    activitySelection,
   };
 }
