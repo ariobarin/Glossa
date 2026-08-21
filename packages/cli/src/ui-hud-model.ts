@@ -45,6 +45,7 @@ export interface HudDevice {
   platform: string;
   lastSeen: string;
   status: string;
+  current?: boolean;
 }
 
 export interface HudStatus {
@@ -53,7 +54,7 @@ export interface HudStatus {
   devices: HudDevice[];
 }
 
-type HudView = "activity" | "activity-detail" | "workspace" | "devices" | "help";
+type HudView = "activity" | "activity-detail" | "workspace" | "devices";
 type HudPrompt =
   | { type: "revoke-confirm"; deviceIndex: number }
   | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
@@ -83,7 +84,9 @@ export interface HudState {
   statusLoading: boolean;
   prompt: HudPrompt | undefined;
   busy: boolean;
+  busyMessage: string | undefined;
   notice: string | undefined;
+  noticeTone: "info" | "success" | "error" | undefined;
 }
 
 export interface HudUiActions {
@@ -126,7 +129,9 @@ export function initialHudState(workspace: string): HudState {
     statusLoading: false,
     prompt: undefined,
     busy: false,
+    busyMessage: undefined,
     notice: undefined,
+    noticeTone: undefined,
   };
 }
 
@@ -422,19 +427,37 @@ export function applyHudEvent(
       ...state,
       workspace: event.root,
       deviceName: event.deviceName,
-      accessProfile: event.accessProfile,
+      ...(accessHandoff && state.accessProfile
+        ? { accessProfile: state.accessProfile }
+        : { accessProfile: event.accessProfile }),
       pendingAccessProfile: accessHandoff ? state.pendingAccessProfile : undefined,
     };
   }
   if (event.type === "status") {
     if (state.pendingAccessProfile && state.connectedBefore) {
-      if (event.status.state !== "connected") return state;
+      if (event.status.state === "connected") {
+        return {
+          ...state,
+          connection: "connected",
+          connectedBefore: true,
+          message: undefined,
+          accessProfile: state.pendingAccessProfile,
+          pendingAccessProfile: undefined,
+        };
+      }
+      if (event.status.state === "retrying") {
+        return {
+          ...state,
+          connection: "retrying",
+          message: statusMessage(event.status, true),
+        };
+      }
       return {
         ...state,
-        connection: "connected",
-        connectedBefore: true,
-        message: undefined,
-        pendingAccessProfile: undefined,
+        connection: event.status.state,
+        message: event.status.state === "disconnected"
+          ? statusMessage(event.status, true)
+          : undefined,
       };
     }
     if (event.status.state === "retrying") {
@@ -453,7 +476,7 @@ export function applyHudEvent(
     };
   }
   if (event.type === "notice") {
-    return { ...state, notice: event.message };
+    return { ...state, notice: event.message, noticeTone: "info" };
   }
 
   const requestId = event.job.requestId;
@@ -472,7 +495,6 @@ export function applyHudEvent(
   const eventOutput = event.phase === "returned"
     ? event.output ?? {
         kind: event.ok ? "success" as const : "error" as const,
-        result: event.ok ? "Success" : "Failed",
       }
     : undefined;
   const activity: HudActivity = {

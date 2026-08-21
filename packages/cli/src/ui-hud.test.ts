@@ -46,18 +46,21 @@ test("HUD breadcrumbs identify every top-level view", () => {
   const activity = renderHud({ ...connectedState(), view: "activity" }, 80, false, 20);
   const workspace = renderHud({ ...connectedState(), view: "workspace" }, 80, false, 20);
   const devices = renderHud({ ...connectedState(), view: "devices" }, 80, false, 20);
-  const help = renderHud({ ...connectedState(), view: "help" }, 80, false, 20);
 
   assert.match(activity.split("\n")[0] ?? "", /Glossa \/ Activity\s+Connected/);
   assert.match(workspace.split("\n")[0] ?? "", /Glossa \/ Workspace\s+Connected/);
   assert.match(devices.split("\n")[0] ?? "", /Glossa \/ Devices\s+Connected/);
-  assert.match(help.split("\n")[0] ?? "", /Glossa \/ Help\s+Connected/);
 });
 
-test("footer keeps navigation left and contextual controls right", () => {
+test("footer keeps navigation left and only available controls right", () => {
   const width = 110;
+  const activityState = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: { type: "read_file", requestId: "request-1", path: "README.md" },
+  });
   const activity = renderHud(
-    { ...connectedState(), view: "activity" },
+    { ...activityState, view: "activity" },
     width,
     false,
     20,
@@ -88,20 +91,95 @@ test("footer keeps navigation left and contextual controls right", () => {
     false,
     20,
   ).split("\n").at(-1)!;
-  const help = renderHud(
-    { ...connectedState(), view: "help" },
-    width,
-    false,
-    20,
-  ).split("\n").at(-1)!;
 
-  const regularNav = /A Activity\s+W Workspace\s+D Devices\s+\? Help\s+Q Quit/;
-  for (const footer of [activity, workspace, devices, help]) {
+  const regularNav = /A Activity\s+W Workspace\s+D Devices\s+Q Quit/;
+  for (const footer of [activity, workspace, devices]) {
     assert.match(footer, regularNav);
   }
-  assert.match(activity, /Tab Detailed\s+↑ Older\s+↓ Newer\s+Enter Select$/);
+  assert.match(activity, /Tab Detailed\s+Enter Select$/);
+  assert.doesNotMatch(activity, /Older|Newer/);
   assert.match(workspace, /← Read only\s+→ System$/);
-  assert.match(devices, /↑↓ Select\s+Enter\/R Revoke$/);
+  assert.match(devices, /↑↓ Select\s+Enter Revoke$/);
+});
+
+test("empty Activity does not advertise actions that cannot do anything", () => {
+  const output = renderHud(
+    { ...connectedState(), view: "activity", activities: [] },
+    90,
+    false,
+    20,
+  );
+  const footer = output.split("\n").at(-1)!;
+  assert.match(output, /No activity yet\./);
+  assert.match(footer, /A Activity\s+W Workspace\s+D Devices\s+Q Quit/);
+  assert.doesNotMatch(footer, /Tab|Older|Newer|Select|Inspect/);
+});
+
+test("access confirmation owns input and keeps the full security boundary visible", () => {
+  const output = renderHud(
+    {
+      ...connectedState(),
+      view: "workspace",
+      accessProfile: "workspace",
+      prompt: { type: "access-confirm", accessProfile: "system" },
+    },
+    60,
+    false,
+    18,
+  );
+  assert.match(output, /Increase access to System\?/);
+  assert.match(output, /permissions, environment,\s+credentials, and network\./);
+  assert.match(output, /Y Confirm\s+N Cancel/);
+  assert.doesNotMatch(output, /A Activity|W Workspace|D Devices|← Read only|→ System|…/);
+});
+
+test("busy state names the active operation and hides irrelevant controls", () => {
+  const output = renderHud(
+    {
+      ...connectedState(),
+      view: "devices",
+      busy: true,
+      busyMessage: "Revoking Build box…",
+      status: {
+        relay: "https://relay.example",
+        activeWorkers: 0,
+        devices: [{
+          id: "device-1",
+          name: "Build box",
+          platform: "linux-x64",
+          lastSeen: "2m ago",
+          status: "offline",
+        }],
+      },
+    },
+    80,
+    false,
+    20,
+  );
+  assert.match(output, /Revoking Build box…/);
+  assert.doesNotMatch(output, /Working…|↑↓ Select|Enter Revoke|A Activity|W Workspace|D Devices/);
+  assert.match(output.split("\n").at(-1)!, /Q Quit/);
+});
+
+test("Activity inspect only advertises hidden content when it actually overflows", () => {
+  const job = {
+    type: "run_command" as const,
+    requestId: "request-overflow",
+    argv: ["npm", "run", "check", "--workspace", "@ariobarin/glossa", "--", "--reporter", "spec"],
+    stdin: "input",
+    timeoutMs: 120_000,
+    waitMs: 0,
+  };
+  const state = applyHudEvent(connectedState(), { type: "activity", phase: "started", job });
+  const inspect = {
+    ...state,
+    view: "activity-detail" as const,
+    activitySelection: job.requestId,
+  };
+  const tall = renderHud(inspect, 80, false, 28);
+  const short = renderHud(inspect, 80, false, 10);
+  assert.doesNotMatch(tall.split("\n").at(-1)!, /more/);
+  assert.match(short.split("\n").at(-1)!, /↓ \d+ more\s+Esc Back/);
 });
 
 test("activity footer keeps stable controls pinned across density toggles", () => {
@@ -111,20 +189,23 @@ test("activity footer keeps stable controls pinned across density toggles", () =
     assert.notEqual(row, -1, `Missing ${value}`);
     return [row, lines[row]!.indexOf(value)];
   };
+  const activities = Array.from({ length: 30 }, (_, index) => ({
+    tool: "read_file" as const,
+    summary: { target: `path "file-${index + 1}.ts"`, details: [], truncation: "middle" as const },
+    requestId: `request-${index + 1}`,
+    state: "returned" as const,
+    updatedAt: Date.now(),
+  }));
+  const base = {
+    ...connectedState(),
+    view: "activity" as const,
+    activities,
+    activityBrowseAnchor: "request-20",
+  };
 
   for (const width of [54, 60, 70, 80, 90, 110]) {
-    const compact = renderHud(
-      { ...connectedState(), view: "activity", activityMode: "compact" },
-      width,
-      false,
-      20,
-    );
-    const detailed = renderHud(
-      { ...connectedState(), view: "activity", activityMode: "detailed" },
-      width,
-      false,
-      20,
-    );
+    const compact = renderHud({ ...base, activityMode: "compact" }, width, false, 20);
+    const detailed = renderHud({ ...base, activityMode: "detailed" }, width, false, 20);
     for (const control of ["↑ Older", "↓ Newer", "Enter Select"]) {
       assert.deepEqual(
         position(compact, control),
@@ -134,23 +215,13 @@ test("activity footer keeps stable controls pinned across density toggles", () =
     }
 
     const compactSelected = renderHud(
-      {
-        ...connectedState(),
-        view: "activity",
-        activityMode: "compact",
-        activitySelection: "selected",
-      },
+      { ...base, activityMode: "compact", activitySelection: "request-15" },
       width,
       false,
       20,
     );
     const detailedSelected = renderHud(
-      {
-        ...connectedState(),
-        view: "activity",
-        activityMode: "detailed",
-        activitySelection: "selected",
-      },
+      { ...base, activityMode: "detailed", activitySelection: "request-15" },
       width,
       false,
       20,
@@ -217,28 +288,34 @@ test("activating Activity selection does not shift row columns", () => {
   assert.match(selectedRow, /›\s+✓/);
 });
 
-test("workspace switch label stays pinned as arrow availability changes", () => {
-  const switchColumn = (accessProfile: "read-only" | "workspace" | "system"): number => {
-    const output = renderHud(
-      { ...connectedState(), view: "workspace", accessProfile },
-      100,
-      false,
-      20,
-    );
-    const line = output.split("\n").find((candidate) => candidate.includes("Switch"));
-    assert.ok(line);
-    return line.indexOf("Switch");
-  };
+test("workspace access controls only advertise available changes", () => {
+  const footer = (
+    accessProfile: "read-only" | "workspace" | "system",
+    overrides: Partial<HudState> = {},
+  ): string => renderHud(
+    { ...connectedState(), view: "workspace", accessProfile, ...overrides },
+    110,
+    false,
+    20,
+  ).split("\n").at(-1)!;
 
-  assert.equal(switchColumn("read-only"), switchColumn("workspace"));
-  assert.equal(switchColumn("workspace"), switchColumn("system"));
+  assert.match(footer("read-only"), /→ Workspace$/);
+  assert.doesNotMatch(footer("read-only"), /←/);
+  assert.match(footer("workspace"), /← Read only\s+→ System$/);
+  assert.match(footer("system"), /← Workspace$/);
+  assert.doesNotMatch(
+    footer("workspace", { pendingAccessProfile: "system", connection: "connecting" }),
+    /← Read only|→ System/,
+  );
+  assert.doesNotMatch(footer("workspace", { connection: "retrying" }), /← Read only|→ System/);
 });
 
-test("workspace access handoff has no visible intermediate frame", () => {
+test("workspace access handoff stays truthful until the replacement connects", () => {
   const pending = renderHud(
     {
       ...connectedState(),
       view: "workspace",
+      connection: "connecting",
       accessProfile: "workspace",
       pendingAccessProfile: "system",
     },
@@ -258,9 +335,12 @@ test("workspace access handoff has no visible intermediate frame", () => {
     20,
   );
 
-  assert.equal(pending, confirmed);
-  assert.match(pending, /ACCESS\s+←\s+Switch\s+System\s+Read \+ write files \+ commands\s+OS account permissions apply/);
-  assert.doesNotMatch(pending, /Restarting|Connecting|Reconnecting/);
+  assert.match(pending.split("\n")[0] ?? "", /Connecting$/);
+  assert.match(pending, /Access\s+Workspace · read \+ write files/);
+  assert.match(pending, /Switching to System…/);
+  assert.doesNotMatch(pending, /Access\s+System/);
+  assert.match(confirmed, /Access\s+System · read \+ write files \+ commands/);
+  assert.doesNotMatch(confirmed, /Switching/);
 });
 
 test("activity layout aligns tool arguments and timestamps", () => {
@@ -604,18 +684,23 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   );
 
   await waitFor(() => rendered.includes("Glossa / Workspace"));
+  const beforePrompt = rendered.length;
   input.write("\u001b[C");
-  await waitFor(() => rendered.includes("Increase access to System?"));
-  assert.match(rendered, /Increase access to System\? Commands will inherit this OS account's permissions\./);
+  await waitFor(() => rendered.slice(beforePrompt).includes("Increase access to System?"));
+  const promptFrame = rendered.slice(beforePrompt);
+  assert.match(promptFrame, /Increase access to System\?/);
+  assert.match(promptFrame, /permissions, environment, credentials, and network\./);
+  assert.match(promptFrame, /Y Confirm\s+N Cancel/);
+  assert.doesNotMatch(promptFrame, /A Activity|W Workspace|D Devices|← Read only|→ System/);
   input.write("y");
   await waitFor(() => changes.length === 1);
   assert.deepEqual(changes, ["system"]);
 
-  await waitFor(() => rendered.includes("OS account permissions apply"));
+  await waitFor(() => rendered.includes("OS account permissions, credentials, and network apply"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 2);
   assert.deepEqual(changes, ["system", "workspace"]);
-  await waitFor(() => rendered.includes("Commands disabled"));
+  await waitFor(() => rendered.includes("Commands off"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 3);
   assert.deepEqual(changes, ["system", "workspace", "read-only"]);

@@ -26,9 +26,9 @@ test("formatRelativeTime handles missing, malformed, and real timestamps", () =>
 test("deviceStatus describes revoked, offline, active, and unknown counts", () => {
   assert.equal(deviceStatus({ ...base, revokedAt: "2026-07-01T00:00:00.000Z" }), "revoked");
   assert.equal(deviceStatus({ ...base, activeWorkers: 0 }), "offline");
-  assert.equal(deviceStatus({ ...base, activeWorkers: 1 }), "1 active worker");
-  assert.equal(deviceStatus({ ...base, activeWorkers: 3 }), "3 active workers");
-  assert.equal(deviceStatus({ ...base, activeWorkers: null }), "worker count unavailable");
+  assert.equal(deviceStatus({ ...base, activeWorkers: 1 }), "1 active workspace");
+  assert.equal(deviceStatus({ ...base, activeWorkers: 3 }), "3 active workspaces");
+  assert.equal(deviceStatus({ ...base, activeWorkers: null }), "workspace count unavailable");
 });
 
 test("formatDeviceRow includes id, name, platform, last seen, and status", () => {
@@ -40,7 +40,7 @@ test("formatDeviceRow includes id, name, platform, last seen, and status", () =>
   assert.ok(row.includes("Test PC"));
   assert.ok(row.includes("win32-x64"));
   assert.ok(row.includes("last seen 3h ago"));
-  assert.ok(row.includes("1 active worker"));
+  assert.ok(row.includes("1 active workspace"));
 });
 
 test("formatDeviceRow falls back to an unknown platform label", () => {

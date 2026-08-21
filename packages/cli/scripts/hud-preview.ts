@@ -24,8 +24,13 @@ const SCREENS = [
   "activity-detail-working",
   "activity-empty",
   "workspace",
+  "workspace-switching",
+  "access-confirm",
   "devices",
-  "help",
+  "devices-loading",
+  "devices-empty",
+  "device-revoke",
+  "device-busy",
 ] as const;
 type PreviewScreen = typeof SCREENS[number];
 
@@ -300,8 +305,8 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       relay: "Local preview relay",
       activeWorkers: 2,
       devices: [
-        { id: "preview-device-1", name: "Preview workstation", platform: "darwin-arm64", lastSeen: "just now", status: "1 active worker" },
-        { id: "preview-device-2", name: "Build machine", platform: "linux-x64", lastSeen: "3m ago", status: "idle" },
+        { id: "preview-device-1", name: "Preview workstation", platform: "darwin-arm64", lastSeen: "just now", status: "1 active workspace", current: true },
+        { id: "preview-device-2", name: "Build machine", platform: "linux-x64", lastSeen: "3m ago", status: "offline" },
       ],
     },
   };
@@ -346,6 +351,55 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       ...state,
       view: "activity-detail",
       activitySelection: working,
+    };
+  }
+  if (screen === "workspace-switching") {
+    return {
+      ...state,
+      view: "workspace",
+      connection: "connecting",
+      accessProfile: "workspace",
+      pendingAccessProfile: "system",
+    };
+  }
+  if (screen === "access-confirm") {
+    return {
+      ...state,
+      view: "workspace",
+      accessProfile: "workspace",
+      prompt: { type: "access-confirm", accessProfile: "system" },
+    };
+  }
+  if (screen === "devices-loading") {
+    return {
+      ...state,
+      view: "devices",
+      status: undefined,
+      statusLoading: true,
+    };
+  }
+  if (screen === "devices-empty") {
+    return {
+      ...state,
+      view: "devices",
+      status: { relay: "Local preview relay", activeWorkers: 0, devices: [] },
+    };
+  }
+  if (screen === "device-revoke") {
+    return {
+      ...state,
+      view: "devices",
+      deviceSelection: 1,
+      prompt: { type: "revoke-confirm", deviceIndex: 1 },
+    };
+  }
+  if (screen === "device-busy") {
+    return {
+      ...state,
+      view: "devices",
+      deviceSelection: 1,
+      busy: true,
+      busyMessage: "Revoking Build machine…",
     };
   }
   return { ...state, view: screen };

@@ -163,7 +163,7 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
       },
       false,
     ),
-    "Could not connect: TLS handshake failed Retrying in 2 seconds.",
+    "Could not connect: TLS handshake failed. Retrying in 2 seconds.",
   );
   assert.equal(
     statusMessage(
@@ -174,7 +174,7 @@ test("keeps retry diagnostics local and adds the current workspace timing", () =
       },
       true,
     ),
-    "Connection lost: TLS handshake failed Retrying in 2 seconds.",
+    "Connection lost: TLS handshake failed. Retrying in 2 seconds.",
   );
 });
 
