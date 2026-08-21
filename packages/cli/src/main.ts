@@ -5,7 +5,7 @@ import {
   UsageError,
   type CliInvocation,
 } from "./cli-options.js";
-import { deviceStatus, formatRelativeTime } from "./device-format.js";
+import { deviceStatus } from "./device-format.js";
 import {
   listDevices,
   loadRelayEndpoints,
@@ -142,7 +142,7 @@ async function runWorkspaceSession(
             id: entry.id,
             name: entry.name,
             platform: entry.platform ?? "Unknown platform",
-            lastSeen: formatRelativeTime(entry.lastSeenAt),
+            lastSeenAt: entry.lastSeenAt,
             status: deviceStatus(entry),
           })),
         };

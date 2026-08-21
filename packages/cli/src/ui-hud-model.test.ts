@@ -780,6 +780,7 @@ test("activity pagination shows newest entries and range only when needed", () =
 });
 
 test("devices page shows pairing overview and active devices", () => {
+  const now = Date.parse("2026-08-17T21:00:00Z");
   const output = renderHud(
     {
       ...connectedState(),
@@ -791,7 +792,7 @@ test("devices page shows pairing overview and active devices", () => {
           id: "device-1",
           name: "Laptop",
           platform: "win32-x64",
-          lastSeen: "just now",
+          lastSeenAt: new Date(now).toISOString(),
           status: "3 active workers",
         }],
       },
@@ -799,6 +800,7 @@ test("devices page shows pairing overview and active devices", () => {
     80,
     false,
     22,
+    now,
   );
 
   assert.match(output.split("\n")[0]!, /Glossa \/ Devices\s+Connected/);
@@ -813,6 +815,7 @@ test("devices page shows pairing overview and active devices", () => {
 });
 
 test("devices use a compact readable row in narrow terminals", () => {
+  const now = Date.parse("2026-08-17T21:00:00Z");
   const output = renderHud(
     {
       ...connectedState(),
@@ -824,7 +827,7 @@ test("devices use a compact readable row in narrow terminals", () => {
           id: "device-1",
           name: "Laptop",
           platform: "win32-x64",
-          lastSeen: "just now",
+          lastSeenAt: new Date(now).toISOString(),
           status: "1 active worker",
         }],
       },
@@ -832,6 +835,7 @@ test("devices use a compact readable row in narrow terminals", () => {
     58,
     false,
     22,
+    now,
   );
 
   assert.match(
@@ -841,12 +845,34 @@ test("devices use a compact readable row in narrow terminals", () => {
   assert.doesNotMatch(output, /Device\s+Workers\s+Platform\s+Last seen/);
 });
 
+test("devices derive last seen from timestamps at render time", () => {
+  const now = Date.parse("2026-08-17T21:00:00Z");
+  const state: HudState = {
+    ...connectedState(),
+    view: "devices",
+    status: {
+      relay: "https://relay.example",
+      activeWorkers: 0,
+      devices: [{
+        id: "device-1",
+        name: "Laptop",
+        platform: "win32-x64",
+        lastSeenAt: new Date(now - 60_000).toISOString(),
+        status: "offline",
+      }],
+    },
+  };
+
+  assert.match(renderHud(state, 80, false, 22, now), /1m ago/);
+  assert.match(renderHud(state, 80, false, 22, now + 60_000), /2m ago/);
+});
+
 test("devices view scrolls to keep the selected device visible", () => {
   const devices = Array.from({ length: 12 }, (_, index) => ({
     id: `device-${index + 1}`,
     name: `Device ${index + 1}`,
     platform: "win32-x64",
-    lastSeen: "just now",
+    lastSeenAt: null,
     status: "offline",
   }));
   const output = renderHud(

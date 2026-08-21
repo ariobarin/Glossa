@@ -15,6 +15,7 @@ import {
   useWindowSize,
 } from "ink";
 
+import { formatRelativeTime } from "./device-format.js";
 import {
   applyHudEvent,
   initialHudState,
@@ -46,6 +47,7 @@ function Text({ color, ...props }: HudTextProps): React.ReactNode {
 }
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 10_000;
+const DEVICE_REFRESH_INTERVAL_MS = 10_000;
 const ACTIVITY_STATUS_COLUMN_WIDTH = 2;
 const ACTIVITY_TOOL_COLUMN_WIDTH = 15;
 const ACTIVITY_AGE_COLUMN_WIDTH = 10;
@@ -321,7 +323,7 @@ function activityPageInfo(state: HudState, bodyBudget: number): {
 }
 
 function statusDeviceCapacity(state: HudState, bodyBudget: number, usable: number): number {
-  if (!state.status || state.statusLoading || state.status.devices.length === 0) return 0;
+  if (!state.status || state.status.devices.length === 0) return 0;
   const preamble = usable >= 64 ? 10 : 9;
   return Math.min(9, state.status.devices.length, Math.max(0, bodyBudget - preamble));
 }
@@ -645,13 +647,15 @@ function Metric({ value, label, color }: {
   );
 }
 
-function DeviceRow({ device, selected, usable, color }: {
+function DeviceRow({ device, selected, usable, color, now }: {
   device: HudDevice;
   selected: boolean;
   usable: number;
   color: boolean;
+  now: number;
 }): React.ReactNode {
   const active = device.status.includes("active");
+  const lastSeen = formatRelativeTime(device.lastSeenAt, now);
   const tone = active ? COLORS.purpleReadable : COLORS.muted;
   const selector = selected ? "›" : " ";
   if (usable < 64) {
@@ -665,7 +669,7 @@ function DeviceRow({ device, selected, usable, color }: {
           color={color ? (selected ? COLORS.purpleReadable : tone) : undefined}
           wrap="truncate"
         >
-          {`${device.name} · ${device.status} · ${device.platform} · ${device.lastSeen}`}
+          {`${device.name} · ${device.status} · ${device.platform} · ${lastSeen}`}
         </Text>
       </Box>
     );
@@ -691,7 +695,7 @@ function DeviceRow({ device, selected, usable, color }: {
         <Text color={color ? COLORS.muted : undefined} wrap="truncate">{device.platform}</Text>
       </Box>
       <Box width={18} flexShrink={0}>
-        <Text color={color ? COLORS.muted : undefined} wrap="truncate">{device.lastSeen}</Text>
+        <Text color={color ? COLORS.muted : undefined} wrap="truncate">{lastSeen}</Text>
       </Box>
     </Box>
   );
@@ -710,11 +714,12 @@ function DeviceHeading({ usable, color }: { usable: number; color: boolean }): R
   );
 }
 
-function DevicesView({ state, usable, bodyBudget, color }: {
+function DevicesView({ state, usable, bodyBudget, color, now }: {
   state: HudState;
   usable: number;
   bodyBudget: number;
   color: boolean;
+  now: number;
 }): React.ReactNode {
   const window = deviceListWindow(state, bodyBudget, usable);
   const devices = state.status?.devices.slice(window.start, window.end) ?? [];
@@ -722,7 +727,7 @@ function DevicesView({ state, usable, bodyBudget, color }: {
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
       <SectionTitle color={color}>Paired</SectionTitle>
-      {state.statusLoading ? (
+      {state.statusLoading && !state.status ? (
         <>
           <Blank />
           <Text color={color ? COLORS.muted : undefined}>Loading devices…</Text>
@@ -759,6 +764,7 @@ function DevicesView({ state, usable, bodyBudget, color }: {
                     selected={deviceIndex === window.selection}
                     usable={usable}
                     color={color}
+                    now={now}
                   />
                 );
               })}
@@ -903,6 +909,7 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
           usable={metrics.usable}
           bodyBudget={metrics.bodyBudget}
           color={color}
+          now={now}
         />
       ) : state.view === "workspace" ? (
         <WorkspaceView
@@ -1018,6 +1025,14 @@ function HudRuntime({ store, actions, signal, stop }: {
     const timer = setInterval(() => setClock((value) => value + 1), ACTIVITY_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [state.view, state.activities.length]);
+
+  useEffect(() => {
+    if (state.view !== "devices" || state.prompt || state.busy) return;
+    const timer = setInterval(() => {
+      void loadDevices(store, actions, signal);
+    }, DEVICE_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [actions, signal, state.busy, state.prompt, state.view, store]);
 
   useEffect(() => {
     store.update((current) => {
@@ -1158,16 +1173,7 @@ function HudRuntime({ store, actions, signal, stop }: {
       return;
     }
     if (value === "d") {
-      if (current.status) {
-        store.update((state) => ({
-          ...state,
-          view: "devices",
-          prompt: undefined,
-          notice: undefined,
-        }));
-      } else {
-        void loadDevices(store, actions, signal);
-      }
+      void loadDevices(store, actions, signal);
       return;
     }
     if ((key.return || input === "\r" || input === "\n" || value === "r") && current.view === "devices") {
