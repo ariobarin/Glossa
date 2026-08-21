@@ -47,6 +47,7 @@ test("workspace activity preview shows only the newest rows", () => {
   }));
   const output = renderHud({ ...connectedState(), activities }, 80, false, 24, now);
 
+  assert.match(output, /ACTIVITY\s+A View all/);
   assert.match(output, /file-3\.txt/);
   assert.match(output, /file-4\.txt/);
   assert.match(output, /file-5\.txt/);
@@ -147,8 +148,8 @@ test("shows the selected access boundary in the workspace screen", () => {
   );
 
   assert.match(output, /Access\s+System · read \+ write files \+ commands/);
-  assert.match(output, /OS account permissions, credentials, and network apply/);
-  assert.doesNotMatch(output, /Switch/);
+  assert.match(output, /OS permissions · credentials · network/);
+  assert.match(output, /← Switch/);
 });
 
 test("access handoff keeps the old authority visible until replacement connects", () => {

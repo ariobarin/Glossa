@@ -696,7 +696,7 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   await waitFor(() => changes.length === 1);
   assert.deepEqual(changes, ["system"]);
 
-  await waitFor(() => rendered.includes("OS account permissions, credentials, and network apply"));
+  await waitFor(() => rendered.includes("OS permissions · credentials · network"));
   input.write("\u001b[D");
   await waitFor(() => changes.length === 2);
   assert.deepEqual(changes, ["system", "workspace"]);

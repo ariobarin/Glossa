@@ -203,7 +203,7 @@ function accessProfileCapabilities(accessProfile: WorkerAccessProfile): {
   }
   return {
     summary: "read + write files + commands",
-    detail: "OS account permissions, credentials, and network apply",
+    detail: "OS permissions · credentials · network",
   };
 }
 
@@ -665,12 +665,13 @@ function Blank(): React.ReactNode {
   return <Box height={1} />;
 }
 
-function WorkspaceFact({ label, value, usable, color, tone }: {
+function WorkspaceFact({ label, value, usable, color, tone, hint }: {
   label: string;
   value: string;
   usable: number;
   color: boolean;
   tone?: string;
+  hint?: HudHint | undefined;
 }): React.ReactNode {
   const labelWidth = Math.min(10, Math.max(7, Math.floor(usable * 0.16)));
   return (
@@ -678,9 +679,38 @@ function WorkspaceFact({ label, value, usable, color, tone }: {
       <Box width={labelWidth} flexShrink={0}>
         <Text color={color ? COLORS.muted : undefined}>{label}</Text>
       </Box>
-      <Text color={color ? (tone ?? COLORS.ink) : undefined} wrap="truncate">
-        {value}
-      </Text>
+      <Box flexGrow={1} flexShrink={1}>
+        <Text color={color ? (tone ?? COLORS.ink) : undefined} wrap="truncate">
+          {value}
+        </Text>
+      </Box>
+      {hint && usable >= 40 ? (
+        <Box marginLeft={2} flexShrink={0}>
+          <Text bold color={color ? (hint.tone ?? COLORS.purpleReadable) : undefined}>
+            {hint.key}
+          </Text>
+          <Text color={color ? COLORS.muted : undefined}>{` ${hint.label}`}</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+function WorkspaceActivityHeader({ usable, color }: {
+  usable: number;
+  color: boolean;
+}): React.ReactNode {
+  return (
+    <Box width={usable}>
+      <Box flexGrow={1} flexShrink={1}>
+        <SectionTitle color={color}>Activity</SectionTitle>
+      </Box>
+      {usable >= 32 ? (
+        <Box marginLeft={2} flexShrink={0}>
+          <Text bold color={color ? COLORS.purpleReadable : undefined}>A</Text>
+          <Text color={color ? COLORS.muted : undefined}> View all</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -730,6 +760,20 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
   const activityPreview = activityCapacity > 0
     ? state.activities.slice(-activityCapacity)
     : [];
+  const accessHint = state.connection === "connected" &&
+      state.accessProfile &&
+      !state.pendingAccessProfile &&
+      !state.prompt &&
+      !state.busy
+    ? (() => {
+        const lower = adjacentAccessProfile(state.accessProfile, -1);
+        const higher = adjacentAccessProfile(state.accessProfile, 1);
+        return {
+          key: lower && higher ? "←/→" : lower ? "←" : "→",
+          label: "Switch",
+        };
+      })()
+    : undefined;
 
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
@@ -751,6 +795,7 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
             value={`${accessProfileLabel(state.accessProfile)} · ${accessProfileCapabilities(state.accessProfile).summary}`}
             usable={usable}
             color={color}
+            hint={accessHint}
           />
           <WorkspaceFact
             label=""
@@ -780,7 +825,7 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
           <Blank />
           <Line usable={usable} color={color} />
           <Blank />
-          <SectionTitle color={color}>Activity</SectionTitle>
+          <WorkspaceActivityHeader usable={usable} color={color} />
           {activityPreview.map((activity) => (
             <ActivityRow
               key={activity.requestId}
