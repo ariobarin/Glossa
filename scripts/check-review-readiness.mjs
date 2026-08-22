@@ -142,7 +142,7 @@ const mcpSource = await readFile(
   "utf8",
 );
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "3.1.0", "MCP public contract must be 3.1.0");
+assert.equal(contractVersion, "3.2.0", "MCP public contract must be 3.2.0");
 
 const expectedTools = [
   "list_workspaces",
@@ -282,7 +282,7 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `3.1.0`",
+  "MCP tool contract: `3.2.0`",
   "Portal-ready MCP values",
   "MCP Server URL type: Universal",
   "global data residency",

@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import express from "express";
 import { z } from "zod";
 import { loadConfig } from "./config.js";
 import {
   createMcpServer,
+  handleMcpRequest,
+  isCommandObservationRequest,
   MCP_SERVER_INSTRUCTIONS,
   MCP_SERVER_VERSION,
 } from "./mcp.js";
@@ -129,7 +134,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
-  assert.equal(MCP_SERVER_VERSION, "3.1.0");
+  assert.equal(MCP_SERVER_VERSION, "3.2.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
   assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for a local development workspace/);
@@ -362,9 +367,11 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(searchTextInputSchema.properties?.excludeGlobs);
 
   const getCommandInputSchema = byName.get("get_command")?.inputSchema as {
-    properties?: Record<string, unknown>;
+    properties?: Record<string, { default?: unknown; maximum?: unknown }>;
   };
   assert.ok(getCommandInputSchema.properties?.afterSequence);
+  assert.equal(getCommandInputSchema.properties?.waitMs?.default, 30_000);
+  assert.equal(getCommandInputSchema.properties?.waitMs?.maximum, 60_000);
 
   const commandOutputSchema = byName.get("get_command")?.outputSchema as {
     properties?: Record<string, unknown>;
@@ -374,6 +381,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(commandOutputSchema.properties?.commandId);
   assert.ok(commandOutputSchema.properties?.status);
   assert.ok(commandOutputSchema.properties?.sequence);
+  assert.ok(commandOutputSchema.properties?.elapsedMs);
   assert.equal(commandOutputSchema.properties?.startedAt, undefined);
   assert.equal(commandOutputSchema.properties?.finishedAt, undefined);
 
@@ -398,7 +406,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
   assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
   assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
-  assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
+  assert.match(byName.get("get_command")?.description ?? "", /waits up to 30 seconds by default/);
+  assert.match(byName.get("get_command")?.description ?? "", /Omit afterSequence.*finish/);
   assert.match(byName.get("cancel_command")?.description ?? "", /does not undo.*effects/);
   const writeFileSchema = byName.get("write_file")?.inputSchema as {
     properties?: Record<string, { description?: unknown }>;
@@ -1277,7 +1286,7 @@ test("does not mirror large structured results into text content", async (contex
   assert.ok(Buffer.byteLength(text, "utf8") < 256);
 });
 
-test("reserves relay headroom for maximum command status waits", async (context) => {
+test("passes the full command observation window to the worker", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000060";
   const workerId = "00000000-0000-4000-8000-000000000061";
@@ -1295,16 +1304,15 @@ test("reserves relay headroom for maximum command status waits", async (context)
   await client.connect(clientTransport);
 
   for (const [requestedWaitMs, expectedWaitMs] of [
-    [15_000, 13_000],
-    [12_000, 12_000],
+    [undefined, 30_000],
+    [60_000, 60_000],
   ] as const) {
     const call = client.callTool({
       name: "get_command",
       arguments: {
         workspaceId: workerId,
         commandId,
-        waitMs: requestedWaitMs,
-        afterSequence: 0,
+        ...(requestedWaitMs === undefined ? {} : { waitMs: requestedWaitMs }),
       },
     });
     const job = await state.poll(
@@ -1321,7 +1329,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
       state.complete(accountId, workerId, {
         requestId: job.requestId,
         ok: true,
-        value: { commandId, status: "running", sequence: 0 },
+        value: { commandId, status: "running", sequence: 0, elapsedMs: 42_000 },
       }),
       true,
     );
@@ -1331,7 +1339,96 @@ test("reserves relay headroom for maximum command status waits", async (context)
       (result.structuredContent as { status?: unknown } | undefined)?.status,
       "running",
     );
+    assert.equal(
+      (result.structuredContent as { elapsedMs?: unknown } | undefined)?.elapsedMs,
+      42_000,
+    );
   }
+});
+
+test("streams only command observation responses", async (context) => {
+  assert.equal(isCommandObservationRequest(null), false);
+  assert.equal(isCommandObservationRequest({ method: "tools/list", params: {} }), false);
+  assert.equal(
+    isCommandObservationRequest({ method: "tools/call", params: { name: "get_command" } }),
+    true,
+  );
+
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000066";
+  const workerId = "00000000-0000-4000-8000-000000000067";
+  const commandId = "00000000-0000-4000-8000-000000000068";
+  const session = state.register(accountId, deviceId, "Test PC", workerId, {
+    accessProfile: "system",
+  });
+  const config = testConfig("http://127.0.0.1");
+  const app = express();
+  app.use(express.json());
+  app.post("/mcp", (request, response) => {
+    void handleMcpRequest(request, response, config, state, accountId);
+  });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  const { port } = server.address() as AddressInfo;
+  const endpoint = `http://127.0.0.1:${port}/mcp`;
+  const headers = {
+    accept: "application/json, text/event-stream",
+    "content-type": "application/json",
+    "mcp-protocol-version": "2025-11-25",
+  };
+
+  const commandResponsePromise = fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "get_command",
+        arguments: { workspaceId: workerId, commandId, waitMs: 60_000 },
+      },
+    }),
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    1_000,
+  );
+  assert.ok(job && job.type === "get_command");
+  const headerTimeout = new AbortController();
+  const commandResponse = await Promise.race([
+    commandResponsePromise.finally(() => headerTimeout.abort()),
+    delay(1_000, undefined, { signal: headerTimeout.signal }).then(() => {
+      throw new Error("SSE response headers were not sent before command completion.");
+    }),
+  ]);
+  assert.match(commandResponse.headers.get("content-type") ?? "", /^text\/event-stream/);
+  assert.equal(commandResponse.headers.get("x-accel-buffering"), "no");
+  state.complete(accountId, workerId, {
+    requestId: job.requestId,
+    ok: true,
+    value: { commandId, status: "succeeded", sequence: 1, elapsedMs: 25_000, exitCode: 0 },
+  });
+  const commandBody = await commandResponse.text();
+  assert.match(commandBody, /^event: message/m);
+  assert.match(commandBody, /"status":"succeeded"/);
+
+  const listResponse = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+  });
+  assert.match(listResponse.headers.get("content-type") ?? "", /^application\/json/);
+  assert.equal((await listResponse.json() as { result?: { tools?: unknown[] } }).result?.tools?.length, 16);
 });
 
 test("routes command follow-ups only by explicit workspaceId", async (context) => {

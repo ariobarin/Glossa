@@ -16,12 +16,14 @@ export const CURRENT_WORKER_CAPABILITIES = {
   concurrentJobs: true,
   structuredReads: true,
   imageReads: true,
+  commandStatusWaitMs: 60_000,
   structuredMutations: true,
   commandOutputRanges: true,
 } as const;
 export type WorkerCapabilities =
-  Omit<typeof CURRENT_WORKER_CAPABILITIES, "imageReads"> & {
+  Omit<typeof CURRENT_WORKER_CAPABILITIES, "imageReads" | "commandStatusWaitMs"> & {
     imageReads: boolean;
+    commandStatusWaitMs?: number;
   };
 
 function workerTokenDigest(token: string): string {
@@ -323,17 +325,26 @@ export class RouterState {
       return Promise.reject(new Error(permissionError));
     }
 
+    const dispatchedJob = job.type === "get_command"
+      ? {
+          ...job,
+          waitMs: Math.min(
+            job.waitMs ?? 0,
+            worker.capabilities.commandStatusWaitMs ?? 15_000,
+          ),
+        }
+      : job;
     const waitingPoll = worker.pollWaiter;
     if (
       waitingPoll &&
       (
         !waitingPoll.acceptedTypes ||
-        waitingPoll.acceptedTypes.has(job.type)
+        waitingPoll.acceptedTypes.has(dispatchedJob.type)
       )
     ) {
-      waitingPoll.resolve(job);
+      waitingPoll.resolve(dispatchedJob);
     } else {
-      worker.pendingJobs.push(job);
+      worker.pendingJobs.push(dispatchedJob);
     }
 
     return new Promise((resolve, reject) => {

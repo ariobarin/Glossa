@@ -405,6 +405,7 @@ test("uses worker credentials without repeating device authentication", async (c
       concurrentJobs: true,
       structuredReads: true,
       imageReads: true,
+      commandStatusWaitMs: 60_000,
       structuredMutations: true,
       commandOutputRanges: true,
     },
@@ -427,6 +428,7 @@ test("uses worker credentials without repeating device authentication", async (c
     concurrentJobs: true,
     structuredReads: true,
     imageReads: true,
+    commandStatusWaitMs: 60_000,
     structuredMutations: true,
     commandOutputRanges: true,
   });
@@ -441,6 +443,7 @@ test("uses worker credentials without repeating device authentication", async (c
     concurrentJobs: true,
     structuredReads: true,
     imageReads: true,
+    commandStatusWaitMs: 60_000,
     structuredMutations: true,
     commandOutputRanges: true,
   });

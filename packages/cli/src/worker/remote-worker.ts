@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  MAX_COMMAND_STATUS_WAIT_MS,
   workerJobSchema,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -24,6 +25,7 @@ const LEGACY_WORKER_CAPABILITIES = {
 const WORKER_CAPABILITIES = {
   ...LEGACY_WORKER_CAPABILITIES,
   imageReads: true,
+  commandStatusWaitMs: MAX_COMMAND_STATUS_WAIT_MS,
 } as const;
 
 interface RegisteredSession {
@@ -103,7 +105,7 @@ function requiredWorkerToken(value: unknown): string {
 
 function acceptsCapabilities(
   value: unknown,
-  requireImageReads: boolean,
+  requireCurrentCapabilities: boolean,
 ): boolean {
   if (typeof value !== "object" || value === null) return false;
   if (!("capabilities" in value)) return false;
@@ -118,8 +120,12 @@ function acceptsCapabilities(
   ) {
     return false;
   }
-  return !requireImageReads ||
-    (capabilities as Record<string, unknown>).imageReads === true;
+  return !requireCurrentCapabilities ||
+    (
+      (capabilities as Record<string, unknown>).imageReads === true &&
+      (capabilities as Record<string, unknown>).commandStatusWaitMs ===
+        MAX_COMMAND_STATUS_WAIT_MS
+    );
 }
 
 function jobLane(job: WorkerJob): JobLane {
@@ -290,7 +296,7 @@ export class RemoteWorker {
   }
 
   async #register(): Promise<RegisteredSession> {
-    const registrationBody = (capabilities: Record<string, true>) => ({
+    const registrationBody = (capabilities: Record<string, true | number>) => ({
       workerId: this.#workerId,
       accessProfile: this.#accessProfile,
       ...(this.#workerVersion ? { workerVersion: this.#workerVersion } : {}),

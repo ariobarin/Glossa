@@ -36,7 +36,7 @@ import type { RelayConfig } from "./config.js";
 import type { RouterState } from "./router-state.js";
 
 // Bump when a public tool name, schema, annotation, or result contract changes.
-export const MCP_SERVER_VERSION = "3.1.0";
+export const MCP_SERVER_VERSION = "3.2.0";
 
 type RawRequestHandler = (request: unknown, extra: unknown) => unknown;
 type LowLevelServerWithHandlers = {
@@ -443,6 +443,14 @@ const workerCommandOutputSchema = z
       .nonnegative()
       .optional()
       .describe("Monotonic output and status revision for incremental get_command calls."),
+    elapsedMs: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        "Observed process lifetime in milliseconds. This reports elapsed time, not proof that a quiet command is healthy or making progress.",
+      ),
     exitCode: z
       .number()
       .int()
@@ -582,7 +590,7 @@ const MCP_TOOL_COPY = {
   },
   get_command: {
     title: "Check Workspace Command",
-    description: "Use this only after run_command returns a command handle. It returns current or final status and bounded captured output without starting another process. Pass afterSequence with waitMs to wait for output or status to change. When a truncation flag is true, use read_command_output instead of rerunning the command.",
+    description: "Use this only after run_command returns a command handle. It waits up to 30 seconds by default and returns sooner when the command finishes, with current status and bounded captured output. Current workers also report elapsed time. Omit afterSequence when waiting for a build or test to finish. Pass the latest afterSequence only when waiting for the next output or status change, such as a development server readiness line. A running result means only that the process has not exited. When a truncation flag is true, use read_command_output instead of rerunning the command.",
   },
   read_command_output: {
     title: "Read Workspace Command Output",
@@ -854,32 +862,19 @@ function structuredReadTimeoutMs(config: RelayConfig): number {
   );
 }
 
-const COMMAND_STATUS_RELAY_HEADROOM_MS = 5_000;
-
-function commandStatusWaitMs(
-  config: RelayConfig,
-  requestedWaitMs: number | undefined,
-): number | undefined {
-  if (requestedWaitMs === undefined) return undefined;
-  const workerWaitBudget = Math.max(
-    0,
-    config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS - COMMAND_STATUS_RELAY_HEADROOM_MS,
-  );
-  return Math.min(requestedWaitMs, workerWaitBudget);
-}
-
 async function executeJob(
   state: RouterState,
   config: RelayConfig,
   accountId: string,
   deviceId: string,
   job: WorkerJob,
+  timeoutMs = config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS,
 ): Promise<WorkerResult> {
   return await state.enqueue(
     accountId,
     deviceId,
     job,
-    config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS,
+    timeoutMs,
   );
 }
 
@@ -1394,7 +1389,6 @@ function registerTools(
     async ({ workspaceId, commandId, waitMs, afterSequence }) => {
       const deviceId = workspaceId;
       try {
-        const effectiveWaitMs = commandStatusWaitMs(config, waitMs);
         const result = await executeJob(
           state,
           config,
@@ -1404,9 +1398,10 @@ function registerTools(
             type: "get_command",
             requestId: randomUUID(),
             commandId,
-            ...(effectiveWaitMs === undefined ? {} : { waitMs: effectiveWaitMs }),
+            waitMs,
             ...(afterSequence === undefined ? {} : { afterSequence }),
           },
+          waitMs + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS,
         );
         return commandSuccess(result, deviceId);
       } catch (error) {
@@ -1510,6 +1505,15 @@ export function createMcpServer(
   return server;
 }
 
+export function isCommandObservationRequest(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  const request = body as Record<string, unknown>;
+  if (request.method !== "tools/call") return false;
+  const params = request.params;
+  if (typeof params !== "object" || params === null) return false;
+  return (params as Record<string, unknown>).name === "get_command";
+}
+
 export async function handleMcpRequest(
   request: Request,
   response: Response,
@@ -1519,7 +1523,7 @@ export async function handleMcpRequest(
 ): Promise<void> {
   const server = createMcpServer(config, state, accountId);
   const transport = new StreamableHTTPServerTransport({
-    enableJsonResponse: true,
+    enableJsonResponse: !isCommandObservationRequest(request.body),
   });
   try {
     await server.connect(transport as unknown as Transport);

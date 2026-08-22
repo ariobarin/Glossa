@@ -132,9 +132,41 @@ test("returns a handle when a command outlives the fast wait", async (context) =
   });
 
   assert.equal(started.status, "running");
+  assert.equal(Number.isInteger(started.elapsedMs), true);
+  assert.ok(started.elapsedMs >= 0);
   const completed = await commands.get(started.commandId, 15_000);
   assert.equal(completed.status, "succeeded");
   assert.equal(completed.stdout, "later");
+  assert.equal(Number.isInteger(completed.elapsedMs), true);
+  assert.ok(completed.elapsedMs >= started.elapsedMs);
+});
+
+test("keeps elapsed time monotonic across wall clock rollback", async (context) => {
+  const { commands } = await commandFixture(context);
+  const originalDateNow = Date.now;
+  let wallClockMs = 1_000_000;
+  Date.now = () => wallClockMs;
+  try {
+    const started = await commands.start({
+      argv: [process.execPath, "-e", "setTimeout(() => {}, 250)"],
+      timeoutMs: 60_000,
+      waitMs: 0,
+    });
+    wallClockMs += 2_000;
+    const beforeRollback = await commands.get(started.commandId);
+    wallClockMs -= 5_000;
+    await delay(20);
+    const afterRollback = await commands.get(started.commandId);
+    const completed = await commands.get(started.commandId, 15_000);
+    await delay(20);
+    const retained = await commands.get(started.commandId);
+
+    assert.ok(afterRollback.elapsedMs >= beforeRollback.elapsedMs);
+    assert.ok(completed.elapsedMs >= afterRollback.elapsedMs);
+    assert.equal(retained.elapsedMs, completed.elapsedMs);
+  } finally {
+    Date.now = originalDateNow;
+  }
 });
 
 test("runs and addresses concurrent commands independently", async (context) => {

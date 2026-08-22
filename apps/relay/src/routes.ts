@@ -72,6 +72,7 @@ const registerSchema = z.object({
     concurrentJobs: z.literal(true),
     structuredReads: z.literal(true),
     imageReads: z.literal(true).optional(),
+    commandStatusWaitMs: z.literal(60_000).optional(),
     structuredMutations: z.literal(true),
     commandOutputRanges: z.literal(true),
   }).strict(),
@@ -693,6 +694,8 @@ export function buildRoutes(
             concurrentJobs: true,
             structuredReads: true,
             imageReads: parsed.data.capabilities.imageReads === true,
+            commandStatusWaitMs:
+              parsed.data.capabilities.commandStatusWaitMs ?? 15_000,
             structuredMutations: true,
             commandOutputRanges: true,
           },
