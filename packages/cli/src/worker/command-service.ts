@@ -457,7 +457,6 @@ async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Prom
 
 export class CommandService {
   readonly #commands = new Map<string, CommandRecord>();
-  #activeCommandId: string | null = null;
 
   constructor(readonly policy: PathPolicy) {}
 
@@ -479,13 +478,6 @@ export class CommandService {
   }
 
   async start(options: StartCommandOptions): Promise<CommandSnapshot> {
-    if (this.#activeCommandId) {
-      const active = this.#commands.get(this.#activeCommandId);
-      if (active?.status === "running") {
-        throw new WorkerError("command_busy", "Only one command may run per worker.");
-      }
-      this.#activeCommandId = null;
-    }
     if ((options.argv ? 1 : 0) + (options.shellCommand ? 1 : 0) !== 1) {
       throw new WorkerError(
         "invalid_command",
@@ -573,7 +565,6 @@ export class CommandService {
     record.timeout.unref();
     this.#pruneRetainedCommands();
     this.#commands.set(id, record);
-    this.#activeCommandId = id;
 
     child.stdout.on("data", (chunk: Buffer) => {
       recordCommandOutput(record, "stdout", chunk);
@@ -587,7 +578,6 @@ export class CommandService {
       record.status = "failed";
       record.finishedAt = Date.now();
       recordCommandOutput(record, "stderr", Buffer.from(error.message, "utf8"));
-      this.#activeCommandId = null;
       markChanged(record);
       record.complete();
       this.#scheduleDeletion(id);
@@ -599,7 +589,6 @@ export class CommandService {
       record.exitCode = exitCode;
       record.signal = signal;
       record.status = record.requestedTerminal ?? (exitCode === 0 ? "succeeded" : "failed");
-      this.#activeCommandId = null;
       markChanged(record);
       record.complete();
       this.#scheduleDeletion(id);
@@ -739,12 +728,14 @@ export class CommandService {
   }
 
   async shutdown(): Promise<void> {
-    if (!this.#activeCommandId) return;
-    const record = this.#commands.get(this.#activeCommandId);
-    if (!record || record.status !== "running") return;
-    record.requestedTerminal = "canceled";
-    await terminateProcessTree(record.child);
-    await record.completion;
+    const running = [...this.#commands.values()].filter(
+      (record) => record.status === "running",
+    );
+    for (const record of running) record.requestedTerminal = "canceled";
+    await Promise.all(running.map(async (record) => {
+      await terminateProcessTree(record.child);
+      await record.completion;
+    }));
   }
 
   private snapshot(record: CommandRecord): CommandSnapshot {
