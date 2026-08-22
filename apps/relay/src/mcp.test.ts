@@ -102,15 +102,34 @@ function assertFieldDescriptions(schema: JsonSchemaNode, label: string): void {
   }
 }
 
-function testConfig(publicOrigin = "https://mcp.glossa.sh") {
+function testConfig(
+  publicOrigin = "https://mcp.glossa.sh",
+  environment: NodeJS.ProcessEnv = {},
+) {
   return loadConfig({
     NODE_ENV: "test",
     DATABASE_URL: "postgres://test:test@localhost:5432/test",
     GLOSSA_PUBLIC_ORIGIN: publicOrigin,
     GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
     GLOSSA_AUTH0_AUDIENCE: "https://mcp.glossa.test/",
+    ...environment,
   });
 }
+
+test("bounds relay request timeout below hosted ceiling", () => {
+  assert.equal(testConfig().GLOSSA_RELAY_REQUEST_TIMEOUT_MS, 20_000);
+  assert.equal(
+    testConfig("https://mcp.glossa.sh", {
+      GLOSSA_RELAY_REQUEST_TIMEOUT_MS: "20000",
+    }).GLOSSA_RELAY_REQUEST_TIMEOUT_MS,
+    20_000,
+  );
+  assert.throws(() =>
+    testConfig("https://mcp.glossa.sh", {
+      GLOSSA_RELAY_REQUEST_TIMEOUT_MS: "20001",
+    }),
+  );
+});
 
 test("publishes reviewable MCP tool contracts", async (context) => {
   const state = new RouterState();
@@ -1296,7 +1315,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
   await client.connect(clientTransport);
 
   for (const [requestedWaitMs, expectedWaitMs] of [
-    [15_000, 13_000],
+    [15_000, 15_000],
     [12_000, 12_000],
   ] as const) {
     const call = client.callTool({

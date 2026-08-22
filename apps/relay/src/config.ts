@@ -62,8 +62,8 @@ const environmentSchema = z
       .number()
       .int()
       .positive()
-      .max(19_000)
-      .default(18_000),
+      .max(20_000)
+      .default(20_000),
     GLOSSA_TIMING_LOGS: z
       .enum(["0", "1"])
       .default("0")

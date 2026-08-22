@@ -105,7 +105,7 @@ Set `GLOSSA_TIMING_LOGS=1` to emit one metadata-only JSON timing event after eac
 
 ## Hosted request deadlines
 
-The hosting layer imposes a bounded request window. Therefore:
+The hosting layer imposes a bounded request window. The managed relay uses a 20 second request deadline, leaving 10 seconds before the hosted platform's 30 second initial response ceiling. Therefore:
 
 - worker long polls return within 20 seconds; when a concurrent lane becomes free, the worker supersedes a stale capacity poll with a one-shot refresh for only the newly available job types;
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
@@ -113,7 +113,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
 - command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
 - command follow-ups always carry both the worker ID and command ID, so routing is explicit and remains valid across relay restarts;
-- `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;
+- `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the managed default honors the full 15 second wait while reserving five seconds for queueing, delivery, result handling, and the hosted HTTP response, while a self-hosted relay configured with a shorter request deadline may shorten the worker-side wait;
 - `read_command_output` returns at most 64 KiB of one retained stream per request, reports a continuation offset, and never reruns the command;
 - `cancel_command` uses a separate bounded request;
 - structured repository reads use a worker-local deadline of at most half the relay request window and 8 seconds; after expiry, the read lane stays occupied until the active filesystem operation settles and any late directory handle is closed;
