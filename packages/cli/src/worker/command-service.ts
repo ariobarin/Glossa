@@ -457,6 +457,7 @@ async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Prom
 
 export class CommandService {
   readonly #commands = new Map<string, CommandRecord>();
+  #shuttingDown = false;
 
   constructor(readonly policy: PathPolicy) {}
 
@@ -478,6 +479,12 @@ export class CommandService {
   }
 
   async start(options: StartCommandOptions): Promise<CommandSnapshot> {
+    if (this.#shuttingDown) {
+      throw new WorkerError(
+        "worker_shutting_down",
+        "The worker is shutting down.",
+      );
+    }
     if ((options.argv ? 1 : 0) + (options.shellCommand ? 1 : 0) !== 1) {
       throw new WorkerError(
         "invalid_command",
@@ -728,6 +735,7 @@ export class CommandService {
   }
 
   async shutdown(): Promise<void> {
+    this.#shuttingDown = true;
     const running = [...this.#commands.values()].filter(
       (record) => record.status === "running",
     );

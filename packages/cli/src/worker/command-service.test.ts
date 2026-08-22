@@ -218,6 +218,30 @@ test("shutdown terminates every running command", async (context) => {
   assert.equal(secondStopped.status, "canceled");
 });
 
+test("rejects command starts after shutdown begins", async (context) => {
+  const { commands } = await commandFixture(context);
+  const running = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+
+  const stopping = commands.shutdown();
+  await assert.rejects(
+    commands.start({
+      argv: [process.execPath, "-e", "process.exit(0)"],
+      timeoutMs: 60_000,
+      waitMs: 0,
+    }),
+    (error: unknown) =>
+      error instanceof WorkerError && error.code === "worker_shutting_down",
+  );
+  await stopping;
+
+  const stopped = await commands.get(running.commandId);
+  assert.equal(stopped.status, "canceled");
+});
+
 test("returns running output and wakes when command progress changes", async (context) => {
   const { commands } = await commandFixture(context);
   const started = await commands.start({
