@@ -417,6 +417,38 @@ function pruneActivityCalls(activities: HudActivity[]): HudActivity[] {
   return next;
 }
 
+function hasValidActivitySequence(output: ManagedActivityOutput | undefined): output is ManagedActivityOutput & {
+  sequence: number;
+} {
+  return typeof output?.sequence === "number" &&
+    Number.isInteger(output.sequence) &&
+    output.sequence >= 0;
+}
+
+function newestComparableCommandActivity(
+  activities: HudActivity[],
+  commandId: string,
+): HudActivity | undefined {
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const activity = activities[index]!;
+    if (
+      activity.call?.type === "get_command" &&
+      activity.call.commandId === commandId &&
+      hasValidActivitySequence(activity.output)
+    ) return activity;
+  }
+  return undefined;
+}
+
+function activityOutputIsVisiblyEqual(
+  left: ManagedActivityOutput,
+  right: ManagedActivityOutput,
+): boolean {
+  return left.kind === right.kind &&
+    left.preview === right.preview &&
+    left.truncated === right.truncated;
+}
+
 export function applyHudEvent(
   state: HudState,
   event: ManagedSessionEvent,
@@ -484,6 +516,20 @@ export function applyHudEvent(
     (activity) => activity.requestId === requestId,
   );
   const existing = existingIndex >= 0 ? state.activities[existingIndex] : undefined;
+  const comparableCommandActivity = !existing && event.job.type === "get_command"
+    ? newestComparableCommandActivity(state.activities, event.job.commandId)
+    : undefined;
+  if (event.phase === "started" && comparableCommandActivity) return state;
+
+  if (
+    event.phase === "returned" &&
+    event.ok &&
+    comparableCommandActivity?.output &&
+    hasValidActivitySequence(event.output) &&
+    comparableCommandActivity.output.sequence === event.output.sequence &&
+    activityOutputIsVisiblyEqual(comparableCommandActivity.output, event.output)
+  ) return state;
+
   const activityTimestamp = Date.now();
   const freshCall = existing?.callUnavailable
     ? undefined

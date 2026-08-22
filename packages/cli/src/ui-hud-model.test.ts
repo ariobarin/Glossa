@@ -128,6 +128,119 @@ test("activity history is bounded to 9,999 entries", () => {
   assert.equal(state.activities.at(-1)!.requestId, "request-10002");
 });
 
+test("coalesces only unchanged command polls with a valid sequence", () => {
+  const commandId = "00000000-0000-4000-8000-000000000051";
+  const otherCommandId = "00000000-0000-4000-8000-000000000052";
+  const job = (requestId: string, id = commandId) => ({
+    type: "get_command" as const,
+    requestId,
+    commandId: id,
+  });
+  const started = (requestId: string, id = commandId) => ({
+    type: "activity" as const,
+    phase: "started" as const,
+    job: job(requestId, id),
+  });
+  const returned = (
+    requestId: string,
+    output: { kind: "success" | "error" | "running"; preview?: string; sequence?: number },
+    ok = true,
+    id = commandId,
+  ) => ({
+    type: "activity" as const,
+    phase: "returned" as const,
+    job: job(requestId, id),
+    ok,
+    output,
+  });
+
+  let state = applyHudEvent(connectedState(), started("request-command-1"));
+  assert.equal(state.activities.length, 1);
+  assert.equal(state.activities[0]!.state, "working");
+  state = applyHudEvent(
+    state,
+    returned("request-command-1", { kind: "running", preview: "working", sequence: 3 }),
+  );
+  assert.equal(state.activities.length, 1);
+
+  const retained = state.activities[0]!;
+  state = {
+    ...state,
+    activitySelection: retained.requestId,
+    activityBrowseAnchor: retained.requestId,
+  };
+  const beforeRepeat = state;
+  state = applyHudEvent(state, started("request-command-2"));
+  assert.strictEqual(state, beforeRepeat);
+  state = applyHudEvent(
+    state,
+    returned("request-command-2", { kind: "running", preview: "working", sequence: 3 }),
+  );
+  assert.strictEqual(state, beforeRepeat);
+  assert.deepEqual(state.activities[0], retained);
+  assert.equal(state.activitySelection, retained.requestId);
+  assert.equal(state.activityBrowseAnchor, retained.requestId);
+
+  state = applyHudEvent(state, started("request-command-3"));
+  assert.strictEqual(state, beforeRepeat);
+  state = applyHudEvent(
+    state,
+    returned("request-command-3", { kind: "running", preview: "working", sequence: 4 }),
+  );
+  assert.equal(state.activities.length, 2);
+  assert.equal(state.activities[1]!.requestId, "request-command-3");
+
+  state = applyHudEvent(state, started("request-command-4"));
+  assert.equal(state.activities.length, 2);
+  state = applyHudEvent(
+    state,
+    returned("request-command-4", { kind: "running", preview: "more output", sequence: 4 }),
+  );
+  assert.equal(state.activities.length, 3);
+  state = applyHudEvent(state, started("request-command-5"));
+  assert.equal(state.activities.length, 3);
+  state = applyHudEvent(
+    state,
+    returned("request-command-5", { kind: "success", preview: "more output", sequence: 4 }),
+  );
+  assert.equal(state.activities.length, 4);
+
+  state = applyHudEvent(state, started("request-command-6", otherCommandId));
+  assert.equal(state.activities.length, 5);
+  state = applyHudEvent(
+    state,
+    returned(
+      "request-command-6",
+      { kind: "running", preview: "more output", sequence: 4 },
+      true,
+      otherCommandId,
+    ),
+  );
+  assert.equal(state.activities.length, 5);
+
+  state = applyHudEvent(state, started("request-command-7"));
+  assert.equal(state.activities.length, 5);
+  state = applyHudEvent(
+    state,
+    returned("request-command-7", { kind: "success", preview: "more output" }),
+  );
+  assert.equal(state.activities.length, 6);
+  assert.equal(state.activities[5]!.requestId, "request-command-7");
+
+  state = applyHudEvent(state, started("request-command-8"));
+  assert.equal(state.activities.length, 6);
+  state = applyHudEvent(
+    state,
+    returned(
+      "request-command-8",
+      { kind: "error", preview: "poll failed", sequence: 4 },
+      false,
+    ),
+  );
+  assert.equal(state.activities.length, 7);
+  assert.equal(state.activities[6]!.requestId, "request-command-8");
+});
+
 test("shows the selected access boundary in the workspace screen", () => {
   const session = applyHudEvent(initialHudState("."), {
     type: "session",

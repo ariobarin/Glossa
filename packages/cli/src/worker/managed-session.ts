@@ -30,6 +30,7 @@ import {
 export interface ManagedActivityOutput {
   kind: "success" | "error" | "running";
   preview?: string;
+  sequence?: number;
   truncated?: boolean;
 }
 
@@ -310,10 +311,21 @@ function activityOutput(job: WorkerJob, result: WorkerResult): ManagedActivityOu
       }
       break;
     case "run_command":
-    case "get_command":
     case "cancel_command": {
       const output = commandActivityOutput(value);
       if (output) return output;
+      break;
+    }
+    case "get_command": {
+      const output = commandActivityOutput(value);
+      if (output) {
+        return isRecord(value) &&
+            typeof value.sequence === "number" &&
+            Number.isInteger(value.sequence) &&
+            value.sequence >= 0
+          ? { ...output, sequence: value.sequence }
+          : output;
+      }
       break;
     }
     case "read_command_output":
