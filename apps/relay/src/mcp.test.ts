@@ -376,6 +376,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(commandOutputSchema.properties?.sequence);
   assert.equal(commandOutputSchema.properties?.startedAt, undefined);
   assert.equal(commandOutputSchema.properties?.finishedAt, undefined);
+  assert.equal(commandOutputSchema.properties?.elapsedMs, undefined);
 
   assert.equal(byName.get("write_file")?.annotations?.readOnlyHint, false);
   assert.equal(byName.get("write_file")?.annotations?.destructiveHint, true);
@@ -1331,7 +1332,77 @@ test("reserves relay headroom for maximum command status waits", async (context)
       (result.structuredContent as { status?: unknown } | undefined)?.status,
       "running",
     );
+    assert.equal((result.content as unknown[]).length, 1);
   }
+});
+
+test("presents elapsed progress for quiet running command checks", async (context) => {
+  const state = new RouterState();
+  const deviceId = "00000000-0000-4000-8000-000000000063";
+  const workerId = "00000000-0000-4000-8000-000000000064";
+  const commandId = "00000000-0000-4000-8000-000000000065";
+  const session = state.register(accountId, deviceId, "Test PC", workerId, {
+    accessProfile: "system",
+  });
+  const server = createMcpServer(testConfig(), state, accountId);
+  const client = new Client({ name: "glossa-command-progress-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  context.after(async () => {
+    await Promise.allSettled([client.close(), server.close()]);
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const call = client.callTool({
+    name: "get_command",
+    arguments: { workspaceId: workerId, commandId },
+  });
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    workerId,
+    session.generation,
+    100,
+  );
+  assert.equal(job?.type, "get_command");
+  assert.ok(job);
+  assert.equal(
+    state.complete(accountId, workerId, {
+      requestId: job.requestId,
+      ok: true,
+      value: {
+        commandId,
+        status: "running",
+        sequence: 4,
+        elapsedMs: 42_999,
+        startedAt: "2026-08-22T12:00:00.000Z",
+        finishedAt: "2026-08-22T12:00:42.999Z",
+        stdout: "",
+        stderr: "",
+      },
+    }),
+    true,
+  );
+
+  const result = await call;
+  assert.deepEqual(result.structuredContent, {
+    workspaceId: workerId,
+    commandId,
+    status: "running",
+    sequence: 4,
+    stdout: "",
+    stderr: "",
+  });
+  assert.deepEqual(result.content, [
+    {
+      type: "text",
+      text: "Command is still running after 42s with no captured output.",
+    },
+    {
+      type: "text",
+      text: JSON.stringify(result.structuredContent),
+    },
+  ]);
 });
 
 test("routes command follow-ups only by explicit workspaceId", async (context) => {
@@ -1375,7 +1446,7 @@ test("routes command follow-ups only by explicit workspaceId", async (context) =
     state.complete(accountId, workerId, {
       requestId: runJob.requestId,
       ok: true,
-      value: { commandId, status: "running", sequence: 1 },
+      value: { commandId, status: "running", sequence: 1, elapsedMs: 42_999 },
     }),
     true,
   );
@@ -1386,6 +1457,12 @@ test("routes command follow-ups only by explicit workspaceId", async (context) =
     status: "running",
     sequence: 1,
   });
+  assert.deepEqual(runResult.content, [
+    {
+      type: "text",
+      text: JSON.stringify(runResult.structuredContent),
+    },
+  ]);
 
   for (const toolName of ["get_command", "cancel_command"]) {
     const misroutedCall = client.callTool({

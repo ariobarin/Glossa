@@ -161,6 +161,15 @@ function activitySuccess(preview: string, sourceTruncated = false): ManagedActiv
   };
 }
 
+function commandElapsedFallback(elapsedMs: unknown): string | undefined {
+  if (
+    typeof elapsedMs !== "number" ||
+    !Number.isInteger(elapsedMs) ||
+    elapsedMs < 0
+  ) return undefined;
+  return `Command is still running after ${Math.floor(elapsedMs / 1_000)}s with no captured output.`;
+}
+
 function commandActivityOutput(value: unknown): ManagedActivityOutput | undefined {
   if (!isRecord(value) || typeof value.status !== "string") return undefined;
   const status = value.status;
@@ -168,7 +177,7 @@ function commandActivityOutput(value: unknown): ManagedActivityOutput | undefine
   let fallback: string;
   if (status === "running") {
     kind = "running";
-    fallback = "Command started and is still running.";
+    fallback = commandElapsedFallback(value.elapsedMs) ?? "Command started and is still running.";
   } else if (status === "succeeded") {
     kind = "success";
     fallback = "Command completed successfully.";

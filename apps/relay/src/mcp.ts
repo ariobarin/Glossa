@@ -443,6 +443,11 @@ const workerCommandOutputSchema = z
       .nonnegative()
       .optional()
       .describe("Monotonic output and status revision for incremental get_command calls."),
+    elapsedMs: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional(),
     exitCode: z
       .number()
       .int()
@@ -472,7 +477,7 @@ const workerCommandOutputSchema = z
       .describe("Whether standard error exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use read_command_output to inspect retained omitted bytes without rerunning the command."),
   })
   .strip();
-const commandOutputSchema = workerCommandOutputSchema.extend({
+const commandOutputSchema = workerCommandOutputSchema.omit({ elapsedMs: true }).extend({
   workspaceId: z
     .string()
     .uuid()
@@ -815,7 +820,7 @@ function imageSuccess(result: WorkerResult) {
 function commandSuccess(
   result: WorkerResult,
   workspaceId: string,
-  onSuccess?: (value: z.infer<typeof workerCommandOutputSchema>) => void,
+  includeQuietRunningProgress = false,
 ) {
   if (!result.ok) return workerError(result);
   const parsed = workerCommandOutputSchema.safeParse(result.value);
@@ -825,8 +830,21 @@ function commandSuccess(
       "The worker returned an invalid result.",
     );
   }
-  onSuccess?.(parsed.data);
-  return structuredResult({ workspaceId, ...parsed.data });
+  const { elapsedMs, ...value } = parsed.data;
+  const response = structuredResult({ workspaceId, ...value });
+  if (
+    includeQuietRunningProgress &&
+    value.status === "running" &&
+    !value.stdout &&
+    !value.stderr &&
+    elapsedMs !== undefined
+  ) {
+    response.content.unshift({
+      type: "text",
+      text: `Command is still running after ${Math.floor(elapsedMs / 1_000)}s with no captured output.`,
+    });
+  }
+  return response;
 }
 
 function commandOutputRangeSuccess(
@@ -1408,7 +1426,7 @@ function registerTools(
             ...(afterSequence === undefined ? {} : { afterSequence }),
           },
         );
-        return commandSuccess(result, deviceId);
+        return commandSuccess(result, deviceId, true);
       } catch (error) {
         return routedError(error);
       }

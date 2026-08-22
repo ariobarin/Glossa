@@ -40,6 +40,7 @@ export interface CommandSnapshot {
   commandId: string;
   status: CommandStatus;
   sequence: number;
+  elapsedMs: number;
   startedAt: string;
   finishedAt?: string;
   exitCode?: number | null;
@@ -757,6 +758,10 @@ export class CommandService {
       commandId: record.id,
       status: record.status,
       sequence: record.sequence,
+      elapsedMs: Math.max(
+        0,
+        (record.finishedAt ?? Date.now()) - record.startedAt,
+      ),
       startedAt: new Date(record.startedAt).toISOString(),
       stdout: output.stdout.content,
       stderr: output.stderr.content,

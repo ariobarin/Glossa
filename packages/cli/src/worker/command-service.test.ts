@@ -132,9 +132,13 @@ test("returns a handle when a command outlives the fast wait", async (context) =
   });
 
   assert.equal(started.status, "running");
+  assert.equal(Number.isInteger(started.elapsedMs), true);
+  assert.ok(started.elapsedMs >= 0);
   const completed = await commands.get(started.commandId, 15_000);
   assert.equal(completed.status, "succeeded");
   assert.equal(completed.stdout, "later");
+  assert.equal(Number.isInteger(completed.elapsedMs), true);
+  assert.ok(completed.elapsedMs >= started.elapsedMs);
 });
 
 test("runs and addresses concurrent commands independently", async (context) => {

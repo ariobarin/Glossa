@@ -362,6 +362,52 @@ test("Activity output previews reflect structured tool results", async () => {
   assert.match(returned[2]?.output?.preview ?? "", /\+new/);
 });
 
+test("Activity shows elapsed command progress only when output is quiet", async () => {
+  const job: WorkerJob = {
+    type: "get_command",
+    requestId: "00000000-0000-4000-8000-000000000034",
+    commandId: "00000000-0000-4000-8000-000000000035",
+  };
+  const events: unknown[] = [];
+  let calls = 0;
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const worker = visibleWorker(
+      {
+        async handle(requestedJob) {
+          calls += 1;
+          return {
+            requestId: requestedJob.requestId,
+            ok: true,
+            value: calls === 1
+              ? { status: "running", elapsedMs: 42_999 }
+              : calls === 2
+                ? { status: "running", elapsedMs: 42_999, stdout: "working" }
+                : { status: "running", elapsedMs: 42_999, stderr: "waiting" },
+          };
+        },
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+    await worker.handle(job);
+    await worker.handle(job);
+    await worker.handle(job);
+  } finally {
+    console.error = originalError;
+  }
+
+  const returned = events.filter((event) =>
+    typeof event === "object" && event !== null && "phase" in event && event.phase === "returned"
+  ) as Array<{ output?: { preview?: string } }>;
+  assert.equal(
+    returned[0]?.output?.preview,
+    "Command is still running after 42s with no captured output.",
+  );
+  assert.equal(returned[1]?.output?.preview, "working");
+  assert.equal(returned[2]?.output?.preview, "waiting");
+});
+
 test("bounds command output previews and marks truncation", async () => {
   const job: WorkerJob = {
     type: "run_command",
