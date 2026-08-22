@@ -11,7 +11,8 @@ const DEFAULT_RECONNECT_BASE_MS = 500;
 const DEFAULT_RECONNECT_MAX_MS = 10_000;
 const DEFAULT_HEARTBEAT_MS = 15_000;
 const CAPACITY_REFRESH_POLL_MS = 1;
-const MAX_CONCURRENT_JOBS = 5;
+const MAX_CONCURRENT_JOBS = 6;
+const MAX_CONCURRENT_STATUS_JOBS = 2;
 const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
 const LEGACY_WORKER_CAPABILITIES = {
   commandProgress: true,
@@ -151,7 +152,7 @@ function acceptedJobTypes(
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
   const accepted: WorkerJob["type"][] = [];
-  if (counts.status < 1) {
+  if (counts.status < MAX_CONCURRENT_STATUS_JOBS) {
     accepted.push("get_command", "read_command_output");
   }
   if (counts.cancel < 1) accepted.push("cancel_command");
