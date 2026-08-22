@@ -1305,19 +1305,31 @@ test("reserves relay headroom for maximum command status waits", async (context)
   const session = state.register(accountId, deviceId, "Test PC", workerId, {
     accessProfile: "system",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-command-wait-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
 
-  for (const [requestedWaitMs, expectedWaitMs] of [
-    [15_000, 15_000],
-    [12_000, 12_000],
-  ] as const) {
+  async function assertDispatchedWait(
+    relayTimeoutMs: number | undefined,
+    requestedWaitMs: number,
+    expectedWaitMs: number,
+  ): Promise<void> {
+    const config = testConfig(
+      "https://mcp.glossa.sh",
+      relayTimeoutMs === undefined
+        ? {}
+        : { GLOSSA_RELAY_REQUEST_TIMEOUT_MS: String(relayTimeoutMs) },
+    );
+    const server = createMcpServer(config, state, accountId);
+    const client = new Client({
+      name: "glossa-command-wait-test",
+      version: "1.0.0",
+    });
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    context.after(async () => {
+      await Promise.allSettled([client.close(), server.close()]);
+    });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
     const call = client.callTool({
       name: "get_command",
       arguments: {
@@ -1353,6 +1365,10 @@ test("reserves relay headroom for maximum command status waits", async (context)
     );
     assert.equal((result.content as unknown[]).length, 1);
   }
+
+  await assertDispatchedWait(undefined, 15_000, 15_000);
+  await assertDispatchedWait(undefined, 12_000, 12_000);
+  await assertDispatchedWait(18_000, 15_000, 13_000);
 });
 
 test("presents elapsed progress for quiet running command checks", async (context) => {
