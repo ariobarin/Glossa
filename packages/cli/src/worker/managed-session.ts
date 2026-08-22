@@ -28,6 +28,7 @@ import {
 } from "./remote-worker.js";
 
 export interface ManagedActivityOutput {
+  commandId?: string;
   kind: "success" | "error" | "running";
   preview?: string;
   sequence?: number;
@@ -320,10 +321,12 @@ function activityOutput(job: WorkerJob, result: WorkerResult): ManagedActivityOu
       const output = commandActivityOutput(value);
       if (output) {
         return isRecord(value) &&
+            typeof value.commandId === "string" &&
+            value.commandId === job.commandId &&
             typeof value.sequence === "number" &&
             Number.isInteger(value.sequence) &&
             value.sequence >= 0
-          ? { ...output, sequence: value.sequence }
+          ? { ...output, commandId: value.commandId, sequence: value.sequence }
           : output;
       }
       break;

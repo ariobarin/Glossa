@@ -432,8 +432,8 @@ function newestComparableCommandActivity(
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index]!;
     if (
-      activity.call?.type === "get_command" &&
-      activity.call.commandId === commandId &&
+      activity.tool === "get_command" &&
+      activity.output?.commandId === commandId &&
       hasValidActivitySequence(activity.output)
     ) return activity;
   }
