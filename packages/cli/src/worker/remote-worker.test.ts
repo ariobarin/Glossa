@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getCommandRequestSchema, workerJobSchema } from "@glossa/protocol";
 import {
   RelayProtocolUnsupportedError,
   RemoteWorker,
@@ -16,18 +17,33 @@ function registrationResponse(
     generation,
     workerToken,
     accessProfile: body.accessProfile,
-    mcpContractVersion: "3.1.0",
+    mcpContractVersion: "3.2.0",
     ...(body.workspaceLabel ? { workspaceLabel: body.workspaceLabel } : {}),
     capabilities: {
       commandProgress: true,
       concurrentJobs: true,
       structuredReads: true,
       imageReads: true,
+      commandStatusWaitMs: 60_000,
       structuredMutations: true,
       commandOutputRanges: true,
     },
   });
 }
+
+test("keeps omitted waits immediate for jobs from legacy relays", () => {
+  const request = getCommandRequestSchema.parse({
+    commandId: "00000000-0000-4000-8000-000000000091",
+  });
+  const job = workerJobSchema.parse({
+    type: "get_command",
+    requestId: "00000000-0000-4000-8000-000000000090",
+    commandId: "00000000-0000-4000-8000-000000000091",
+  });
+  assert.equal(request.waitMs, 30_000);
+  assert.ok(job.type === "get_command");
+  assert.equal(job.waitMs, undefined);
+});
 
 test("reports retry, connection, and graceful disconnection", async () => {
   const controller = new AbortController();
@@ -125,7 +141,7 @@ test("advertises and verifies the selected worker access profile", async () => {
   assert.equal(registerBodies[0]?.accessProfile, "system");
   assert.deepEqual(
     statuses.find((status) => status.state === "connected"),
-    { state: "connected", reconnected: false, mcpContractVersion: "3.1.0" },
+    { state: "connected", reconnected: false, mcpContractVersion: "3.2.0" },
   );
 });
 
@@ -213,7 +229,9 @@ test("falls back to the legacy relay protocol without advertising image reads", 
   const currentCapabilities = registerBodies[0]!.capabilities as Record<string, unknown>;
   const legacyCapabilities = registerBodies[1]!.capabilities as Record<string, unknown>;
   assert.equal(currentCapabilities.imageReads, true);
+  assert.equal(currentCapabilities.commandStatusWaitMs, 60_000);
   assert.equal("imageReads" in legacyCapabilities, false);
+  assert.equal("commandStatusWaitMs" in legacyCapabilities, false);
   const acceptedTypes = pollBodies[0]!.acceptedTypes as string[];
   assert.equal(acceptedTypes.includes("view_image"), false);
   assert.equal(acceptedTypes.length, 13);

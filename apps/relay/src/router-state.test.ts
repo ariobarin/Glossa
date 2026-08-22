@@ -45,6 +45,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
         concurrentJobs: true,
         structuredReads: true,
         imageReads: true,
+        commandStatusWaitMs: 60_000,
         structuredMutations: true,
         commandOutputRanges: true,
       },
@@ -64,6 +65,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
         concurrentJobs: true,
         structuredReads: true,
         imageReads: true,
+        commandStatusWaitMs: 60_000,
         structuredMutations: true,
         commandOutputRanges: true,
       },
@@ -111,6 +113,7 @@ test("routes multiple workers enrolled on one computer independently", async () 
         concurrentJobs: true,
         structuredReads: true,
         imageReads: true,
+        commandStatusWaitMs: 60_000,
         structuredMutations: true,
         commandOutputRanges: true,
       },
@@ -435,6 +438,50 @@ test("rejects image jobs for workers without image-read capability", async () =>
     ),
     null,
   );
+});
+
+test("limits command observations for legacy workers", async () => {
+  const state = new RouterState();
+  const legacyWorkerId = "00000000-0000-4000-8000-000000000028";
+  const session = state.register(
+    accountId,
+    deviceId,
+    "Legacy PC",
+    legacyWorkerId,
+    {
+      accessProfile: "system",
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        imageReads: false,
+        structuredMutations: true,
+        commandOutputRanges: true,
+      },
+    },
+  );
+  const pending = state.enqueue(accountId, legacyWorkerId, {
+    type: "get_command",
+    requestId: "00000000-0000-4000-8000-000000000029",
+    commandId: "00000000-0000-4000-8000-000000000030",
+    waitMs: 60_000,
+  }, 1_000);
+  const job = await state.poll(
+    accountId,
+    deviceId,
+    legacyWorkerId,
+    session.generation,
+    100,
+  );
+  assert.ok(job && job.type === "get_command");
+  assert.equal(job.waitMs, 15_000);
+  const result: WorkerResult = {
+    requestId: job.requestId,
+    ok: true,
+    value: { commandId: job.commandId, status: "running", sequence: 0 },
+  };
+  state.complete(accountId, legacyWorkerId, result);
+  assert.deepEqual(await pending, result);
 });
 
 test("does not deliver a queued job after its request times out", async () => {

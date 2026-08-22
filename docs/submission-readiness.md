@@ -4,7 +4,7 @@ This is the release-owner GO / NO-GO sheet for publishing Glossa to the OpenAI p
 
 ## Current verdict
 
-**NO-GO for final public submission.** The engineering and release surface is mechanically healthy, and the annotation corrections from PR #215 are deployed. Final submission still requires the current MCP OAuth/tool-security metadata pass, construction and installation of the actual plugin package after a `plugin_asdk_app...` connection ID exists, exact portal metadata/test-count compliance, the required demo recording, cross-surface ChatGPT/Codex validation, and the explicit Restricted Data decision. Before a fresh **Scan Tools**, publish CLI `0.2.3`, deploy the matching relay source commit, and reconnect the reviewer workspace so it advertises `imageReads`; rolling compatibility keeps older workers and older relays usable for non-image tools during that rollout.
+**NO-GO for final public submission.** The current branch passes its mechanical checks, and the annotation corrections from PR #215 are deployed. Final submission still requires the current MCP OAuth/tool-security metadata pass, construction and installation of the actual plugin package after a `plugin_asdk_app...` connection ID exists, exact portal metadata/test-count compliance, the required demo recording, cross-surface ChatGPT/Codex validation, and the explicit Restricted Data decision. Before a fresh **Scan Tools**, publish a CLI release containing the contract `3.2.0` worker capability, deploy the matching relay source commit, and reconnect the reviewer workspace. Rolling compatibility keeps older workers and older relays usable with shorter command observations during that rollout.
 
 Creating and filling a draft submission is appropriate before those final gates are closed.
 
@@ -40,7 +40,7 @@ glossa --access system --label openai-review .review-workspace
 - [ ] `npm run review:check:submission` passes.
 - [ ] The production relay is deployed from the exact commit being submitted.
 - [ ] `https://mcp.glossa.sh` is intentionally accepted as the long-lived published MCP origin; changing its scheme, hostname, or port after publication would require a new plugin rather than an ordinary version update.
-- [ ] A fresh **Scan Tools** reports MCP contract `3.1.0` and exactly 16 tools.
+- [ ] A fresh **Scan Tools** reports MCP contract `3.2.0` and exactly 16 tools.
 - [ ] The scan matches tool names, titles, descriptions, input/output schemas, top-level OAuth security schemes, compatibility `_meta`, and annotations in `docs/app-submission-packet.md`.
 - [ ] `make_directory` scans as `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`.
 - [ ] `move_path` scans as `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: false`, `openWorldHint: false`.

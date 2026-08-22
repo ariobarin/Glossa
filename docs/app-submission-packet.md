@@ -1,6 +1,6 @@
 # App submission packet
 
-Status: source and release gates are mechanically healthy for the `0.2.3` CLI release candidate, and the PR #215 annotation corrections are deployed. MCP contract `3.1.0` adds `view_image` with rolling compatibility for pre-image workers/relays. Final public submission still requires the current OAuth/tool-security metadata pass, construction and installation of the actual plugin package after a real `plugin_asdk_app...` connection ID exists, exact portal validator compliance, the required demo recording, cross-surface ChatGPT/Codex validation, and the explicit Restricted Data decision. Publish CLI `0.2.3`, deploy the matching source commit, and reconnect the reviewer workspace so it advertises `imageReads` before the production scan.
+Status: source checks are mechanically healthy on the current branch, and the PR #215 annotation corrections are deployed. MCP contract `3.2.0` changes command observation behavior and requires a fresh CLI release, matching relay deploy, worker reconnect, and tool scan before submission. Final public submission still requires the current OAuth/tool-security metadata pass, construction and installation of the actual plugin package after a real `plugin_asdk_app...` connection ID exists, exact portal validator compliance, the required demo recording, cross-surface ChatGPT/Codex validation, and the explicit Restricted Data decision.
 
 This packet centralizes marketplace copy, tool explanations, reviewer setup, test cases, security tradeoffs, and portal-only fields. Confirm every field against the production deployment immediately before submission.
 
@@ -15,7 +15,7 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Security policy: `https://github.com/ariobarin/glossa/blob/main/SECURITY.md`
 - Technical security model: `https://glossa.sh/docs/security`
 - Authentication: OAuth 2.1-compatible authorization via Auth0 with the `glossa:access` scope
-- MCP tool contract: `3.1.0` (16 tools)
+- MCP tool contract: `3.2.0` (16 tools)
 - Category: Developer Tools
 
 ### Portal-ready MCP values
@@ -212,7 +212,7 @@ Before submission:
 - reset the fixture and start it with the exact `system` profile and `openai-review` label above;
 - authorize the CLI and ChatGPT with the dedicated reviewer account;
 - verify from an unrelated network that OAuth, tool scanning, worker presence, and every reviewer test work without operator intervention;
-- confirm discovery reports contract `3.1.0`, the app-wide instructions, all 16 tools, exact annotations, minimized workspace discovery output, top-level OAuth security schemes, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command.afterSequence`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
+- confirm discovery reports contract `3.2.0`, the app-wide instructions, all 16 tools, exact annotations, minimized workspace discovery output, top-level OAuth security schemes, the `run_command.command` union plus `waitMs`, required `workspaceId` on command follow-up tools, `get_command` default and maximum waits, `afterSequence`, `elapsedMs`, and `read_command_output` required workspace ID, stream, offset, limit, continuation, and retention fields;
 - run `npx @modelcontextprotocol/inspector@latest` against the production MCP endpoint and exercise every tool with representative inputs plus edge cases, missing identifiers, and empty-result scenarios; verify schemas, authentication errors, annotations, and model-readable results;
 - in OpenAI API Playground, choose Tools → Add → MCP Server, connect the production endpoint, and inspect representative raw request/response flows for unexpected fields, debug payloads, or authentication data;
 - reset the fixture after any test run that mutates it;
@@ -305,7 +305,7 @@ Do not submit until all of the following are true:
 
 - the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
 - the submission is created in an OpenAI project with global data residency and the submitter has Apps Management write access;
-- the production relay serves MCP contract `3.1.0` and the scan matches all 16 tools, schemas, descriptions, output contracts, top-level security schemes, and annotations in this packet;
+- the production relay serves MCP contract `3.2.0` and the scan matches all 16 tools, schemas, descriptions, output contracts, top-level security schemes, and annotations in this packet;
 - the complete plugin package has been built from the registered `plugin_asdk_app...` connection ID, installed locally, and tested on supported ChatGPT and Codex surfaces;
 - the production website, privacy, terms, security, and support URLs are public and match the implementation;
 - the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;

@@ -20,7 +20,8 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 export const MAX_COMMAND_TIMEOUT_MS = 60 * 60 * 1000;
 export const DEFAULT_COMMAND_FAST_WAIT_MS = 750;
 export const MAX_COMMAND_FAST_WAIT_MS = 5_000;
-export const MAX_COMMAND_STATUS_WAIT_MS = 15_000;
+export const DEFAULT_COMMAND_STATUS_WAIT_MS = 30_000;
+export const MAX_COMMAND_STATUS_WAIT_MS = 60_000;
 export const DEFAULT_WORKER_POLL_MS = 15_000;
 export const MAX_WORKER_POLL_MS = 18_000;
 export const MAX_LIST_FILES_RESULTS = 200;
@@ -417,21 +418,29 @@ export const getCommandRequestSchema = z.object({
     .int()
     .min(0)
     .max(MAX_COMMAND_STATUS_WAIT_MS)
-    .optional()
-    .describe("Optional long-poll duration in milliseconds, from 0 through 15000."),
+    .default(DEFAULT_COMMAND_STATUS_WAIT_MS)
+    .describe(
+      "Maximum observation time in milliseconds, from 0 through 60000. Defaults to 30000. The call returns sooner when the command finishes or, when afterSequence is provided, output or status changes.",
+    ),
   afterSequence: z
     .number()
     .int()
     .min(0)
     .optional()
     .describe(
-      "Sequence returned by an earlier command result. When current, wait for output or status to change.",
+      "Sequence returned by an earlier command result. Provide it only when waiting for the next output or status change. Omit it to wait for completion or the observation deadline.",
     ),
 }).strict();
 
 export const getCommandJobSchema = getCommandRequestSchema.extend({
   type: z.literal("get_command"),
   requestId: z.string().uuid(),
+  waitMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_COMMAND_STATUS_WAIT_MS)
+    .optional(),
 });
 
 export const readCommandOutputRequestSchema = z.object({

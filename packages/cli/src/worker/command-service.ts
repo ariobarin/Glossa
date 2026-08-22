@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -40,6 +41,7 @@ export interface CommandSnapshot {
   commandId: string;
   status: CommandStatus;
   sequence: number;
+  elapsedMs: number;
   startedAt: string;
   finishedAt?: string;
   exitCode?: number | null;
@@ -91,7 +93,9 @@ interface CommandRecord {
   sequence: number;
   changeWaiters: Set<() => void>;
   startedAt: number;
+  startedMonotonicMs: number;
   finishedAt?: number;
+  finishedMonotonicMs?: number;
   exitCode?: number | null;
   signal?: NodeJS.Signals | null;
   stdout: CapturedStream;
@@ -556,6 +560,7 @@ export class CommandService {
       sequence: 0,
       changeWaiters: new Set(),
       startedAt: Date.now(),
+      startedMonotonicMs: performance.now(),
       stdout: emptyCapture(),
       stderr: emptyCapture(),
       stdoutScanTail: Buffer.alloc(0),
@@ -584,6 +589,7 @@ export class CommandService {
       if (record.timeout) clearTimeout(record.timeout);
       record.status = "failed";
       record.finishedAt = Date.now();
+      record.finishedMonotonicMs = performance.now();
       recordCommandOutput(record, "stderr", Buffer.from(error.message, "utf8"));
       markChanged(record);
       record.complete();
@@ -596,6 +602,7 @@ export class CommandService {
       record.exitCode = exitCode;
       record.signal = signal;
       record.status = record.requestedTerminal ?? (exitCode === 0 ? "succeeded" : "failed");
+      record.finishedMonotonicMs = performance.now();
       markChanged(record);
       record.complete();
       this.#scheduleDeletion(id);
@@ -636,7 +643,7 @@ export class CommandService {
     const record = this.#commands.get(commandId);
     if (!record) throw new WorkerError("command_not_found", "The command was not found.");
     if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > MAX_COMMAND_STATUS_WAIT_MS) {
-      throw new WorkerError("invalid_wait", "Status wait must be between 0 and 15 seconds.");
+      throw new WorkerError("invalid_wait", "Status wait must be between 0 and 60 seconds.");
     }
     if (
       afterSequence !== undefined &&
@@ -757,6 +764,13 @@ export class CommandService {
       commandId: record.id,
       status: record.status,
       sequence: record.sequence,
+      elapsedMs: Math.max(
+        0,
+        Math.floor(
+          (record.finishedMonotonicMs ?? performance.now()) -
+            record.startedMonotonicMs,
+        ),
+      ),
       startedAt: new Date(record.startedAt).toISOString(),
       stdout: output.stdout.content,
       stderr: output.stderr.content,
