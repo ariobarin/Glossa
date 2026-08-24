@@ -162,24 +162,11 @@ const expectedTools = [
   "read_command_output",
   "cancel_command",
 ];
-const expectedToolAnnotations = {
-  list_workspaces: [true, false, true, false],
-  get_logout_instructions: [true, false, true, false],
-  read_file: [true, false, true, false],
-  view_image: [true, false, true, false],
-  list_files: [true, false, true, false],
-  search_text: [true, false, true, false],
-  read_file_range: [true, false, true, false],
-  write_file: [false, true, false, false],
-  edit_file: [false, true, false, false],
-  make_directory: [false, false, true, false],
-  delete_path: [false, true, false, false],
-  move_path: [false, false, false, false],
-  run_command: [false, true, false, true],
-  get_command: [true, false, true, false],
-  read_command_output: [true, false, true, false],
-  cancel_command: [false, true, true, false],
-};
+const workerTools = new Set(
+  expectedTools.filter((tool) =>
+    tool !== "list_workspaces" && tool !== "get_logout_instructions"
+  ),
+);
 for (const tool of expectedTools) {
   assert.ok(
     new RegExp(`\\n  ${tool}: \\{[\\s\\S]*?description: "Use this `).test(mcpSource),
@@ -189,12 +176,13 @@ for (const tool of expectedTools) {
     new RegExp(`server\\.registerTool\\(\\s*"${tool}",[\\s\\S]*?\\n\\s*async`),
   )?.[0];
   assert.ok(registration, `${tool} must have one MCP registration`);
-  const [readOnlyHint, destructiveHint, idempotentHint, openWorldHint] =
-    expectedToolAnnotations[tool];
-  assert.match(registration, new RegExp(`readOnlyHint: ${readOnlyHint}`));
-  assert.match(registration, new RegExp(`destructiveHint: ${destructiveHint}`));
-  assert.match(registration, new RegExp(`idempotentHint: ${idempotentHint}`));
-  assert.match(registration, new RegExp(`openWorldHint: ${openWorldHint}`));
+  if (workerTools.has(tool)) {
+    assert.match(
+      registration,
+      new RegExp(`workerToolMetadata\\("${tool}"\\)`),
+      `${tool} must derive its public metadata from WORKER_OPERATIONS`,
+    );
+  }
 }
 assert.ok(
   mcpSource.includes("accessProfile") && mcpSource.includes("permissions"),

@@ -29,7 +29,9 @@ import {
   searchTextRequestSchema,
   viewImageRequestSchema,
   writeFileRequestSchema,
+  workerOperation,
   type WorkerJob,
+  type WorkerJobType,
   type WorkerResult,
 } from "@glossa/protocol";
 import type { RelayConfig } from "./config.js";
@@ -537,62 +539,57 @@ const MCP_TOOL_COPY = {
     description: "Use this only when the user asks to sign out of Glossa or switch accounts. It returns user-facing steps and a fallback logout URL; it does not require an online workspace, revoke credentials, open a browser, or sign the user out itself.",
   },
   read_file: {
-    title: "Read Workspace File",
     description: "Use this when the user needs the complete contents of one bounded UTF-8 file in the exposed workspace. It returns content and SHA-256 without changing the file. Content that appears to contain access credentials or authentication secrets is blocked instead of returned. Do not use it for directories or a bounded section of a large file; use read_file_range instead.",
   },
   view_image: {
-    title: "View Workspace Image",
     description: "Use this when visual inspection of an existing image in the exposed workspace is needed. It returns one bounded PNG, JPEG, or WebP file as native MCP image content plus MIME type, byte length, and SHA-256, without changing or rendering the file locally. It does not OCR or transform images. Image pixels and embedded metadata are opaque to Glossa's text secret detector, so do not use it on images that may contain Restricted Data.",
   },
   list_files: {
-    title: "List Workspace Files",
     description: "Use this to inspect a bounded directory structure in the exposed workspace without running a shell command. It does not follow links and supports recursive listing and cursor pagination. Do not use run_command for ordinary file discovery.",
   },
   search_text: {
-    title: "Search Workspace Text",
     description: "Use this to search bounded UTF-8 files in the exposed workspace without running a shell command. It supports literal or regex matching plus extension and root-relative include/exclude glob filters, and returns matching lines, relative paths, and scan statistics. Content results that appear to contain access credentials or authentication secrets are blocked. Prefer these structured controls over run_command/ripgrep when they can express the requested repository search.",
   },
   read_file_range: {
-    title: "Read Workspace File Range",
     description: "Use this when the user needs bounded complete lines from one UTF-8 file or read_file would be too broad. It returns continuation metadata and the full-file SHA-256 without changing the file, and blocks content that appears to contain access credentials or authentication secrets. Use read_file for the complete bounded file.",
   },
   write_file: {
-    title: "Create or Replace Workspace File",
     description: "Use this only when the user asked to create or completely replace a file and the selected workspace reports permissions.writeFiles true. Without expectedSha256 it creates a new UTF-8 file and fails if the path already exists; with expectedSha256 it replaces only that exact existing revision and fails if the file is missing or stale. It rejects content that appears to contain access credentials or authentication secrets. Do not use it for review, planning, or a precise change; use edit_file for targeted edits.",
   },
   edit_file: {
-    title: "Edit Workspace File",
     description: "Use this only when the user asked for a precise file change and the selected workspace reports permissions.writeFiles true. It applies exact, non-overlapping replacements and returns the new SHA-256 and a unified diff, but rejects edit text or results that appear to contain access credentials or authentication secrets. Each oldText must occur exactly once; pass expectedSha256 to reject concurrent changes. Do not use it for review or planning. Use write_file for a new file or complete replacement.",
   },
   make_directory: {
-    title: "Create Workspace Directory",
     description: "Use this only when the user asked to create a directory and the selected workspace reports permissions.writeFiles true. It creates a relative directory inside the exposed root without following links. Set recursive true only when the request also authorizes creating missing parents.",
   },
   delete_path: {
-    title: "Delete Workspace Path",
     description: "Use this only when the user explicitly asked to delete a file or directory and the selected workspace reports permissions.writeFiles true. It never deletes the exposed root and does not follow links. Non-empty directories require recursive true, which is destructive and must remain scoped to the user's request.",
   },
   move_path: {
-    title: "Move Workspace Path",
     description: "Use this only when the user asked to rename or move a file or directory and the selected workspace reports permissions.writeFiles true. Both paths must stay inside the exposed root, links are rejected, and the destination must not already exist.",
   },
   run_command: {
-    title: "Run Workspace Command",
     description: "Use this only when the user asked to run tests, builds, Git, or another local project command and the selected workspace reports accessProfile system and permissions.runCommands true. Do not use it for general web research, credential or environment inspection, bypassing file-tool boundaries, or work that structured file tools can perform. Commands run with the worker operating-system account's full permissions, inherited environment and credentials, and network access; they are not confined to the exposed root and may affect local or external systems. Inputs that appear to contain access credentials are rejected; if output appears to contain them, the worker suppresses the output and stops the command. Use waitMs 0 for longer commands, or 1500 to 2000 for checks expected to finish near one second. The default is 750 milliseconds.",
   },
   get_command: {
-    title: "Check Workspace Command",
     description: "Use this only after run_command returns a command handle. It returns current or final status and bounded captured output without starting another process. Pass afterSequence with waitMs to wait for output or status to change. When a truncation flag is true, use read_command_output instead of rerunning the command.",
   },
   read_command_output: {
-    title: "Read Workspace Command Output",
     description: "Use this only after run_command or get_command reports truncated stdout or stderr. Pass the workspaceId and commandId returned with the command. It reads one bounded retained byte range from one stream without rerunning the command. Follow nextOffset to continue. Output is transient, capped per stream, and deleted with the command record; retentionTruncated means bytes beyond that cap are unavailable.",
   },
   cancel_command: {
-    title: "Stop Workspace Command",
     description: "Use this only to stop a still-running process tree previously started by run_command. It terminates the process tree but does not undo filesystem, network, or other effects the command already caused.",
   },
 } as const;
+
+function workerToolMetadata(type: WorkerJobType) {
+  const { mcp } = workerOperation(type);
+  return {
+    title: mcp.title,
+    description: MCP_TOOL_COPY[type].description,
+    annotations: mcp.annotations,
+  };
+}
 
 const PRODUCT_CONTEXT = {
   name: "Glossa",
@@ -975,16 +972,10 @@ function registerTools(
   server.registerTool(
     "read_file",
     {
-      ...MCP_TOOL_COPY.read_file,
+      ...workerToolMetadata("read_file"),
       inputSchema: readFileInputSchema,
       outputSchema: readFileOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path }) => {
       const deviceId = workspaceId;
@@ -1007,16 +998,10 @@ function registerTools(
   server.registerTool(
     "view_image",
     {
-      ...MCP_TOOL_COPY.view_image,
+      ...workerToolMetadata("view_image"),
       inputSchema: viewImageInputSchema,
       outputSchema: viewImageOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path }) => {
       const deviceId = workspaceId;
@@ -1039,16 +1024,10 @@ function registerTools(
   server.registerTool(
     "list_files",
     {
-      ...MCP_TOOL_COPY.list_files,
+      ...workerToolMetadata("list_files"),
       inputSchema: listFilesInputSchema,
       outputSchema: listFilesOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path, recursive, cursor, limit }) => {
       const deviceId = workspaceId;
@@ -1075,16 +1054,10 @@ function registerTools(
   server.registerTool(
     "search_text",
     {
-      ...MCP_TOOL_COPY.search_text,
+      ...workerToolMetadata("search_text"),
       inputSchema: searchTextInputSchema,
       outputSchema: searchTextOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, query, path, matchMode, caseSensitive, maxResults, extensions, includeGlobs, excludeGlobs }) => {
       const deviceId = workspaceId;
@@ -1115,16 +1088,10 @@ function registerTools(
   server.registerTool(
     "read_file_range",
     {
-      ...MCP_TOOL_COPY.read_file_range,
+      ...workerToolMetadata("read_file_range"),
       inputSchema: readFileRangeInputSchema,
       outputSchema: readFileRangeOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path, startLine, lineCount }) => {
       const deviceId = workspaceId;
@@ -1150,16 +1117,10 @@ function registerTools(
   server.registerTool(
     "write_file",
     {
-      ...MCP_TOOL_COPY.write_file,
+      ...workerToolMetadata("write_file"),
       inputSchema: writeFileInputSchema,
       outputSchema: writeFileOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path, content, expectedSha256 }) => {
       const deviceId = workspaceId;
@@ -1191,16 +1152,10 @@ function registerTools(
   server.registerTool(
     "edit_file",
     {
-      ...MCP_TOOL_COPY.edit_file,
+      ...workerToolMetadata("edit_file"),
       inputSchema: editFileInputSchema,
       outputSchema: editFileOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path, edits, expectedSha256 }) => {
       const deviceId = workspaceId;
@@ -1232,16 +1187,10 @@ function registerTools(
   server.registerTool(
     "make_directory",
     {
-      ...MCP_TOOL_COPY.make_directory,
+      ...workerToolMetadata("make_directory"),
       inputSchema: makeDirectoryInputSchema,
       outputSchema: makeDirectoryOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path, recursive }) => {
       const deviceId = workspaceId;
@@ -1265,16 +1214,10 @@ function registerTools(
   server.registerTool(
     "delete_path",
     {
-      ...MCP_TOOL_COPY.delete_path,
+      ...workerToolMetadata("delete_path"),
       inputSchema: deletePathInputSchema,
       outputSchema: deletePathOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, path, recursive }) => {
       const deviceId = workspaceId;
@@ -1298,16 +1241,10 @@ function registerTools(
   server.registerTool(
     "move_path",
     {
-      ...MCP_TOOL_COPY.move_path,
+      ...workerToolMetadata("move_path"),
       inputSchema: movePathInputSchema,
       outputSchema: movePathOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, source, destination }) => {
       const deviceId = workspaceId;
@@ -1331,16 +1268,10 @@ function registerTools(
   server.registerTool(
     "run_command",
     {
-      ...MCP_TOOL_COPY.run_command,
+      ...workerToolMetadata("run_command"),
       inputSchema: runCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
     },
     async ({ workspaceId, command, stdin, timeoutMs, waitMs }) => {
       const deviceId = workspaceId;
@@ -1380,16 +1311,10 @@ function registerTools(
   server.registerTool(
     "get_command",
     {
-      ...MCP_TOOL_COPY.get_command,
+      ...workerToolMetadata("get_command"),
       inputSchema: getCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, commandId, waitMs, afterSequence }) => {
       const deviceId = workspaceId;
@@ -1418,16 +1343,10 @@ function registerTools(
   server.registerTool(
     "read_command_output",
     {
-      ...MCP_TOOL_COPY.read_command_output,
+      ...workerToolMetadata("read_command_output"),
       inputSchema: readCommandOutputInputSchema,
       outputSchema: commandOutputRangeSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, commandId, stream, offset, maxBytes }) => {
       const deviceId = workspaceId;
@@ -1456,16 +1375,10 @@ function registerTools(
   server.registerTool(
     "cancel_command",
     {
-      ...MCP_TOOL_COPY.cancel_command,
+      ...workerToolMetadata("cancel_command"),
       inputSchema: cancelCommandInputSchema,
       outputSchema: commandOutputSchema,
       _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
     },
     async ({ workspaceId, commandId }) => {
       const deviceId = workspaceId;
