@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   MAX_TEXT_BYTES,
+  WORKER_JOB_TYPES,
   MAX_WORKER_POLL_MS,
   deviceNameSchema,
   workerAccessProfileSchema,
@@ -42,22 +43,7 @@ const renameSchema = z.object({ name: deviceNameSchema }).strict();
 const pairingRedeemSchema = z.object({ code: z.string() }).strict();
 const deviceIdSchema = z.string().uuid();
 const workerIdSchema = z.string().uuid();
-const workerJobTypeSchema = z.enum([
-  "read_file",
-  "view_image",
-  "list_files",
-  "search_text",
-  "read_file_range",
-  "write_file",
-  "edit_file",
-  "make_directory",
-  "delete_path",
-  "move_path",
-  "run_command",
-  "get_command",
-  "read_command_output",
-  "cancel_command",
-]);
+const workerJobTypeSchema = z.enum(WORKER_JOB_TYPES);
 const registerSchema = z.object({
   workerId: workerIdSchema,
   accessProfile: workerAccessProfileSchema,
@@ -79,7 +65,11 @@ const registerSchema = z.object({
 const pollSchema = z.object({
   workerId: workerIdSchema,
   generation: z.string().uuid(),
-  acceptedTypes: z.array(workerJobTypeSchema).min(1).max(14).optional(),
+  acceptedTypes: z
+    .array(workerJobTypeSchema)
+    .min(1)
+    .max(WORKER_JOB_TYPES.length)
+    .optional(),
   waitMs: z.number().int().positive().max(MAX_WORKER_POLL_MS).optional(),
 }).strict();
 const workerResultRequestSchema = z.object({
