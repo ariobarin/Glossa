@@ -93,6 +93,16 @@ class RelayResponseError extends Error {
   }
 }
 
+async function drainResponseBody(response: Response): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  try {
+    while (!(await reader.read()).done) {}
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function requiredWorkerToken(value: unknown): string {
   if (typeof value !== "string" || !WORKER_TOKEN_PATTERN.test(value)) {
     throw new Error("The relay returned an invalid worker credential.");
@@ -386,7 +396,7 @@ export class RemoteWorker {
           "/device/heartbeat",
           { workerId: this.#workerId, generation: session.generation },
           session.workerToken,
-        ).catch(() => {});
+        ).then(drainResponseBody).catch(() => {});
       }, this.#heartbeatMs);
       heartbeat.unref();
     };
@@ -543,11 +553,12 @@ export class RemoteWorker {
   ): Promise<void> {
     const result: WorkerResult = await this.#worker.handle(job);
     try {
-      await this.#post(
+      const response = await this.#post(
         "/device/result",
         { workerId: this.#workerId, result },
         session.workerToken,
       );
+      await drainResponseBody(response);
     } catch (error) {
       if (error instanceof RelayResponseError && error.status === 410) return;
       throw error;
@@ -557,7 +568,7 @@ export class RemoteWorker {
   async #unregister(session?: RegisteredSession): Promise<void> {
     if (!session) return;
     try {
-      await this.#fetcher(new URL("/device/unregister", this.#origin), {
+      const response = await this.#fetcher(new URL("/device/unregister", this.#origin), {
         method: "POST",
         headers: {
           authorization: `Worker ${session.workerToken}`,
@@ -566,6 +577,7 @@ export class RemoteWorker {
         body: JSON.stringify({ workerId: this.#workerId }),
         signal: AbortSignal.timeout(3_000),
       });
+      await drainResponseBody(response);
     } catch {
       // Liveness expiry removes workers after abrupt or offline shutdowns.
     }
@@ -589,8 +601,14 @@ export class RemoteWorker {
       body: JSON.stringify(body),
       signal,
     });
-    if (response.status === 401 && !workerToken) throw new DeviceRejectedError();
-    if (!response.ok) throw new RelayResponseError(response.status);
+    if (response.status === 401 && !workerToken) {
+      await drainResponseBody(response).catch(() => undefined);
+      throw new DeviceRejectedError();
+    }
+    if (!response.ok) {
+      await drainResponseBody(response).catch(() => undefined);
+      throw new RelayResponseError(response.status);
+    }
     return response;
   }
 }
