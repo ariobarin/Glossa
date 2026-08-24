@@ -133,6 +133,10 @@ test("advertises and verifies the selected worker access profile", async () => {
 test("rejects a relay that does not support the current worker protocol", async () => {
   const controller = new AbortController();
   const statuses: RemoteWorkerStatus[] = [];
+  const rejectedResponse = Response.json(
+    { error: "invalid_request" },
+    { status: 400 },
+  );
 
   await assert.rejects(
     new RemoteWorker({
@@ -140,8 +144,7 @@ test("rejects a relay that does not support the current worker protocol", async 
       deviceToken: "device-token",
       worker: { handle: async () => ({ requestId: "unused", ok: true }) },
       signal: controller.signal,
-      fetcher: async () =>
-        Response.json({ error: "invalid_request" }, { status: 400 }),
+      fetcher: async () => rejectedResponse,
       onStatus: (status) => statuses.push(status),
     }).run(),
     RelayProtocolUnsupportedError,
@@ -151,6 +154,7 @@ test("rejects a relay that does not support the current worker protocol", async 
     "connecting",
     "disconnected",
   ]);
+  assert.equal(rejectedResponse.bodyUsed, true);
 });
 
 
@@ -285,6 +289,7 @@ test("uses a worker credential for current-protocol hot requests", async () => {
   });
   const paths: string[] = [];
   let delivered = false;
+  let resultResponse: Response | undefined;
 
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -320,7 +325,8 @@ test("uses a worker credential for current-protocol hot requests", async () => {
     }
     if (url.pathname === "/device/result") {
       controller.abort();
-      return Response.json({ accepted: true }, { status: 202 });
+      resultResponse = Response.json({ accepted: true }, { status: 202 });
+      return resultResponse;
     }
     if (url.pathname === "/device/unregister") {
       return new Response(null, { status: 204 });
@@ -343,6 +349,7 @@ test("uses a worker credential for current-protocol hot requests", async () => {
   }).run();
 
   assert.equal(paths.includes("/device/heartbeat"), true);
+  assert.equal(resultResponse?.bodyUsed, true);
 });
 
 test("handles cancellation while a command status wait is still running", async () => {
