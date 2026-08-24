@@ -3,6 +3,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
+import { WORKER_JOB_TYPES, WORKER_OPERATIONS } from "@glossa/protocol";
 import { loadConfig } from "./config.js";
 import {
   createMcpServer,
@@ -12,63 +13,35 @@ import {
 import { RouterState } from "./router-state.js";
 
 const expectedTools = [
-  "cancel_command",
-  "delete_path",
-  "edit_file",
-  "get_command",
+  ...WORKER_JOB_TYPES,
   "get_logout_instructions",
-  "list_files",
   "list_workspaces",
-  "make_directory",
-  "move_path",
-  "read_command_output",
-  "read_file",
-  "read_file_range",
-  "run_command",
-  "search_text",
-  "view_image",
-  "write_file",
-];
+].sort();
 const expectedToolTitles: Record<string, string> = {
-  cancel_command: "Stop Workspace Command",
-  delete_path: "Delete Workspace Path",
-  edit_file: "Edit Workspace File",
-  get_command: "Check Workspace Command",
   get_logout_instructions: "Get Glossa Sign-Out Steps",
-  list_files: "List Workspace Files",
   list_workspaces: "Find Glossa Workspaces",
-  make_directory: "Create Workspace Directory",
-  move_path: "Move Workspace Path",
-  read_command_output: "Read Workspace Command Output",
-  read_file: "Read Workspace File",
-  read_file_range: "Read Workspace File Range",
-  run_command: "Run Workspace Command",
-  search_text: "Search Workspace Text",
-  view_image: "View Workspace Image",
-  write_file: "Create or Replace Workspace File",
+  ...Object.fromEntries(
+    WORKER_JOB_TYPES.map((type) => [type, WORKER_OPERATIONS[type].mcp.title]),
+  ),
 };
-const expectedToolAnnotations: Record<string, {
+type ToolAnnotations = {
   readOnlyHint: boolean;
   destructiveHint: boolean;
   idempotentHint: boolean;
   openWorldHint: boolean;
-}> = {
-  cancel_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  delete_path: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  edit_file: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  get_command: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  get_logout_instructions: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  list_files: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  list_workspaces: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  make_directory: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  move_path: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  read_command_output: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  read_file: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  read_file_range: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  run_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  search_text: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  view_image: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  write_file: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+};
+const readOnlyToolAnnotations: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+const expectedToolAnnotations: Record<string, ToolAnnotations> = {
+  get_logout_instructions: readOnlyToolAnnotations,
+  list_workspaces: readOnlyToolAnnotations,
+  ...Object.fromEntries(
+    WORKER_JOB_TYPES.map((type) => [type, WORKER_OPERATIONS[type].mcp.annotations]),
+  ),
 };
 const accountId = "00000000-0000-4000-8000-000000000001";
 const product = {
