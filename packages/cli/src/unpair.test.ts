@@ -66,3 +66,24 @@ test("revokes a credential at its stored relay before deleting it", async () => 
   });
   assert.deepEqual(calls, ["revoke", "delete"]);
 });
+
+test("removes a local credential when its relay is unavailable", async () => {
+  const calls: string[] = [];
+  await unpairComputer({
+    loadDeviceCredential: async () => device,
+    revokePairedDevice: async () => {
+      calls.push("revoke");
+      throw new Error("fetch failed");
+    },
+    deleteDeviceCredential: async () => {
+      calls.push("delete");
+    },
+    log: (message) => calls.push(message),
+  });
+
+  assert.deepEqual(calls, [
+    "revoke",
+    "delete",
+    `Removed this computer's local Glossa pairing, but could not confirm revocation at ${device.relayOrigin}: fetch failed. Revoke it from that relay's device panel if it becomes available.`,
+  ]);
+});
