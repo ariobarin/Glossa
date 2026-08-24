@@ -84,11 +84,25 @@ test("Activity calls retain safe metadata but not payload bodies", () => {
     stdin: "private stdin body",
     timeoutMs: 30_000,
   });
+  const restricted = `sk-proj-${"A".repeat(32)}`;
+  const searchCall = activityCallFromJob({
+    type: "search_text",
+    requestId: "00000000-0000-4000-8000-000000000005",
+    query: "needle",
+    includeGlobs: [`src/${restricted}/**`],
+    timeoutMs: 8_000,
+  });
 
-  const serialized = JSON.stringify([writeCall, editCall, commandCall]);
+  const serialized = JSON.stringify([writeCall, editCall, commandCall, searchCall]);
   assert.doesNotMatch(serialized, /sensitive file body|private old text|private new text|private stdin body/);
   assert.match(serialized, /full-target\.ts/);
   assert.match(serialized, /contentBytes|editBytes|stdinBytes/);
+  assert.doesNotMatch(serialized, new RegExp(restricted));
+  assert.deepEqual(searchCall, {
+    type: "search_text",
+    query: "[restricted input blocked]",
+    timeoutMs: 8_000,
+  });
 
   const writeFields = activityCallDetailFields(writeCall);
   const editFields = activityCallDetailFields(editCall);

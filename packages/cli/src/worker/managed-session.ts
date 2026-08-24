@@ -5,6 +5,10 @@ import {
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
+import {
+  activityEventJobFromJob,
+  type ActivityEventJob,
+} from "../activity-call.js";
 import { announceConnectHint, connectHintStore, shouldShowConnectHint } from "../first-run.js";
 import { observeMcpContractVersion } from "../update-state.js";
 import {
@@ -41,11 +45,11 @@ export type ManagedSessionEvent =
       accessProfile: WorkerAccessProfile;
     }
   | { type: "status"; status: RemoteWorkerStatus }
-  | { type: "activity"; phase: "started"; job: WorkerJob }
+  | { type: "activity"; phase: "started"; job: ActivityEventJob }
   | {
       type: "activity";
       phase: "returned";
-      job: WorkerJob;
+      job: ActivityEventJob;
       ok: boolean;
       output?: ManagedActivityOutput;
     }
@@ -318,74 +322,13 @@ function activityOutput(job: WorkerJob, result: WorkerResult): ManagedActivityOu
   return activitySuccess("Completed successfully.");
 }
 
-function activitySafeJob(job: WorkerJob): WorkerJob {
-  if (!containsRestrictedAuthenticationData(job)) return job;
-
-  switch (job.type) {
-    case "read_file":
-    case "view_image":
-      return { ...job, path: "[restricted input blocked]" };
-    case "list_files":
-      return {
-        ...job,
-        path: "[restricted input blocked]",
-        cursor: undefined,
-      };
-    case "search_text":
-      return {
-        ...job,
-        query: "[restricted input blocked]",
-        path: undefined,
-        extensions: undefined,
-      };
-    case "read_file_range":
-      return { ...job, path: "[restricted input blocked]" };
-    case "write_file":
-      return {
-        ...job,
-        path: "[restricted input blocked]",
-        content: "[restricted input blocked]",
-      };
-    case "edit_file":
-      return {
-        ...job,
-        path: "[restricted input blocked]",
-        edits: [{
-          oldText: "[restricted input blocked]",
-          newText: "",
-        }],
-      };
-    case "make_directory":
-    case "delete_path":
-      return { ...job, path: "[restricted input blocked]" };
-    case "move_path":
-      return {
-        ...job,
-        source: "[restricted input blocked]",
-        destination: "[restricted input blocked]",
-      };
-    case "run_command":
-      return {
-        type: "run_command",
-        requestId: job.requestId,
-        argv: ["[restricted input blocked]"],
-        timeoutMs: job.timeoutMs,
-        ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
-      };
-    case "get_command":
-    case "read_command_output":
-    case "cancel_command":
-      return job;
-  }
-}
-
 export function visibleWorker(
   worker: WorkerHandler,
   options: ManagedSessionOptions,
 ): WorkerHandler {
   return {
     async handle(job: WorkerJob): Promise<WorkerResult> {
-      const visibleJob = activitySafeJob(job);
+      const visibleJob = activityEventJobFromJob(job);
       options.onEvent?.({ type: "activity", phase: "started", job: visibleJob });
       try {
         const result = await worker.handle(job);
