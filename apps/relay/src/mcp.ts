@@ -7,28 +7,37 @@ import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   cancelCommandRequestSchema,
+  commandOutputRangeResultSchema as workerCommandOutputRangeSchema,
+  commandResultSchema as workerCommandOutputSchema,
   containsRestrictedAuthenticationData,
   deletePathRequestSchema,
+  deletePathResultSchema as deletePathOutputSchema,
   editFileRequestSchema,
+  editFileResultSchema as editFileOutputSchema,
   getCommandRequestSchema,
-  MAX_IMAGE_BYTES,
-  MAX_LIST_FILES_RESULTS,
-  MAX_READ_FILE_RANGE_BYTES,
-  MAX_SEARCH_TEXT_RESULTS,
-  MAX_SEARCH_TEXT_SNIPPET_CHARS,
+  listFilesResultSchema as listFilesOutputSchema,
+  makeDirectoryResultSchema as makeDirectoryOutputSchema,
   MAX_STRUCTURED_READ_TIMEOUT_MS,
+  movePathResultSchema as movePathOutputSchema,
   listFilesRequestSchema,
   makeDirectoryRequestSchema,
   movePathRequestSchema,
   readCommandOutputRequestSchema,
   readFileRangeRequestSchema,
+  readFileRangeResultSchema as readFileRangeOutputSchema,
   readFileRequestSchema,
+  readFileResultSchema as readFileOutputSchema,
   RESTRICTED_DATA_ERROR_CODE,
   RESTRICTED_DATA_ERROR_MESSAGE,
   runCommandRequestSchema,
   searchTextRequestSchema,
+  searchTextResultSchema as searchTextOutputSchema,
+  viewImageMetadataSchema as viewImageOutputSchema,
   viewImageRequestSchema,
+  viewImageResultSchema as workerViewImageOutputSchema,
+  WORKER_ERROR_MESSAGES,
   writeFileRequestSchema,
+  writeFileResultSchema as writeFileOutputSchema,
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
@@ -125,10 +134,6 @@ const readCommandOutputInputSchema = readCommandOutputRequestSchema.extend(
   workspaceIdSchema.shape,
 );
 const cancelCommandInputSchema = cancelCommandRequestSchema.extend(workspaceIdSchema.shape);
-const sha256Schema = z
-  .string()
-  .regex(/^[a-f0-9]{64}$/)
-  .describe("Lowercase SHA-256 digest of the file content.");
 const listWorkspacesOutputSchema = z
   .object({
     product: z
@@ -195,326 +200,12 @@ const logoutOutputSchema = z
       .describe("Account-switching instructions to present to the user."),
   })
   .strict();
-const readFileOutputSchema = z
-  .object({
-    content: z.string().describe("Complete UTF-8 file content."),
-    sha256: sha256Schema,
-    bytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("UTF-8 byte length of content."),
-  })
-  .strict();
-const imageMimeTypeSchema = z.enum(["image/png", "image/jpeg", "image/webp"]);
-const viewImageOutputSchema = z
-  .object({
-    mimeType: imageMimeTypeSchema.describe("Validated image media type."),
-    sha256: sha256Schema,
-    bytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(MAX_IMAGE_BYTES)
-      .describe("Compressed image byte length."),
-  })
-  .strict();
-const workerViewImageOutputSchema = viewImageOutputSchema
-  .extend({
-    data: z
-      .string()
-      .max(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 4)
-      .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)
-      .describe("Base64-encoded image bytes returned only for MCP image content."),
-  })
-  .superRefine((value, context) => {
-    if (Buffer.byteLength(value.data, "base64") !== value.bytes) {
-      context.addIssue({
-        code: "custom",
-        message: "Image byte metadata does not match the encoded data.",
-        input: value.data,
-      });
-    }
-  });
-const listFilesOutputSchema = z
-  .object({
-    entries: z
-      .array(
-        z
-          .object({
-            path: z
-              .string()
-              .max(4096)
-              .describe("Path relative to the exposed root."),
-            type: z
-              .enum(["file", "directory"])
-              .describe("Filesystem entry type."),
-            bytes: z
-              .number()
-              .int()
-              .nonnegative()
-              .optional()
-              .describe("File size in bytes. Omitted for directories."),
-          })
-          .strict(),
-      )
-      .max(MAX_LIST_FILES_RESULTS)
-      .describe("Bounded entries in deterministic path order."),
-    truncated: z
-      .boolean()
-      .describe("Whether additional entries are available."),
-    scannedEntries: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Filesystem entries examined during this request."),
-    skippedLinks: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Symlink or junction entries omitted from the result."),
-    nextCursor: z
-      .string()
-      .max(4096)
-      .optional()
-      .describe("Pass unchanged as cursor to continue a prior list_files result."),
-  })
-  .strict();
-
-const searchTextOutputSchema = z
-  .object({
-    matches: z
-      .array(
-        z
-          .object({
-            path: z
-              .string()
-              .max(4096)
-              .describe("Matching file relative to the exposed root."),
-            line: z
-              .number()
-              .int()
-              .positive()
-              .describe("One-based matching line number."),
-            column: z
-              .number()
-              .int()
-              .positive()
-              .describe("One-based column of the first match on the line."),
-            text: z
-              .string()
-              .max(MAX_SEARCH_TEXT_SNIPPET_CHARS)
-              .describe("Bounded matching line snippet."),
-            lineTruncated: z
-              .boolean()
-              .describe("Whether the matching line was shortened."),
-          })
-          .strict(),
-      )
-      .max(MAX_SEARCH_TEXT_RESULTS)
-      .describe("Matching lines in deterministic path and line order."),
-    truncated: z
-      .boolean()
-      .describe("Whether result or scan limits stopped the search."),
-    scannedFiles: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("UTF-8 files searched."),
-    scannedBytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Total UTF-8 file bytes searched."),
-    skippedFiles: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Oversized, non-text, or unavailable files skipped."),
-    skippedLinks: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Symlink or junction entries skipped."),
-  })
-  .strict();
-
-const readFileRangeOutputSchema = z
-  .object({
-    content: z
-      .string()
-      .refine(
-        (value) => Buffer.byteLength(value, "utf8") <= MAX_READ_FILE_RANGE_BYTES,
-      )
-      .describe("Complete lines returned for the requested range."),
-    startLine: z
-      .number()
-      .int()
-      .positive()
-      .describe("One-based first requested line."),
-    endLine: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("One-based final returned line, or 0 for an empty file."),
-    totalLines: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Total complete lines in the file."),
-    sha256: sha256Schema,
-    bytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Full UTF-8 file size in bytes."),
-    contentBytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("UTF-8 byte size of returned content."),
-    nextLine: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe("Next one-based line when more file content remains."),
-  })
-  .strict();
-
-const writeFileOutputSchema = z
-  .object({
-    sha256: sha256Schema,
-    bytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("UTF-8 byte length written."),
-  })
-  .strict();
-const editFileOutputSchema = writeFileOutputSchema
-  .extend({
-    replacements: z
-      .number()
-      .int()
-      .positive()
-      .describe("Number of exact replacements applied."),
-    diff: z
-      .string()
-      .describe("Unified diff of the affected lines after the edit."),
-    diffTruncated: z
-      .boolean()
-      .describe("Whether the returned diff exceeded its display limit."),
-  })
-  .strict();
-const makeDirectoryOutputSchema = z
-  .object({
-    created: z
-      .boolean()
-      .describe("Whether a new directory was created. False when it already existed."),
-  })
-  .strict();
-const deletePathOutputSchema = z
-  .object({
-    deletedType: z
-      .enum(["file", "directory"])
-      .describe("Type of workspace path deleted."),
-  })
-  .strict();
-const movePathOutputSchema = z
-  .object({
-    movedType: z
-      .enum(["file", "directory"])
-      .describe("Type of workspace path moved."),
-  })
-  .strict();
-const workerCommandOutputSchema = z
-  .object({
-    commandId: z
-      .string()
-      .uuid()
-      .describe("Identifier for get_command, read_command_output, and cancel_command."),
-    status: z
-      .enum(["running", "succeeded", "failed", "canceled", "timed_out"])
-      .describe("Current command lifecycle state."),
-    sequence: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Monotonic output and status revision for incremental get_command calls."),
-    exitCode: z
-      .number()
-      .int()
-      .nullable()
-      .optional()
-      .describe("Process exit code when available."),
-    signal: z
-      .string()
-      .nullable()
-      .optional()
-      .describe("Termination signal when available."),
-    stdout: z
-      .string()
-      .optional()
-      .describe("Captured standard output so far, including while the command is running."),
-    stderr: z
-      .string()
-      .optional()
-      .describe("Captured standard error so far, including while the command is running."),
-    stdoutTruncated: z
-      .boolean()
-      .optional()
-      .describe("Whether standard output exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use read_command_output to inspect retained omitted bytes without rerunning the command."),
-    stderrTruncated: z
-      .boolean()
-      .optional()
-      .describe("Whether standard error exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use read_command_output to inspect retained omitted bytes without rerunning the command."),
-  })
-  .strip();
 const commandOutputSchema = workerCommandOutputSchema.extend({
   workspaceId: z
     .string()
     .uuid()
     .describe("Online Glossa workspace identifier returned for restart-safe command follow-ups."),
 });
-const workerCommandOutputRangeSchema = z
-  .object({
-    commandId: z.string().uuid().describe("Command whose retained output was read."),
-    stream: z.enum(["stdout", "stderr"]).describe("Output stream read independently."),
-    status: z
-      .enum(["running", "succeeded", "failed", "canceled", "timed_out"])
-      .describe("Current command lifecycle state."),
-    offset: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Actual zero-based retained byte offset of content."),
-    content: z.string().describe("Bounded UTF-8 rendering of retained command output."),
-    nextOffset: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe("Next retained byte offset when more of this stream is currently available."),
-    retainedBytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Stream bytes retained transiently for range retrieval."),
-    totalBytes: z
-      .number()
-      .int()
-      .nonnegative()
-      .describe("Total stream bytes observed, including bytes beyond the retention cap."),
-    retentionTruncated: z
-      .boolean()
-      .describe("Whether the stream exceeded the transient retention cap."),
-    complete: z
-      .boolean()
-      .describe("Whether the command has reached a terminal state."),
-  })
-  .strict();
 const commandOutputRangeSchema = workerCommandOutputRangeSchema.extend({
   workspaceId: z
     .string()
@@ -629,58 +320,6 @@ function officialDocumentationUrl(publicOrigin: string): string {
     : SELF_HOSTING_DOCS_URL;
 }
 
-const safeWorkerMessages: Record<string, string> = {
-  invalid_path: "The requested path is invalid.",
-  absolute_path: "Absolute paths are not allowed.",
-  path_traversal: "Parent path traversal is not allowed.",
-  path_not_found: "The requested path does not exist.",
-  parent_not_found: "The destination directory does not exist.",
-  path_exists: "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
-  path_escape: "The requested path escapes the exposed root.",
-  linked_path: "Symlink and junction paths are not allowed.",
-  not_directory: "The requested path is not a directory.",
-  not_file: "The requested path is not a file.",
-  file_too_large: "The request exceeds the text size limit.",
-  image_too_large: "The image exceeds the 4 MiB image limit.",
-  unsupported_image: "Only PNG, JPEG, and WebP images are supported.",
-  file_changed: "The file changed while it was being read.",
-  not_text: "The file is not valid UTF-8 text.",
-  scan_limit: "The repository scan limit was reached. Narrow the requested path.",
-  search_byte_limit: "The repository search byte limit was reached. Narrow the requested path.",
-  line_out_of_range: "The requested line is outside the file.",
-  line_too_large: "The requested line exceeds the ranged-read limit.",
-  scan_timeout: "The structured repository operation exceeded its local deadline.",
-  stale_revision: "The file revision has changed.",
-  edit_not_found: "The edit target was not found.",
-  edit_ambiguous: "The edit target occurs more than once.",
-  edit_overlap: "The requested edits overlap.",
-  unsafe_temporary_file: "The atomic write could not be completed safely.",
-  destination_exists: "The destination already exists.",
-  directory_not_empty: "The directory is not empty. Set recursive to true only when the user authorized deleting its contents.",
-  root_operation_refused: "The exposed workspace root cannot be deleted or moved.",
-  unsupported_path_type: "Only regular files and directories are supported by this operation.",
-  invalid_destination: "A directory cannot be moved inside itself.",
-  [RESTRICTED_DATA_ERROR_CODE]: RESTRICTED_DATA_ERROR_MESSAGE,
-  write_access_disabled: "This workspace does not allow file writes. Do not retry; ask the user to restart with workspace access only if their request requires changes.",
-  command_access_disabled: "This workspace does not allow commands. Do not retry; ask the user to restart with system access only if their request requires a local command.",
-  command_busy: "Another command is already running in this workspace.",
-  invalid_command: "The command request is invalid.",
-  invalid_timeout: "The command timeout is invalid.",
-  invalid_wait: "The command status wait is invalid.",
-  invalid_sequence: "The command progress sequence is invalid.",
-  invalid_output_stream: "The command output stream must be stdout or stderr.",
-  invalid_output_offset: "The command output offset is invalid.",
-  invalid_output_range: "The command output range is invalid.",
-  output_offset_out_of_range: "The command output offset exceeds the retained stream length.",
-  command_not_found: "The command was not found.",
-  command_spawn_failed: "The command could not be started.",
-  windows_command_shim: "Windows .cmd and .bat command shims must be run through shellCommand with the explicit shim filename.",
-  worker_failure: "The local worker operation failed.",
-  invalid_limit: "The requested result limit is invalid.",
-  invalid_search: "The search text is invalid.",
-  invalid_range: "The requested file range is invalid.",
-};
-
 const MAX_MIRRORED_STRUCTURED_RESULT_BYTES = 16 * 1024;
 
 function structuredResult(value: Record<string, unknown>) {
@@ -771,7 +410,7 @@ function workerError(result: WorkerResult) {
   const code = result.error?.code ?? "worker_failure";
   return errorResult(
     code,
-    safeWorkerMessages[code] ?? "The local worker operation failed.",
+    WORKER_ERROR_MESSAGES[code] ?? "The local worker operation failed.",
   );
 }
 
