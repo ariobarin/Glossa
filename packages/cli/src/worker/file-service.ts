@@ -253,6 +253,17 @@ type ReadFileBytes = (
 ) => Promise<Buffer>;
 type LstatPath = (target: string) => Promise<Stats>;
 
+type DiscoveredPathType = "directory" | "file";
+type InspectedDiscoveredPath =
+  | { kind: "entry"; type: DiscoveredPathType; stat?: Stats }
+  | { kind: "linked" }
+  | { kind: "unavailable" }
+  | { kind: "unsupported" };
+type ResolvedDiscoveredPath =
+  | { kind: "resolved"; target: string }
+  | { kind: "linked" }
+  | { kind: "unavailable" };
+
 interface FileServiceDependencies {
   now?: () => number;
   beforeDeadline?: DeadlineRunner;
@@ -658,6 +669,56 @@ export class FileService {
     }
   }
 
+  async #inspectDiscoveredPath(
+    target: string,
+    deadlineAt: number,
+    child?: Dirent,
+    requireStat = false,
+  ): Promise<InspectedDiscoveredPath> {
+    if (child && this.#trustDirectoryEntryTypes && !requireStat) {
+      if (child.isSymbolicLink()) return { kind: "linked" };
+      if (child.isDirectory()) return { kind: "entry", type: "directory" };
+      if (child.isFile()) return { kind: "entry", type: "file" };
+    }
+    let targetStat: Stats;
+    try {
+      targetStat = await this.#withinDeadline(
+        this.#lstatPath(target),
+        deadlineAt,
+      );
+    } catch (error) {
+      if (isUnavailableFileError(error)) return { kind: "unavailable" };
+      throw error;
+    }
+    if (targetStat.isSymbolicLink()) return { kind: "linked" };
+    if (targetStat.isDirectory()) {
+      return { kind: "entry", type: "directory", stat: targetStat };
+    }
+    if (targetStat.isFile()) {
+      return { kind: "entry", type: "file", stat: targetStat };
+    }
+    return { kind: "unsupported" };
+  }
+
+  async #resolveDiscoveredPath(
+    target: string,
+    deadlineAt: number,
+  ): Promise<ResolvedDiscoveredPath> {
+    try {
+      return {
+        kind: "resolved",
+        target: await this.#withinDeadline(
+          this.policy.resolveDiscoveredExisting(target),
+          deadlineAt,
+        ),
+      };
+    } catch (error) {
+      if (isLinkedPathError(error)) return { kind: "linked" };
+      if (isUnavailableDiscoveredPathError(error)) return { kind: "unavailable" };
+      throw error;
+    }
+  }
+
   async #readDirectoryBounded(
     directory: string,
     deadlineAt: number,
@@ -839,21 +900,18 @@ export class FileService {
           }
           scannedEntries += 1;
           const target = path.join(directory, child.name);
-          let childStat;
-          try {
-            childStat = await this.#withinDeadline(
-              this.#lstatPath(target),
-              deadlineAt,
-            );
-          } catch (error) {
-            if (isUnavailableFileError(error)) continue;
-            throw error;
-          }
-          if (childStat.isSymbolicLink()) {
+          const inspected = await this.#inspectDiscoveredPath(
+            target,
+            deadlineAt,
+            child,
+            true,
+          );
+          if (inspected.kind === "unavailable") continue;
+          if (inspected.kind === "linked") {
             skippedLinks += 1;
             continue;
           }
-          if (childStat.isFile() || childStat.isDirectory()) return true;
+          if (inspected.kind === "entry") return true;
         }
       } finally {
         await closeDirectory(handle);
@@ -864,54 +922,50 @@ export class FileService {
     while (frontier.length > 0 && entries.length <= limit) {
       this.#assertBeforeDeadline(deadlineAt);
       const candidate = heapPop(frontier)!;
-      let targetStat;
-      try {
-        targetStat = await this.#withinDeadline(
-          this.#lstatPath(candidate.target),
-          deadlineAt,
-        );
-      } catch (error) {
-        if (isUnavailableFileError(error)) continue;
-        throw error;
+      const inspected = await this.#inspectDiscoveredPath(
+        candidate.target,
+        deadlineAt,
+        undefined,
+        true,
+      );
+      if (inspected.kind === "unavailable" || inspected.kind === "unsupported") {
+        continue;
       }
-      if (targetStat.isSymbolicLink()) {
+      if (inspected.kind === "linked") {
         skippedLinks += 1;
         continue;
       }
-      const type = targetStat.isDirectory()
-        ? "directory"
-        : targetStat.isFile()
-          ? "file"
-          : undefined;
-      if (!type) continue;
+      const type = inspected.type;
+      const targetStat = inspected.stat!;
       if (
         entries.length === limit &&
         (!cursor || compareNames(candidate.sortKey, cursor) > 0)
       ) {
-        try {
-          const safeCandidate = await this.#withinDeadline(
-            this.policy.resolveDiscoveredExisting(candidate.target),
-            deadlineAt,
-          );
-          if (
-            type === "directory" &&
-            options.recursive === true &&
-            !SKIPPED_RECURSIVE_DIRECTORIES.has(candidate.name.toLowerCase())
-          ) {
+        const resolved = await this.#resolveDiscoveredPath(
+          candidate.target,
+          deadlineAt,
+        );
+        if (resolved.kind === "unavailable") continue;
+        if (resolved.kind === "linked") {
+          skippedLinks += 1;
+          continue;
+        }
+        if (
+          type === "directory" &&
+          options.recursive === true &&
+          !SKIPPED_RECURSIVE_DIRECTORIES.has(candidate.name.toLowerCase())
+        ) {
+          try {
             const handle = await this.#withinDeadline(
-              this.#openDirectory(safeCandidate),
+              this.#openDirectory(resolved.target),
               deadlineAt,
               closeDirectory,
             );
             await closeDirectory(handle);
+          } catch (error) {
+            if (isUnavailableFileError(error)) continue;
+            throw error;
           }
-        } catch (error) {
-          if (isUnavailableDiscoveredPathError(error)) continue;
-          if (isLinkedPathError(error)) {
-            skippedLinks += 1;
-            continue;
-          }
-          throw error;
         }
         hasMore = true;
         break;
@@ -923,19 +977,16 @@ export class FileService {
         !SKIPPED_RECURSIVE_DIRECTORIES.has(candidate.name.toLowerCase());
       let safeDirectory: string | undefined;
       if (shouldRecurse) {
-        try {
-          safeDirectory = await this.#withinDeadline(
-            this.policy.resolveDiscoveredExisting(candidate.target),
-            deadlineAt,
-          );
-        } catch (error) {
-          if (isUnavailableDiscoveredPathError(error)) continue;
-          if (isLinkedPathError(error)) {
-            skippedLinks += 1;
-            continue;
-          }
-          throw error;
+        const resolved = await this.#resolveDiscoveredPath(
+          candidate.target,
+          deadlineAt,
+        );
+        if (resolved.kind === "unavailable") continue;
+        if (resolved.kind === "linked") {
+          skippedLinks += 1;
+          continue;
         }
+        safeDirectory = resolved.target;
       }
       const fillsPage = shouldReturn && entries.length + 1 === limit;
       if (fillsPage && safeDirectory) {
@@ -1072,24 +1123,25 @@ export class FileService {
         scanTruncated = true;
         return true;
       }
+      const resolved = await this.#resolveDiscoveredPath(target, deadlineAt);
+      if (resolved.kind === "linked") {
+        skippedLinks += 1;
+        return false;
+      }
+      if (resolved.kind === "unavailable") {
+        skippedFiles += 1;
+        return false;
+      }
       let result: ReadTextResult;
       try {
-        const safeTarget = await this.#withinDeadline(
-          this.policy.resolveDiscoveredExisting(target),
-          deadlineAt,
-        );
         result = await this.#withinDeadline(
-          this.#readResolvedText(safeTarget, remainingBytes),
+          this.#readResolvedText(resolved.target, remainingBytes),
           deadlineAt,
         );
       } catch (error) {
         if (error instanceof WorkerError && error.code === "search_byte_limit") {
           scanTruncated = true;
           return true;
-        }
-        if (isLinkedPathError(error)) {
-          skippedLinks += 1;
-          return false;
         }
         if (
           isUnavailableFileError(error) ||
@@ -1158,53 +1210,31 @@ export class FileService {
       for (const child of batch.children) {
         this.#assertBeforeDeadline(deadlineAt);
         const target = path.join(directory, child.name);
-        let targetType: "directory" | "file" | undefined;
-        if (this.#trustDirectoryEntryTypes) {
-          if (child.isSymbolicLink()) {
-            skippedLinks += 1;
-            continue;
-          }
-          if (child.isDirectory()) targetType = "directory";
-          else if (child.isFile()) targetType = "file";
+        const inspected = await this.#inspectDiscoveredPath(
+          target,
+          deadlineAt,
+          child,
+        );
+        if (inspected.kind === "unavailable") {
+          skippedFiles += 1;
+          continue;
         }
-        if (!targetType) {
-          let targetStat;
-          try {
-            targetStat = await this.#withinDeadline(
-              this.#lstatPath(target),
-              deadlineAt,
-            );
-          } catch (error) {
-            if (isUnavailableFileError(error)) {
-              skippedFiles += 1;
-              continue;
-            }
-            throw error;
-          }
-          if (targetStat.isSymbolicLink()) {
-            skippedLinks += 1;
-            continue;
-          }
-          if (targetStat.isDirectory()) targetType = "directory";
-          else if (targetStat.isFile()) targetType = "file";
+        if (inspected.kind === "linked") {
+          skippedLinks += 1;
+          continue;
         }
+        if (inspected.kind === "unsupported") continue;
+        const targetType = inspected.type;
         if (targetType === "directory") {
           if (SKIPPED_RECURSIVE_DIRECTORIES.has(child.name.toLowerCase())) continue;
-          try {
-            await this.#withinDeadline(
-              this.policy.resolveDiscoveredExisting(target),
-              deadlineAt,
-            );
-          } catch (error) {
-            if (isLinkedPathError(error)) {
-              skippedLinks += 1;
-              continue;
-            }
-            if (isUnavailableDiscoveredPathError(error)) {
-              skippedFiles += 1;
-              continue;
-            }
-            throw error;
+          const resolved = await this.#resolveDiscoveredPath(target, deadlineAt);
+          if (resolved.kind === "linked") {
+            skippedLinks += 1;
+            continue;
+          }
+          if (resolved.kind === "unavailable") {
+            skippedFiles += 1;
+            continue;
           }
           if (await visit(target)) return true;
         } else if (targetType === "file" && await searchFile(target)) {
