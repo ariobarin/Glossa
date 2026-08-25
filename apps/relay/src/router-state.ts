@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  workerJobAuthority,
   workerPermissions,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -88,23 +89,11 @@ function jobPermissionError(
     return "worker_protocol_unsupported";
   }
   const permissions = workerPermissions(worker.accessProfile);
-  if (
-    (job.type === "write_file" ||
-      job.type === "edit_file" ||
-      job.type === "make_directory" ||
-      job.type === "delete_path" ||
-      job.type === "move_path") &&
-    !permissions.writeFiles
-  ) {
+  const authority = workerJobAuthority(job.type);
+  if (authority === "write" && !permissions.writeFiles) {
     return "write_access_disabled";
   }
-  if (
-    (job.type === "run_command" ||
-      job.type === "get_command" ||
-      job.type === "read_command_output" ||
-      job.type === "cancel_command") &&
-    !permissions.runCommands
-  ) {
+  if (authority === "command" && !permissions.runCommands) {
     return "command_access_disabled";
   }
   return null;
