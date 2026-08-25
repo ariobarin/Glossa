@@ -644,52 +644,6 @@ test("returns workspace images as native MCP image content without duplicating b
   assert.doesNotMatch(JSON.stringify(result.structuredContent), new RegExp(data));
 });
 
-test("returns an actionable upgrade error instead of dispatching images to legacy workers", async (context) => {
-  const state = new RouterState();
-  const deviceId = "00000000-0000-4000-8000-000000000092";
-  const workerId = "00000000-0000-4000-8000-000000000093";
-  const session = state.register(accountId, deviceId, "Legacy PC", workerId, {
-    accessProfile: "read-only",
-    capabilities: {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      imageReads: false,
-      structuredMutations: true,
-      commandOutputRanges: true,
-    },
-  });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-image-legacy-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-
-  const result = await client.callTool({
-    name: "view_image",
-    arguments: { workspaceId: workerId, path: "screenshots/home.png" },
-  });
-  assert.equal(result.isError, true);
-  const content = JSON.stringify(result.content);
-  assert.match(content, /worker_protocol_unsupported/);
-  assert.match(content, /older Glossa CLI/);
-  assert.match(content, /Update Glossa/);
-  assert.equal(
-    await state.poll(
-      accountId,
-      deviceId,
-      workerId,
-      session.generation,
-      5,
-      new Set(["view_image"]),
-    ),
-    null,
-  );
-});
-
 test("returns actionable permission errors without dispatching forbidden work", async (context) => {
   const state = new RouterState();
   const readOnlyWorkerId = "00000000-0000-4000-8000-000000000030";

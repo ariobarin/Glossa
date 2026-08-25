@@ -3,7 +3,11 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import express from "express";
-import { MAX_TEXT_BYTES, type WorkerJob } from "@glossa/protocol";
+import {
+  MAX_TEXT_BYTES,
+  WORKER_PROTOCOL_VERSION,
+  type WorkerJob,
+} from "@glossa/protocol";
 import type { AuthenticatedRequest } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { MCP_SERVER_VERSION } from "./mcp.js";
@@ -369,45 +373,27 @@ test("uses worker credentials without repeating device authentication", async (c
   });
   assert.equal(retiredRegistration.status, 400);
 
-  const legacyWorkerId = "00000000-0000-4000-8000-000000000004";
-  const legacy = await register({
-    workerId: legacyWorkerId,
-    accessProfile: "read-only",
-    capabilities: {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      structuredMutations: true,
-      commandOutputRanges: true,
+  const unsupportedProtocol = await fetch(`${origin}/device/register`, {
+    method: "POST",
+    headers: {
+      authorization: `Device ${token}`,
+      "content-type": "application/json",
     },
+    body: JSON.stringify({
+      workerId: "00000000-0000-4000-8000-000000000004",
+      accessProfile: "read-only",
+      protocolVersion: WORKER_PROTOCOL_VERSION + 1,
+    }),
   });
-  assert.equal(
-    state.listDevices(accountId)
-      .find((entry) => entry.deviceId === legacyWorkerId)
-      ?.capabilities.imageReads,
-    false,
-  );
-  assert.deepEqual((legacy.capabilities as Record<string, unknown>).imageReads, true);
-  state.unregisterWorker(
-    accountId,
-    deviceId,
-    legacyWorkerId,
-    String(legacy.generation),
-  );
+  assert.equal(unsupportedProtocol.status, 400);
+  assert.equal(state.activeWorkerCount(accountId, deviceId), 0);
 
   const current = await register({
     workerId,
     workspaceLabel: "frontend",
     workerVersion: "1.0.0",
     accessProfile: "workspace",
-    capabilities: {
-      commandProgress: true,
-      concurrentJobs: true,
-      structuredReads: true,
-      imageReads: true,
-      structuredMutations: true,
-      commandOutputRanges: true,
-    },
+    protocolVersion: WORKER_PROTOCOL_VERSION,
   });
   assert.equal(current.workerId, workerId);
   assert.equal(state.activeWorkerCount(accountId, deviceId), 1);
@@ -436,14 +422,7 @@ test("uses worker credentials without repeating device authentication", async (c
   assert.equal(current.accessProfile, "workspace");
   assert.equal(current.workspaceLabel, "frontend");
   assert.equal(current.mcpContractVersion, MCP_SERVER_VERSION);
-  assert.deepEqual(current.capabilities, {
-    commandProgress: true,
-    concurrentJobs: true,
-    structuredReads: true,
-    imageReads: true,
-    structuredMutations: true,
-    commandOutputRanges: true,
-  });
+  assert.equal(current.protocolVersion, WORKER_PROTOCOL_VERSION);
   const workerAuthorization = `Worker ${String(current.workerToken)}`;
 
   const mismatched = await fetch(`${origin}/device/heartbeat`, {
@@ -621,14 +600,7 @@ test("rejects a worker revoked during device authentication", async (context) =>
       body: JSON.stringify({
         workerId,
         accessProfile: "workspace",
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-          imageReads: true,
-          structuredMutations: true,
-          commandOutputRanges: true,
-        },
+        protocolVersion: WORKER_PROTOCOL_VERSION,
       }),
     },
   );
