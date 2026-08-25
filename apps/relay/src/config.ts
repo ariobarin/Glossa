@@ -22,16 +22,6 @@ const environmentSchema = z
       .min(2)
       .max(2048)
       .optional(),
-    // Backward-compatible single-prefix input for existing self-hosted deployments.
-    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: z
-      .string()
-      .trim()
-      .min(2)
-      .max(128)
-      .refine((value) => !value.includes(","), {
-        message: "Use GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES for multiple providers.",
-      })
-      .optional(),
     // Exact identities are useful for tightly scoped reviewer or service accounts.
     GLOSSA_AUTH0_ALLOWED_SUBJECTS: z
       .string()
@@ -82,16 +72,6 @@ const environmentSchema = z
     GLOSSA_PANEL_SESSION_SECRET: z.string().min(32).max(1024).optional(),
   })
   .superRefine((environment, context) => {
-    if (
-      environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES &&
-      environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES"],
-        message: "Configure either plural or legacy singular Auth0 subject prefixes, not both.",
-      });
-    }
     if (
       environment.NODE_ENV === "production" &&
       new URL(environment.GLOSSA_PUBLIC_ORIGIN).protocol !== "https:"
@@ -145,7 +125,6 @@ export interface PanelConfig {
 export type RelayConfig = Omit<
   ParsedEnvironment,
   | "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES"
-  | "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX"
   | "GLOSSA_AUTH0_ALLOWED_SUBJECTS"
   | "GLOSSA_PANEL_CLIENT_ID"
   | "GLOSSA_PANEL_CLIENT_SECRET"
@@ -173,10 +152,7 @@ function commaSeparatedValues(
 }
 
 function allowedSubjectPrefixes(environment: ParsedEnvironment): string[] {
-  const raw =
-    environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES ??
-    environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX ??
-    "google-oauth2|";
+  const raw = environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES ?? "google-oauth2|";
   return commaSeparatedValues(
     raw,
     auth0SubjectPrefixSchema,
@@ -196,10 +172,14 @@ function allowedExactSubjects(environment: ParsedEnvironment): string[] {
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): RelayConfig {
+  if (environment.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX !== undefined) {
+    throw new Error(
+      "GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX has been removed. Use GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES instead.",
+    );
+  }
   const parsed = environmentSchema.parse(environment);
   const {
     GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: _pluralInput,
-    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: _legacyInput,
     GLOSSA_AUTH0_ALLOWED_SUBJECTS: _exactInput,
     GLOSSA_PANEL_CLIENT_ID: panelClientId,
     GLOSSA_PANEL_CLIENT_SECRET: panelClientSecret,

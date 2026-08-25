@@ -21,7 +21,7 @@ Create an Auth0 API whose identifier is your relay audience, such as `https://mc
 
 The Native application is a public client and needs Device Code and refresh token grants. Its allowed scopes must include `openid`, `profile`, `offline_access`, and `glossa:device`.
 
-The relay accepts an explicit allowlist of Auth0 provider prefixes and exact subjects. Managed Glossa defaults to the `google-oauth2|` prefix. A private installation may set `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES` to one or more comma-separated connection prefixes, each including the trailing `|` separator, and `GLOSSA_AUTH0_ALLOWED_SUBJECTS` to one or more complete Auth0 subjects. Prefer exact subjects for isolated reviewer or service accounts so a whole connection is not admitted. Existing deployments may retain the legacy singular `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX`; never set both singular and plural prefix variables.
+The relay accepts an explicit allowlist of Auth0 provider prefixes and exact subjects. Managed Glossa defaults to the `google-oauth2|` prefix. A private installation may set `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES` to one or more comma-separated connection prefixes, each including the trailing `|` separator, and `GLOSSA_AUTH0_ALLOWED_SUBJECTS` to one or more complete Auth0 subjects. Prefer exact subjects for isolated reviewer or service accounts so a whole connection is not admitted. The singular `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX` setting has been removed; rename it to `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES` before upgrading.
 
 The MCP client must receive tokens from the same issuer, for the same audience, with `glossa:access`. Configure the client registration and consent flow using the current instructions from your identity provider and MCP client.
 
