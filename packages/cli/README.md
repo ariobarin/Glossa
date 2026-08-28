@@ -26,11 +26,13 @@ Use `glossa --access read-only` for inspection. Use `glossa --access system` onl
 
 Expose only a narrow project you trust. Keep credentials and regulated or sensitive data out of the workspace. Review the [security overview](https://glossa.sh/security) before enabling commands.
 
-Pass a directory to expose another project, and add `--label <name>` when several online workspaces need a non-sensitive identifier. The terminal shows the selected project, access profile, connection state, and recent activity. Press `q` or Ctrl+C to disconnect.
+Pass a directory for another project and `--label <name>` to identify concurrent workers. Interactive mode shows the root, access, connection, and recent activity. Press `q` or Ctrl+C to disconnect.
 
-The first time a computer runs Glossa, it shows a short pairing code. Enter it on the Glossa control panel from any browser to enroll the computer; a headless or SSH-only machine needs no local browser. The CLI stores only its revocable device credential, not a Google or Auth0 refresh token. Later workspace sessions reuse that pairing without user sign-in.
+Run `glossa --headless` under an operating-system supervisor for an unattended worker. It accepts the same options but skips the HUD and local activity history. Send SIGINT or SIGTERM to disconnect it.
 
-Press `d` in the terminal to list and revoke the account's devices. Run `glossa unpair` to revoke this computer and remove its local pairing before moving it to another Glossa account.
+On first run, redeem the printed pairing code in the Glossa control panel from any browser. The CLI stores only its revocable device credential. Later sessions reuse that pairing without user sign-in.
+
+Press `d` to list and revoke devices. Run `glossa unpair` to revoke this computer and remove its pairing.
 
 Useful controls:
 

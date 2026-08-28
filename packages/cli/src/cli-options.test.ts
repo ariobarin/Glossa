@@ -54,6 +54,30 @@ test("parses explicit least-privilege and system access profiles", () => {
   });
 });
 
+test("parses headless workspace sessions", () => {
+  assert.deepEqual(
+    parseInvocation([
+      "--headless",
+      "--access",
+      "system",
+      "--label",
+      "recovery",
+      ".",
+    ]),
+    {
+      command: "workspace",
+      path: ".",
+      label: "recovery",
+      headless: true,
+      accessProfile: "system",
+    },
+  );
+  assert.throws(
+    () => parseInvocation(["--headless", "--headless"]),
+    new UsageError("Use --headless at most once."),
+  );
+});
+
 test("keeps the reduced direct CLI actions", () => {
   assert.deepEqual(parseInvocation(["unpair"]), { command: "unpair" });
   for (const retired of ["status", "devices", "logout", "login"]) {
