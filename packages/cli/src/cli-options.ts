@@ -13,6 +13,7 @@ export type CliInvocation =
       command: "workspace";
       path?: string;
       label?: string;
+      headless?: true;
       accessProfile: WorkerAccessProfile;
     }
   | { command: "unpair" }
@@ -39,6 +40,7 @@ const retiredCommands = new Set([
 function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
   let label: string | undefined;
+  let headless = false;
   let accessProfile = DEFAULT_WORKER_ACCESS_PROFILE;
   let accessProfileSet = false;
   let optionsEnded = false;
@@ -47,6 +49,11 @@ function parseWorkspace(args: string[]): CliInvocation {
     const argument = args[index]!;
     if (!optionsEnded && argument === "--") {
       optionsEnded = true;
+    } else if (!optionsEnded && argument === "--headless") {
+      if (headless) {
+        throw new UsageError("Use --headless at most once.");
+      }
+      headless = true;
     } else if (!optionsEnded && argument === "--label") {
       if (label !== undefined) {
         throw new UsageError("Glossa accepts at most one workspace label.");
@@ -91,6 +98,7 @@ function parseWorkspace(args: string[]): CliInvocation {
     command: "workspace",
     ...(selectedPath ? { path: selectedPath } : {}),
     ...(label ? { label } : {}),
+    ...(headless ? { headless: true as const } : {}),
     accessProfile,
   };
 }

@@ -72,6 +72,16 @@ Glossa does not derive labels from local paths. A duplicate process for the same
 
 The HUD opens on **Workspace**, showing the exposed directory, paired computer, current access boundary, and newest activity. `A` opens full **Activity** history; `W` or Escape returns to Workspace. Workspace arrows change access, with confirmation before increases. `D` opens **Devices** for account-level device administration; use up/down and Enter or `R` to revoke. `?` opens Help.
 
+## Headless workers
+
+Use `--headless` when an operating-system supervisor runs an unattended worker:
+
+```shell
+glossa --headless --label recovery C:\path\to\project
+```
+
+Headless mode skips the terminal, HUD, local activity history, and interactive controls. Other workspace options work normally. Send SIGINT or SIGTERM to disconnect it. Configure the supervisor to restart it after an unexpected exit.
+
 ## Updates
 
 Glossa checks the stable release channel at most once per day before connecting and prints a notice by default.
