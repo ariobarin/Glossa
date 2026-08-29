@@ -137,6 +137,111 @@ test("returns a handle when a command outlives the fast wait", async (context) =
   assert.equal(completed.stdout, "later");
 });
 
+test("runs and addresses concurrent commands independently", async (context) => {
+  const { commands } = await commandFixture(context);
+  const first = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      "process.stdout.write('first-started'); setTimeout(() => process.stdout.write('-finished'), 1000)",
+    ],
+    timeoutMs: 10_000,
+    waitMs: 0,
+  });
+  const second = await commands.start({
+    argv: [
+      process.execPath,
+      "-e",
+      "process.stdout.write('second-started'); setTimeout(() => {}, 30000)",
+    ],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+
+  assert.notEqual(first.commandId, second.commandId);
+  assert.equal(first.status, "running");
+  assert.equal(second.status, "running");
+
+  const firstCompleted = await commands.get(first.commandId, 15_000);
+  assert.equal(firstCompleted.status, "succeeded");
+  assert.equal(firstCompleted.stdout, "first-started-finished");
+
+  const secondStillRunning = await commands.get(second.commandId);
+  assert.equal(secondStillRunning.status, "running");
+  assert.match(secondStillRunning.stdout ?? "", /^second-started/);
+
+  const secondCanceled = await commands.cancel(second.commandId);
+  assert.equal(secondCanceled.status, "canceled");
+});
+
+test("canceling one command leaves another command running", async (context) => {
+  const { commands } = await commandFixture(context);
+  const first = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+  const second = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+
+  const canceled = await commands.cancel(first.commandId);
+  assert.equal(canceled.status, "canceled");
+
+  const stillRunning = await commands.get(second.commandId);
+  assert.equal(stillRunning.status, "running");
+  await commands.cancel(second.commandId);
+});
+
+test("shutdown terminates every running command", async (context) => {
+  const { commands } = await commandFixture(context);
+  const first = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+  const second = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+
+  await commands.shutdown();
+
+  const [firstStopped, secondStopped] = await Promise.all([
+    commands.get(first.commandId),
+    commands.get(second.commandId),
+  ]);
+  assert.equal(firstStopped.status, "canceled");
+  assert.equal(secondStopped.status, "canceled");
+});
+
+test("rejects command starts after shutdown begins", async (context) => {
+  const { commands } = await commandFixture(context);
+  const running = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+
+  const stopping = commands.shutdown();
+  await assert.rejects(
+    commands.start({
+      argv: [process.execPath, "-e", "process.exit(0)"],
+      timeoutMs: 60_000,
+      waitMs: 0,
+    }),
+    (error: unknown) =>
+      error instanceof WorkerError && error.code === "worker_shutting_down",
+  );
+  await stopping;
+
+  const stopped = await commands.get(running.commandId);
+  assert.equal(stopped.status, "canceled");
+});
+
 test("returns running output and wakes when command progress changes", async (context) => {
   const { commands } = await commandFixture(context);
   const started = await commands.start({
