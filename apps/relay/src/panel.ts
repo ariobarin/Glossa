@@ -1,7 +1,7 @@
 // Browser control panel for pairing-code redemption and device recovery.
 // Served at /panel when the GLOSSA_PANEL_* configuration is present. Plain
 // HTML forms only: no framework, no build step, no client-side JavaScript.
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import { Router, urlencoded } from "express";
 import { z } from "zod";
@@ -14,12 +14,13 @@ import type { DeviceRecord, PairingRecord, RelayStore } from "./store.js";
 
 const SESSION_COOKIE = "glossa_panel";
 const SESSION_TTL_MS = 12 * 60 * 60_000;
+const LOGIN_TTL_MS = 10 * 60_000;
 const deviceIdSchema = z.string().uuid();
 
 // The panel exchanges the authorization code and returns the verified
 // subject. Injected in tests so no real JWKS or token endpoint is needed.
 export interface PanelDependencies {
-  exchangeCode?: (code: string) => Promise<string>;
+  exchangeCode?: (code: string, codeVerifier: string) => Promise<string>;
 }
 
 interface PanelSession {
@@ -180,11 +181,35 @@ function readCookie(request: Request, name: string): string | undefined {
   return undefined;
 }
 
-function sessionCookieFlags(config: RelayConfig): string {
+function cookieFlags(config: RelayConfig, path = "/panel"): string {
   const secure = config.GLOSSA_PUBLIC_ORIGIN.startsWith("https:")
     ? "; Secure"
     : "";
-  return `Path=/panel; HttpOnly; SameSite=Lax${secure}`;
+  return `Path=${path}; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function loginCookieName(config: RelayConfig): string {
+  return config.GLOSSA_PUBLIC_ORIGIN.startsWith("https:")
+    ? "__Host-glossa_panel_login"
+    : "glossa_panel_login";
+}
+
+function loginCodeVerifier(
+  cookie: string | undefined,
+  state: string,
+  secret: string,
+): string | null {
+  if (!cookie || !state) return null;
+  const parts = cookie.split(".");
+  const [expectedState, codeVerifier, expiresAtRaw, signature] = parts;
+  if (parts.length !== 4 || !expectedState || !codeVerifier || !signature) return null;
+  const expiresAt = Number(expiresAtRaw);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()) return null;
+  if (
+    !signatureMatches(hmac(secret, `login|${parts.slice(0, 3).join(".")}`), signature) ||
+    !signatureMatches(expectedState, state)
+  ) return null;
+  return codeVerifier;
 }
 
 function callbackUrl(config: RelayConfig): string {
@@ -202,6 +227,7 @@ async function exchangeCodeForSubject(
   config: RelayConfig,
   panel: PanelConfig,
   code: string,
+  codeVerifier: string,
 ): Promise<string> {
   const tokenResponse = await fetch(issuerUrl(config, "oauth/token"), {
     method: "POST",
@@ -211,6 +237,7 @@ async function exchangeCodeForSubject(
       client_id: panel.clientId,
       client_secret: panel.clientSecret,
       code,
+      code_verifier: codeVerifier,
       redirect_uri: callbackUrl(config),
     }),
   });
@@ -271,7 +298,8 @@ export function buildPanel(
   if (!panel) return undefined;
   const exchangeCode =
     dependencies.exchangeCode ??
-    ((code: string) => exchangeCodeForSubject(config, panel, code));
+    ((code: string, codeVerifier: string) =>
+      exchangeCodeForSubject(config, panel, code, codeVerifier));
 
   const router = Router();
   router.use(urlencoded({ extended: false, limit: "8kb" }));
@@ -293,15 +321,23 @@ export function buildPanel(
   });
 
   router.get("/auth/login", (_request, response) => {
-    const state = randomBytes(16).toString("base64url");
-    const signedState = `${state}.${hmac(panel.sessionSecret, `state|${state}`)}`;
+    const state = randomBytes(32).toString("base64url");
+    const codeVerifier = randomBytes(32).toString("base64url");
+    const transaction = `${state}.${codeVerifier}.${Date.now() + LOGIN_TTL_MS}`;
+    const cookie = `${transaction}.${hmac(panel.sessionSecret, `login|${transaction}`)}`;
     const authorize = issuerUrl(config, "authorize");
     authorize.searchParams.set("response_type", "code");
     authorize.searchParams.set("client_id", panel.clientId);
     authorize.searchParams.set("redirect_uri", callbackUrl(config));
     authorize.searchParams.set("scope", "openid profile");
     authorize.searchParams.set("audience", config.GLOSSA_AUTH0_AUDIENCE);
-    authorize.searchParams.set("state", signedState);
+    authorize.searchParams.set("state", state);
+    authorize.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
+    authorize.searchParams.set("code_challenge_method", "S256");
+    response.setHeader(
+      "Set-Cookie",
+      `${loginCookieName(config)}=${cookie}; ${cookieFlags(config, "/")}; Max-Age=${LOGIN_TTL_MS / 1000}`,
+    );
     response.redirect(authorize.toString());
   });
 
@@ -309,22 +345,22 @@ export function buildPanel(
     const query = request.query as { code?: unknown; state?: unknown };
     const code = typeof query.code === "string" ? query.code : "";
     const state = typeof query.state === "string" ? query.state : "";
-    const [stateValue, stateSignature] = state.split(".");
-    if (
-      !code ||
-      !stateValue ||
-      !stateSignature ||
-      !signatureMatches(
-        hmac(panel.sessionSecret, `state|${stateValue}`),
-        stateSignature,
-      )
-    ) {
+    const codeVerifier = loginCodeVerifier(
+      readCookie(request, loginCookieName(config)),
+      state,
+      panel.sessionSecret,
+    );
+    response.setHeader(
+      "Set-Cookie",
+      `${loginCookieName(config)}=; ${cookieFlags(config, "/")}; Max-Age=0`,
+    );
+    if (!code || !codeVerifier) {
       sendPage(response, 400, "Sign-in failed", "<h1>Sign-in failed</h1><p>Invalid sign-in response. <a href=\"/panel/auth/login\">Try again</a>.</p>");
       return;
     }
     let subject: string;
     try {
-      subject = await exchangeCode(code);
+      subject = await exchangeCode(code, codeVerifier);
     } catch {
       sendPage(response, 502, "Sign-in failed", "<h1>Sign-in failed</h1><p>The identity provider could not be reached. <a href=\"/panel/auth/login\">Try again</a>.</p>");
       return;
@@ -333,9 +369,9 @@ export function buildPanel(
       sendPage(response, 403, "Not allowed", "<h1>Not allowed</h1><p>This identity provider account is not permitted to use this relay.</p>");
       return;
     }
-    response.setHeader(
+    response.append(
       "Set-Cookie",
-      `${SESSION_COOKIE}=${encodeSession(subject, panel.sessionSecret)}; ${sessionCookieFlags(config)}; Max-Age=${SESSION_TTL_MS / 1000}`,
+      `${SESSION_COOKIE}=${encodeSession(subject, panel.sessionSecret)}; ${cookieFlags(config)}; Max-Age=${SESSION_TTL_MS / 1000}`,
     );
     response.redirect("/panel");
   });
@@ -343,7 +379,7 @@ export function buildPanel(
   router.post("/auth/logout", (_request, response) => {
     response.setHeader(
       "Set-Cookie",
-      `${SESSION_COOKIE}=; ${sessionCookieFlags(config)}; Max-Age=0`,
+      `${SESSION_COOKIE}=; ${cookieFlags(config)}; Max-Age=0`,
     );
     response.redirect(303, "/panel");
   });
