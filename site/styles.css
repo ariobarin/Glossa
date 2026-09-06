@@ -168,6 +168,12 @@ p {
   color: var(--purple);
 }
 
+.hero-summary {
+  max-width: 600px;
+  margin: 20px 0 0;
+  color: var(--muted);
+}
+
 .hero-action-row {
   margin-top: 28px;
   gap: 20px;
