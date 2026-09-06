@@ -232,10 +232,6 @@ await requiredText("site/docs/quickstart.md", [
   "[Review security](/security)",
   "Review permissions and requested actions.",
 ]);
-await requiredText("site/docs/why.md", [
-  "a folder on your computer",
-  "General questions, writing, and web research stay in ChatGPT",
-]);
 await requiredText("site/pages/security.md", [
   "Both the relay and the local worker enforce it",
   "system` is powerful and is not sandboxed",

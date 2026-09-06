@@ -12,6 +12,8 @@ npm install --global @ariobarin/glossa
 
 ## 2. Add Glossa to ChatGPT
 
+Use regular ChatGPT chat with a model that supports custom apps and [full MCP access](https://developers.openai.com/api/docs/guides/developer-mode) for Glossa's read and write tools. Available usage depends on your plan and model. [ChatGPT Work shares Codex usage](https://learn.chatgpt.com/docs/pricing).
+
 1. In ChatGPT web, use [Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.
 2. Name it **Glossa** and use this MCP server URL:
 
