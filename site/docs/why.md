@@ -1,11 +1,13 @@
-# Work with the project where it already lives.
+# Codex ran out. Keep going with ChatGPT.
 
-Glossa connects ChatGPT to a folder on your computer.
+Codex has been running out for me. If you're a power user, you probably have the same problem.
 
-Use it when the task depends on local state that a remote service cannot see: an existing checkout, uncommitted changes, build tools, test databases, emulators, generated files, or the development environment already configured on the machine.
+I know, I know. Thibaut's been nice about the resets, but it's low-key not enough. I already pay for ChatGPT. Let's freaking connect it to our computer and keep going with the usage we still have.
 
-A small local worker makes an outbound connection to Glossa. You choose the folder and access level. The default allows file edits while keeping commands off; command access requires an explicit restart in `system` mode.
+Glossa connects ChatGPT to a folder on your computer. It can read and edit files and use the development tools already there. You choose the access; commands require `system` mode and run with your account's full authority.
 
-Glossa does not add another model, planner, agent loop, or conversation store. General questions, writing, and web research stay in ChatGPT. Use Glossa when the work genuinely needs the local project or its toolchain.
+ChatGPT's Pro mode is another reason I want to work there. Glossa needs a model with custom-app support, and available usage depends on your plan and model. [ChatGPT Work shares Codex usage](https://learn.chatgpt.com/docs/pricing), so use regular ChatGPT chat.
+
+General questions, writing, and web research stay in ChatGPT.
 
 <p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>

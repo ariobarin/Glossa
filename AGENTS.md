@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Glossa is a thin execution bridge between ChatGPT and an explicitly exposed local coding workspace. Keep the hosted relay small and keep filesystem and process authority on the local worker.
+Glossa lets people keep working through available ChatGPT subscription usage when Codex runs out. That extra source of usage is the reason to use it; connecting ChatGPT to the local project is how it works. Lead product introductions with that purpose. Keep the copy direct and informal without promising unlimited usage or Codex feature parity. Plan limits and model/tool availability still apply.
+
+Technically, Glossa is a thin execution bridge between ChatGPT and an explicitly exposed local coding workspace. Keep the hosted relay small and keep filesystem and process authority on the local worker.
 
 Read `docs/architecture.md` and `docs/security.md` before changing trust boundaries.
 

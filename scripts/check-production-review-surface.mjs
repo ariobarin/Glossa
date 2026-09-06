@@ -59,11 +59,6 @@ await check("homepage production positioning", async () => {
   const source = await publicText("https://glossa.sh/");
   requireMatch(
     source,
-    /Connect ChatGPT to the <span>project on your computer\.<\/span>/,
-    "homepage does not contain the production local-workspace headline",
-  );
-  requireMatch(
-    source,
     /npm install -g @ariobarin\/glossa<\/code>/,
     "homepage does not contain the stable npm install command",
   );
