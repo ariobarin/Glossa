@@ -1,10 +1,63 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { LocalWorker } from "./local-worker.js";
+
+test("terminates catastrophic search patterns without blocking local worker timers", () => {
+  const script = `
+    import assert from "node:assert/strict";
+    import { mkdtemp, rm, writeFile } from "node:fs/promises";
+    import os from "node:os";
+    import path from "node:path";
+    const { LocalWorker } = await import(process.argv[1]);
+    const root = await mkdtemp(path.join(os.tmpdir(), "glossa-regex-test-"));
+    const worker = await LocalWorker.create(root, "read-only");
+    try {
+      await writeFile(path.join(root, "a".repeat(64) + ".txt"), "const result = foo(bar); const more = 1;");
+      for (const search of [
+        { query: "^(.+)+$z", matchMode: "regex" },
+        { query: "result", includeGlobs: ["*a".repeat(8) + "z"] },
+        { query: "result", excludeGlobs: ["*a".repeat(8) + "z"] },
+      ]) {
+        const started = performance.now();
+        let timerElapsed;
+        const timer = setTimeout(() => { timerElapsed = performance.now() - started; }, 25);
+        const result = await worker.handle({
+          type: "search_text",
+          requestId: "00000000-0000-4000-8000-000000000050",
+          ...search,
+          timeoutMs: 250,
+        });
+        clearTimeout(timer);
+        assert.equal(result.error?.code, "scan_timeout");
+        assert.ok(timerElapsed < 1_000, "local worker timer was blocked by pattern matching");
+        assert.ok(performance.now() - started < 2_000, "pattern matching outlived its deadline");
+      }
+      const recovered = await worker.handle({
+        type: "search_text",
+        requestId: "00000000-0000-4000-8000-000000000051",
+        query: "result",
+        matchMode: "regex",
+        timeoutMs: 2_000,
+      });
+      assert.equal(recovered.ok, true);
+      assert.equal(recovered.value.matches.length, 1);
+    } finally {
+      await worker.shutdown();
+      await rm(root, { recursive: true, force: true });
+    }
+  `;
+  const child = spawnSync(process.execPath, [
+    "--import", "tsx", "--input-type=module", "--eval", script,
+    new URL("./local-worker.ts", import.meta.url).href,
+  ], { encoding: "utf8", timeout: 15_000, windowsHide: true });
+  assert.equal(child.error, undefined, child.error?.message);
+  assert.equal(child.status, 0, child.stderr);
+});
 
 async function temporaryDirectory(context: test.TestContext): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "glossa-access-test-"));
