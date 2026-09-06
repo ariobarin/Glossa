@@ -119,6 +119,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - `read_command_output` returns at most 64 KiB of one retained stream per request, reports a continuation offset, and never reruns the command;
 - `cancel_command` uses a separate bounded request;
 - structured repository reads use a worker-local deadline of at most half the relay request window and 8 seconds; after expiry, the read lane stays occupied until the active filesystem operation settles and any late directory handle is closed;
+- searches using regexes or include/exclude globs evaluate those patterns in one disposable local subprocess per search, reused across files; the parent retains path checks and file reads, sends bounded in-memory text over IPC, and awaits process termination on completion or deadline expiry before releasing read capacity, so pattern backtracking cannot block heartbeats or command cancellation;
 - a result arriving after caller timeout receives a successful `accepted: false` acknowledgement and is discarded without forcing old or current workers to reconnect;
 - no hosted request remains open for the lifetime of a command.
 
