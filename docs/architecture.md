@@ -92,6 +92,7 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 - complete inherited local environment, credentials, operating-system permissions, and network access only when a system command is started
 - high-confidence authentication-secret input and result checks, including bounded per-stream command scan tails and every retained output window
 - temporary command state, including at most 1 MiB of independently retained stdout and stderr per record for bounded range retrieval, with terminal records limited to five minutes and eight recent records
+- HUD history keeps at most 9,999 rows and 16 MiB of retained call arguments; compact summaries own their bounded text so expiring a call also releases its large backing strings
 
 One enrolled device may run concurrent workers for different roots. Before login or relay connection, the current CLI reserves a user-local IPC endpoint derived from a one-way hash of the canonical root and rejects another current process for that same root. The kernel releases the live listener when a process exits; Unix stale socket files are probed and cleaned under a short acquisition guard. No root path is sent to or persisted by the relay. Each worker receives an ephemeral ID for its process lifetime, so requests remain bound to one exposed root without persisting that root or a derived repository name. A user may explicitly add a workspace label for client-side selection; the relay keeps it only with the active worker and never derives it from the local path.
 
