@@ -213,15 +213,20 @@ function markChanged(record: CommandRecord): void {
 
 async function waitForChange(
   record: CommandRecord,
-  afterSequence: number,
+  afterSequence: number | undefined,
   waitMs: number,
 ): Promise<void> {
-  if (record.status !== "running" || record.sequence > afterSequence || waitMs === 0) {
+  const ready = (): boolean => record.status !== "running" ||
+    (afterSequence !== undefined && record.sequence > afterSequence);
+  if (ready() || waitMs === 0) {
     return;
   }
   let changed!: () => void;
   const change = new Promise<void>((resolve) => {
-    changed = resolve;
+    changed = () => {
+      if (ready()) resolve();
+      else record.changeWaiters.add(changed);
+    };
     record.changeWaiters.add(changed);
   });
   const waitController = new AbortController();
@@ -618,17 +623,7 @@ export class CommandService {
         "The command could not be started.",
       );
     });
-    if (record.status === "running" && waitMs > 0) {
-      const waitController = new AbortController();
-      try {
-        await Promise.race([
-          record.completion,
-          delay(waitMs, undefined, { signal: waitController.signal }),
-        ]);
-      } finally {
-        waitController.abort();
-      }
-    }
+    await waitForChange(record, undefined, waitMs);
     return this.snapshot(record);
   }
 
@@ -653,21 +648,7 @@ export class CommandService {
         "The command sequence is invalid for this command.",
       );
     }
-    if (record.status === "running" && waitMs > 0) {
-      if (afterSequence === undefined) {
-        const waitController = new AbortController();
-        try {
-          await Promise.race([
-            record.completion,
-            delay(waitMs, undefined, { signal: waitController.signal }),
-          ]);
-        } finally {
-          waitController.abort();
-        }
-      } else {
-        await waitForChange(record, afterSequence, waitMs);
-      }
-    }
+    await waitForChange(record, afterSequence, waitMs);
     return this.snapshot(record);
   }
 
