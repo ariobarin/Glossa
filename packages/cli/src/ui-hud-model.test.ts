@@ -250,7 +250,7 @@ test("activity view summarizes file writes without exposing content", () => {
       type: "write_file",
       requestId: "request-2",
       path: "packages/cli/src/ui-hud.ts",
-      content: "secret payload",
+      contentBytes: 14,
       expectedSha256: "a".repeat(64),
     },
   });
@@ -282,7 +282,7 @@ test("activity command summaries preserve argv endpoints without stdin content",
       type: "run_command",
       requestId: "request-3",
       argv: ["npm", "run", "check", "--workspace", "@ariobarin/glossa"],
-      stdin: "do not show this",
+      stdinBytes: 16,
       timeoutMs: 30_000,
     },
   });
@@ -637,7 +637,7 @@ test("activity summaries quote targets and normalize empty paths", () => {
       type: "run_command",
       requestId: "request-stdin-shell",
       shellCommand: "echo",
-      stdin: "x",
+      stdinBytes: 1,
       timeoutMs: 900_000,
     },
   });
@@ -714,7 +714,8 @@ test("activity summaries hide edit text and escape terminal controls", () => {
       type: "edit_file",
       requestId: "request-4",
       path: "packages/cli/src/ui-hud.ts",
-      edits: [{ oldText: "private secret", newText: "replacement" }],
+      editCount: 1,
+      editBytes: 25,
       expectedSha256: "b".repeat(64),
     },
   });
@@ -842,7 +843,7 @@ test("activity inspect renders complete safe invocation metadata", () => {
       "--reporter",
       "spec",
     ],
-    stdin,
+    stdinBytes: Buffer.byteLength(stdin, "utf8"),
     timeoutMs: 120_000,
     waitMs: 0,
   };

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { WorkerJob } from "@glossa/protocol";
+import { activityEventJobFromJob } from "../activity-call.js";
 import type { StoredDeviceCredential } from "../device-store.js";
 import type { RelayEndpoints } from "../relay-client.js";
 import {
@@ -239,10 +240,11 @@ test("reports the actual job while working and when returned", async () => {
   assert.equal(events.length, jobs.length * 2);
   assert.equal(messages.length, jobs.length);
   for (const [index, job] of jobs.entries()) {
+    const activityJob = activityEventJobFromJob(job);
     assert.deepEqual(events[index * 2], {
       type: "activity",
       phase: "started",
-      job,
+      job: activityJob,
     });
     const returned = events[index * 2 + 1] as { output?: unknown };
     assert.deepEqual(
@@ -255,7 +257,7 @@ test("reports the actual job while working and when returned", async () => {
     assert.deepEqual(returnedWithoutOutput, {
       type: "activity",
       phase: "returned",
-      job,
+      job: activityJob,
       ok: true,
     });
   }

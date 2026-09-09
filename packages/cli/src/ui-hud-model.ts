@@ -3,8 +3,8 @@ import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_STRUCTURED_READ_TIMEOUT_MS,
   type WorkerAccessProfile,
-  type WorkerJob,
 } from "@glossa/protocol";
+import { activityCallFromEventJob } from "./activity-call.js";
 import {
   statusMessage,
   type ManagedActivityOutput,
@@ -12,7 +12,6 @@ import {
 } from "./worker/managed-session.js";
 import {
   activityCallByteLength,
-  activityCallFromJob,
   formatActivityCall,
   type HudActivityCall,
   type HudActivityMode,
@@ -26,7 +25,7 @@ export interface HudActivitySummary {
 }
 
 export interface HudActivity {
-  tool: WorkerJob["type"];
+  tool: HudActivityCall["type"];
   summary: HudActivitySummary;
   compactSummary?: string;
   call?: HudActivityCall;
@@ -205,8 +204,7 @@ function quoteActivityInput(value: string): string {
   return quoteInline(boundInlineInput(value));
 }
 
-function formatByteCount(value: string): string {
-  const bytes = Buffer.byteLength(value, "utf8");
+function formatByteCount(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const kibibytes = bytes / 1024;
   if (kibibytes < 1024) {
@@ -234,7 +232,7 @@ function assertNever(_value: never): never {
   throw new Error("Unsupported activity type.");
 }
 
-function summarizeJob(job: WorkerJob): HudActivitySummary {
+function summarizeCall(job: HudActivityCall): HudActivitySummary {
   switch (job.type) {
     case "read_file":
     case "view_image":
@@ -286,12 +284,12 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
     }
     case "write_file":
       return pathSummary(job.path, [
-        formatByteCount(job.content),
+        formatByteCount(job.contentBytes),
         ...(job.expectedSha256 ? ["guarded"] : []),
       ]);
     case "edit_file":
       return pathSummary(job.path, [
-        `${job.edits.length} ${job.edits.length === 1 ? "edit" : "edits"}`,
+        `${job.editCount} ${job.editCount === 1 ? "edit" : "edits"}`,
         ...(job.expectedSha256 ? ["guarded"] : []),
       ]);
     case "make_directory":
@@ -310,9 +308,9 @@ function summarizeJob(job: WorkerJob): HudActivitySummary {
           ? `argv [${job.argv.map(quoteActivityInput).join(", ")}]`
           : `shell ${quoteActivityInput(job.shellCommand ?? "")}`,
         details: [
-          ...(job.stdin === undefined
+          ...(job.stdinBytes === undefined
             ? []
-            : [`stdin ${formatByteCount(job.stdin)}`]),
+            : [`stdin ${formatByteCount(job.stdinBytes)}`]),
           ...(job.timeoutMs === DEFAULT_COMMAND_TIMEOUT_MS
             ? []
             : [`timeout ${job.timeoutMs} ms`]),
@@ -480,6 +478,7 @@ export function applyHudEvent(
   }
 
   const requestId = event.job.requestId;
+  const eventCall = activityCallFromEventJob(event.job);
   const existingIndex = state.activities.findIndex(
     (activity) => activity.requestId === requestId,
   );
@@ -487,19 +486,19 @@ export function applyHudEvent(
   const activityTimestamp = Date.now();
   const freshCall = existing?.callUnavailable
     ? undefined
-    : existing?.call ?? activityCallFromJob(event.job);
+    : existing?.call ?? eventCall;
   const freshCallBytes = existing?.callBytes ?? (freshCall ? activityCallByteLength(freshCall) : undefined);
   const retainFreshCall = freshCall !== undefined && freshCallBytes !== undefined &&
     freshCallBytes <= MAX_RETAINED_ACTIVITY_CALL_BYTES;
-  const formatCall = freshCall ?? activityCallFromJob(event.job);
+  const formatCall = freshCall ?? eventCall;
   const eventOutput = event.phase === "returned"
     ? event.output ?? {
         kind: event.ok ? "success" as const : "error" as const,
       }
     : undefined;
   const activity: HudActivity = {
-    tool: event.job.type,
-    summary: boundActivitySummary(summarizeJob(event.job)),
+    tool: eventCall.type,
+    summary: boundActivitySummary(summarizeCall(eventCall)),
     compactSummary: existing?.compactSummary ?? formatActivityCall(
       formatCall,
       "compact",

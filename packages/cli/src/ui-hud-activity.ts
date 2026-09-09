@@ -3,69 +3,13 @@ import {
   DEFAULT_COMMAND_OUTPUT_RANGE_BYTES,
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_STRUCTURED_READ_TIMEOUT_MS,
-  type WorkerJob,
 } from "@glossa/protocol";
+import type { ActivityCall } from "./activity-call.js";
+
+export { activityCallFromJob } from "./activity-call.js";
 
 export type HudActivityMode = "compact" | "detailed";
-
-export type HudActivityCall =
-  | { type: "read_file"; path: string }
-  | { type: "view_image"; path: string }
-  | {
-      type: "list_files";
-      path?: string;
-      recursive?: boolean;
-      cursor?: string;
-      limit?: number;
-      timeoutMs: number;
-    }
-  | {
-      type: "search_text";
-      query: string;
-      path?: string;
-      matchMode?: "literal" | "regex";
-      caseSensitive?: boolean;
-      maxResults?: number;
-      extensions?: string[];
-      includeGlobs?: string[];
-      excludeGlobs?: string[];
-      timeoutMs: number;
-    }
-  | {
-      type: "read_file_range";
-      path: string;
-      startLine?: number;
-      lineCount?: number;
-      timeoutMs: number;
-    }
-  | { type: "write_file"; path: string; contentBytes: number; expectedSha256?: string }
-  | {
-      type: "edit_file";
-      path: string;
-      editCount: number;
-      editBytes: number;
-      expectedSha256?: string;
-    }
-  | { type: "make_directory"; path: string; recursive?: boolean }
-  | { type: "delete_path"; path: string; recursive?: boolean }
-  | { type: "move_path"; source: string; destination: string }
-  | {
-      type: "run_command";
-      argv?: string[];
-      shellCommand?: string;
-      stdinBytes?: number;
-      timeoutMs: number;
-      waitMs?: number;
-    }
-  | { type: "get_command"; commandId: string; waitMs?: number; afterSequence?: number }
-  | {
-      type: "read_command_output";
-      commandId: string;
-      stream: "stdout" | "stderr";
-      offset?: number;
-      maxBytes?: number;
-    }
-  | { type: "cancel_command"; commandId: string };
+export type HudActivityCall = ActivityCall;
 
 export interface HudActivityDetailField {
   label: string;
@@ -271,97 +215,6 @@ function lineRange(call: Extract<HudActivityCall, { type: "read_file_range" }>):
   return undefined;
 }
 
-export function activityCallFromJob(job: WorkerJob): HudActivityCall {
-  switch (job.type) {
-    case "read_file":
-    case "view_image":
-      return { type: job.type, path: job.path };
-    case "list_files":
-      return {
-        type: job.type,
-        ...(job.path === undefined ? {} : { path: job.path }),
-        ...(job.recursive === undefined ? {} : { recursive: job.recursive }),
-        ...(job.cursor === undefined ? {} : { cursor: job.cursor }),
-        ...(job.limit === undefined ? {} : { limit: job.limit }),
-        timeoutMs: job.timeoutMs,
-      };
-    case "search_text":
-      return {
-        type: job.type,
-        query: job.query,
-        ...(job.path === undefined ? {} : { path: job.path }),
-        ...(job.matchMode === undefined ? {} : { matchMode: job.matchMode }),
-        ...(job.caseSensitive === undefined ? {} : { caseSensitive: job.caseSensitive }),
-        ...(job.maxResults === undefined ? {} : { maxResults: job.maxResults }),
-        ...(job.extensions === undefined ? {} : { extensions: job.extensions }),
-        ...(job.includeGlobs === undefined ? {} : { includeGlobs: job.includeGlobs }),
-        ...(job.excludeGlobs === undefined ? {} : { excludeGlobs: job.excludeGlobs }),
-        timeoutMs: job.timeoutMs,
-      };
-    case "read_file_range":
-      return {
-        type: job.type,
-        path: job.path,
-        ...(job.startLine === undefined ? {} : { startLine: job.startLine }),
-        ...(job.lineCount === undefined ? {} : { lineCount: job.lineCount }),
-        timeoutMs: job.timeoutMs,
-      };
-    case "write_file":
-      return {
-        type: job.type,
-        path: job.path,
-        contentBytes: Buffer.byteLength(job.content, "utf8"),
-        ...(job.expectedSha256 === undefined ? {} : { expectedSha256: job.expectedSha256 }),
-      };
-    case "edit_file":
-      return {
-        type: job.type,
-        path: job.path,
-        editCount: job.edits.length,
-        editBytes: job.edits.reduce(
-          (total, edit) => total + Buffer.byteLength(edit.oldText, "utf8") + Buffer.byteLength(edit.newText, "utf8"),
-          0,
-        ),
-        ...(job.expectedSha256 === undefined ? {} : { expectedSha256: job.expectedSha256 }),
-      };
-    case "make_directory":
-    case "delete_path":
-      return {
-        type: job.type,
-        path: job.path,
-        ...(job.recursive === undefined ? {} : { recursive: job.recursive }),
-      };
-    case "move_path":
-      return { type: job.type, source: job.source, destination: job.destination };
-    case "run_command":
-      return {
-        type: job.type,
-        ...(job.argv === undefined ? {} : { argv: job.argv }),
-        ...(job.shellCommand === undefined ? {} : { shellCommand: job.shellCommand }),
-        ...(job.stdin === undefined ? {} : { stdinBytes: Buffer.byteLength(job.stdin, "utf8") }),
-        timeoutMs: job.timeoutMs,
-        ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
-      };
-    case "get_command":
-      return {
-        type: job.type,
-        commandId: job.commandId,
-        ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
-        ...(job.afterSequence === undefined ? {} : { afterSequence: job.afterSequence }),
-      };
-    case "read_command_output":
-      return {
-        type: job.type,
-        commandId: job.commandId,
-        stream: job.stream,
-        ...(job.offset === undefined ? {} : { offset: job.offset }),
-        ...(job.maxBytes === undefined ? {} : { maxBytes: job.maxBytes }),
-      };
-    case "cancel_command":
-      return { type: job.type, commandId: job.commandId };
-  }
-}
-
 export function activityCallByteLength(call: HudActivityCall): number {
   return Buffer.byteLength(JSON.stringify(call), "utf8");
 }
@@ -565,6 +418,6 @@ export function activityCallDetailFields(call: HudActivityCall): HudActivityDeta
   }
 }
 
-export function activityToolTitle(type: HudActivityCall["type"] | WorkerJob["type"]): string {
+export function activityToolTitle(type: HudActivityCall["type"]): string {
   return type.split("_").map((part) => part[0]!.toUpperCase() + part.slice(1)).join(" ");
 }
