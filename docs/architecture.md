@@ -48,7 +48,7 @@ The managed Auth0 Google connection requests Google's account chooser on every n
 
 ### Worker device identity and pairing
 
-An unpaired CLI asks the relay to create a single-use pairing code with a ten-minute TTL, bound to the computer's name and platform, and prints it with the control-panel URL. The user signs in to the panel and enters the code, claiming it for that account; the CLI polls the relay until the code is claimed and then receives the enrollment result. A headless or SSH-only computer prints the same code for the user to redeem from any browser. Older CLIs instead enroll with a temporary Auth0 access token through `POST /v1/devices/enroll`; the relay keeps that endpoint for them.
+An unpaired CLI asks the relay to create a single-use pairing code with a ten-minute TTL, bound to the computer's name and platform, and prints it with the control-panel URL. The user signs in to the panel and enters the code, claiming it for that account; the CLI polls the relay until the code is claimed and then receives the enrollment result. Panel sign-in uses a signed, expiring browser transaction cookie and PKCE S256 so the authorization callback and code belong to the browser's login attempt. A headless or SSH-only computer prints the same code for the user to redeem from any browser. Older CLIs instead enroll with a temporary Auth0 access token through `POST /v1/devices/enroll`; the relay keeps that endpoint for them.
 
 The enrollment response contains the computer's revocable device credential:
 
