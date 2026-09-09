@@ -19,7 +19,6 @@ import { handleMcpRequest, MCP_SERVER_VERSION } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import {
   CURRENT_WORKER_CAPABILITIES,
-  RevokedDeviceRegistrationError,
   type RouterState,
 } from "./router-state.js";
 import {
@@ -658,51 +657,49 @@ export function buildRoutes(
 
   router.post("/device/register", async (request, response) => {
     const deadlineAt = Date.now() + config.GLOSSA_RELAY_REQUEST_TIMEOUT_MS;
-    const device = await authenticatedDevice(
-      request,
-      response,
-      store,
-      deviceRateLimiter,
-      deadlineAt,
-      runBeforeDeadline,
-    );
-    if (!device) return;
+    let device: DeviceRecord | null;
+    let revocationVersion: symbol;
+    do {
+      revocationVersion = state.revocationVersion;
+      device = await authenticatedDevice(
+        request,
+        response,
+        store,
+        deviceRateLimiter,
+        deadlineAt,
+        runBeforeDeadline,
+      );
+      if (!device) return;
+    } while (revocationVersion !== state.revocationVersion);
     const parsed = registerSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       rejectInvalidInput(response);
       return;
     }
     const workerId = parsed.data.workerId;
-    let session: ReturnType<RouterState["register"]>;
-    try {
-      session = state.register(
-        device.accountId,
-        device.id,
-        device.name,
-        workerId,
-        {
-          accessProfile: parsed.data.accessProfile,
-          ...(parsed.data.workerVersion
-            ? { workerVersion: parsed.data.workerVersion }
-            : {}),
-          ...(parsed.data.workspaceLabel
-            ? { workspaceLabel: parsed.data.workspaceLabel }
-            : {}),
-          capabilities: {
-            commandProgress: true,
-            concurrentJobs: true,
-            structuredReads: true,
-            imageReads: parsed.data.capabilities.imageReads === true,
-            structuredMutations: true,
-            commandOutputRanges: true,
-          },
+    const session = state.register(
+      device.accountId,
+      device.id,
+      device.name,
+      workerId,
+      {
+        accessProfile: parsed.data.accessProfile,
+        ...(parsed.data.workerVersion
+          ? { workerVersion: parsed.data.workerVersion }
+          : {}),
+        ...(parsed.data.workspaceLabel
+          ? { workspaceLabel: parsed.data.workspaceLabel }
+          : {}),
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+          imageReads: parsed.data.capabilities.imageReads === true,
+          structuredMutations: true,
+          commandOutputRanges: true,
         },
-      );
-    } catch (error) {
-      if (!(error instanceof RevokedDeviceRegistrationError)) throw error;
-      response.status(401).json({ error: "invalid_device" });
-      return;
-    }
+      },
+    );
     response.json({
       deviceId: device.id,
       workerId,
