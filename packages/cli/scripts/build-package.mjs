@@ -13,6 +13,7 @@ if (typeof packageJson.version !== "string") {
 await rm("dist", { recursive: true, force: true });
 
 const applicationDefine = {
+  "process.env.NODE_ENV": JSON.stringify("production"),
   __GLOSSA_VERSION__: JSON.stringify(packageJson.version),
   __GLOSSA_DISTRIBUTION__: JSON.stringify("npm"),
 };
@@ -28,7 +29,7 @@ const omitInkDevtools = {
 };
 
 // Application bundle, targeted at the supported Node.js release.
-await build({
+const application = await build({
   entryPoints: ["src/main.ts"],
   outfile: "dist/app.js",
   bundle: true,
@@ -37,11 +38,18 @@ await build({
   format: "esm",
   external: ["@napi-rs/keyring"],
   define: applicationDefine,
+  metafile: true,
   plugins: [omitInkDevtools],
   banner: {
     js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
   },
 });
+
+if (Object.keys(application.metafile.inputs).some((input) =>
+  /\/react[^/]*\/.*\.development\.js$/.test(input.replaceAll("\\", "/"))
+)) {
+  throw new Error("CLI bundle includes React development code that retains HUD timing records.");
+}
 
 // Tiny bootstrap entry (the published bin). Built against a conservative target
 // so it parses on old Node.js and prints the version requirement before it

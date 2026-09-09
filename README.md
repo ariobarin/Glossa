@@ -77,6 +77,8 @@ npm run dev:setup
 npm run dev
 ```
 
+CLI distributable builds pin React to production mode so idle HUD refreshes do not accumulate development timing records in memory.
+
 Stop local Postgres with `npm run dev:down`.
 
 ### Local integration

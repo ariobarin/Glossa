@@ -36,6 +36,7 @@ const result = await Bun.build({
     outfile: output,
   },
   define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
     __GLOSSA_VERSION__: JSON.stringify(version),
     __GLOSSA_DISTRIBUTION__: JSON.stringify("standalone"),
   },
