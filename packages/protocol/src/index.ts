@@ -62,6 +62,7 @@ export const workerAccessProfileSchema = z.enum([
 export type WorkerAccessProfile = z.infer<typeof workerAccessProfileSchema>;
 
 export const DEFAULT_WORKER_ACCESS_PROFILE: WorkerAccessProfile = "workspace";
+export const WORKER_PROTOCOL_VERSION = 1;
 
 export interface WorkerPermissions {
   readFiles: true;

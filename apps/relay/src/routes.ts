@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   MAX_TEXT_BYTES,
   MAX_WORKER_POLL_MS,
+  WORKER_PROTOCOL_VERSION,
   deviceNameSchema,
   workerAccessProfileSchema,
   workerResultSchema,
@@ -18,7 +19,6 @@ import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { handleMcpRequest, MCP_SERVER_VERSION } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import {
-  CURRENT_WORKER_CAPABILITIES,
   RevokedDeviceRegistrationError,
   type RouterState,
 } from "./router-state.js";
@@ -67,14 +67,7 @@ const registerSchema = z.object({
     .max(64)
     .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/)
     .optional(),
-  capabilities: z.object({
-    commandProgress: z.literal(true),
-    concurrentJobs: z.literal(true),
-    structuredReads: z.literal(true),
-    imageReads: z.literal(true).optional(),
-    structuredMutations: z.literal(true),
-    commandOutputRanges: z.literal(true),
-  }).strict(),
+  protocolVersion: z.literal(WORKER_PROTOCOL_VERSION),
 }).strict();
 const pollSchema = z.object({
   workerId: workerIdSchema,
@@ -688,14 +681,6 @@ export function buildRoutes(
           ...(parsed.data.workspaceLabel
             ? { workspaceLabel: parsed.data.workspaceLabel }
             : {}),
-          capabilities: {
-            commandProgress: true,
-            concurrentJobs: true,
-            structuredReads: true,
-            imageReads: parsed.data.capabilities.imageReads === true,
-            structuredMutations: true,
-            commandOutputRanges: true,
-          },
         },
       );
     } catch (error) {
@@ -710,7 +695,7 @@ export function buildRoutes(
       workerToken: session.workerToken,
       accessProfile: parsed.data.accessProfile,
       mcpContractVersion: MCP_SERVER_VERSION,
-      capabilities: CURRENT_WORKER_CAPABILITIES,
+      protocolVersion: WORKER_PROTOCOL_VERSION,
       ...(parsed.data.workspaceLabel
         ? { workspaceLabel: parsed.data.workspaceLabel }
         : {}),
