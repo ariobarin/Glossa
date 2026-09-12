@@ -352,7 +352,7 @@ test("uses a worker credential for current-protocol hot requests", async () => {
   assert.equal(resultResponse?.bodyUsed, true);
 });
 
-test("handles cancellation while a command status wait is still running", async () => {
+test("keeps cancellation and another status slot available during a command wait", async () => {
   const controller = new AbortController();
   const generation = "00000000-0000-4000-8000-000000000001";
   const workerToken = `glw_${"d".repeat(43)}`;
@@ -467,7 +467,7 @@ test("handles cancellation while a command status wait is still running", async 
   ]);
   assert.equal(
     (pollBodies[1]?.acceptedTypes as string[]).includes("get_command"),
-    false,
+    true,
   );
   assert.equal(
     (pollBodies[1]?.acceptedTypes as string[]).includes("cancel_command"),
