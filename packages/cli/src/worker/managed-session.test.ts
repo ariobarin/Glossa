@@ -10,6 +10,16 @@ import {
   visibleWorker,
 } from "./managed-session.js";
 
+test("skips activity handling when output is quiet and unobserved", () => {
+  const worker = {
+    async handle(): Promise<never> {
+      throw new Error("not called");
+    },
+  };
+
+  assert.equal(visibleWorker(worker, { quiet: true }), worker);
+});
+
 test("aborts device pairing when the managed session stops", async () => {
   const controller = new AbortController();
   const endpoints = {
