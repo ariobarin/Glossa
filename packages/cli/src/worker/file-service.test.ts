@@ -483,6 +483,32 @@ test("searches literal text with compound suffixes and bounded snippets", async 
   });
 });
 
+test("preserves regex captures, assertions, unicode flags and result limits", async (context) => {
+  const root = await temporaryDirectory(context);
+  await writeFile(path.join(root, "one.txt"), "header\r\nFOO foo\r\nK😀\r\nEND\n");
+  await writeFile(path.join(root, "two.txt"), "FOO foo\n");
+  const files = new FileService(await PathPolicy.create(root));
+  const captures = await files.searchText({ query: "(?<=^)(foo) \\1$", matchMode: "regex" });
+  assert.deepEqual(captures.matches.map(({ path, line, column }) => ({ path, line, column })), [
+    { path: "one.txt", line: 2, column: 1 },
+    { path: "two.txt", line: 1, column: 1 },
+  ]);
+  assert.equal((await files.searchText({
+    query: "(?<=^)(foo) \\1$", matchMode: "regex", caseSensitive: true,
+  })).matches.length, 0);
+  const unicode = await files.searchText({ query: "k(?=\\p{Emoji})", matchMode: "regex" });
+  assert.equal(unicode.matches[0]?.text, "K😀");
+  assert.equal(unicode.matches[0]?.column, 1);
+  const empty = await files.searchText({
+    query: "(?=foo)", matchMode: "regex", maxResults: 1,
+  });
+  assert.equal(empty.matches.length, 1);
+  assert.equal(empty.matches[0]?.column, 1);
+  assert.equal(empty.truncated, true);
+  const end = await files.searchText({ query: "^$", matchMode: "regex", path: "one.txt" });
+  assert.equal(end.matches[0]?.line, 5);
+});
+
 test("searches regular directory entries without redundant lstat calls", async (context) => {
   const root = await temporaryDirectory(context);
   await mkdir(path.join(root, "src"));
@@ -681,7 +707,7 @@ test("retains timed out filesystem work until it settles", async (context) => {
     async read() {
       return null;
     },
-    async close() {
+    close() {
       closed = true;
     },
   } as unknown as Awaited<ReturnType<typeof opendir>>;
@@ -697,7 +723,8 @@ test("retains timed out filesystem work until it settles", async (context) => {
     },
   );
 
-  const pending = files.listFiles({ timeoutMs: 5 });
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const pending = files.listFiles({ timeoutMs: 8_000 });
   void pending.then(
     () => {
       settled = true;
@@ -706,8 +733,9 @@ test("retains timed out filesystem work until it settles", async (context) => {
       settled = true;
     },
   );
-  await openStarted;
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await Promise.race([openStarted, pending]);
+  context.mock.timers.tick(8_000);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(settled, false);
 
   resolveOpen(lateHandle);
