@@ -97,16 +97,10 @@ test("managed review can allow one exact database identity alongside Google", ()
   assert.equal(subjectIsAllowedIdentity(reviewReady, "github|123456789"), false);
 });
 
-test("self-hosted relays retain the legacy single-prefix setting", () => {
-  const selfHosted = config({
-    GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: "github|",
-  });
-
-  assert.deepEqual(selfHosted.GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES, ["github|"]);
-  assert.equal(subjectIsAllowedIdentity(selfHosted, "github|123456789"), true);
-  assert.equal(
-    subjectIsAllowedIdentity(selfHosted, "google-oauth2|123456789"),
-    false,
+test("rejects the removed singular subject-prefix setting", () => {
+  assert.throws(
+    () => config({ GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: "github|" }),
+    /has been removed.*GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES/,
   );
 });
 
@@ -124,14 +118,6 @@ test("provider prefix configuration rejects ambiguous or unsafe values", () => {
         GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "google-oauth2|,google-oauth2|",
       }),
     /Auth0 subject prefixes must be unique/,
-  );
-  assert.throws(
-    () =>
-      config({
-        GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: "google-oauth2|,auth0|",
-        GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX: "google-oauth2|",
-      }),
-    /either plural or legacy singular Auth0 subject prefixes/,
   );
 });
 
