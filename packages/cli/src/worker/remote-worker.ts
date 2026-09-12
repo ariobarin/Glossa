@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  WORKER_JOB_TYPES,
+  workerJobLane,
   workerJobSchema,
   type WorkerAccessProfile,
   type WorkerJob,
+  type WorkerJobLane,
   type WorkerResult,
 } from "@glossa/protocol";
 
@@ -32,9 +35,7 @@ interface RegisteredSession {
   mcpContractVersion?: string;
 }
 
-type JobLane = "status" | "cancel" | "read" | "mutation";
-
-type LaneCounts = Record<JobLane, number>;
+type LaneCounts = Record<WorkerJobLane, number>;
 
 type Fetcher = typeof fetch;
 type Sleeper = (milliseconds: number, signal: AbortSignal) => Promise<void>;
@@ -131,56 +132,23 @@ function acceptsCapabilities(
     (capabilities as Record<string, unknown>).imageReads === true;
 }
 
-function jobLane(job: WorkerJob): JobLane {
-  switch (job.type) {
-    case "get_command":
-    case "read_command_output":
-      return "status";
-    case "cancel_command":
-      return "cancel";
-    case "read_file":
-    case "view_image":
-    case "list_files":
-    case "search_text":
-    case "read_file_range":
-      return "read";
-    case "write_file":
-    case "edit_file":
-    case "make_directory":
-    case "delete_path":
-    case "move_path":
-    case "run_command":
-      return "mutation";
-  }
-}
-
 function acceptedJobTypes(
   counts: LaneCounts,
   total: number,
   imageReads: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
-  const accepted: WorkerJob["type"][] = [];
-  if (counts.status < 1) {
-    accepted.push("get_command", "read_command_output");
-  }
-  if (counts.cancel < 1) accepted.push("cancel_command");
-  if (counts.read < 2) {
-    accepted.push("read_file");
-    if (imageReads) accepted.push("view_image");
-    accepted.push("list_files", "search_text", "read_file_range");
-  }
-  if (counts.mutation < 1) {
-    accepted.push(
-      "write_file",
-      "edit_file",
-      "make_directory",
-      "delete_path",
-      "move_path",
-      "run_command",
-    );
-  }
-  return accepted;
+  const laneCapacity: Record<WorkerJobLane, number> = {
+    status: 1,
+    cancel: 1,
+    read: 2,
+    mutation: 1,
+  };
+  return WORKER_JOB_TYPES.filter((type) => {
+    if (type === "view_image" && !imageReads) return false;
+    const lane = workerJobLane(type);
+    return counts[lane] < laneCapacity[lane];
+  });
 }
 
 function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -425,7 +393,7 @@ export class RemoteWorker {
       };
     };
     const dispatch = (job: WorkerJob): void => {
-      const lane = jobLane(job);
+      const lane = workerJobLane(job.type);
       counts[lane] += 1;
       ensureHeartbeat();
       let task!: Promise<void>;
