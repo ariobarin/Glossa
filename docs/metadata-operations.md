@@ -12,7 +12,17 @@ Run the structural check with:
 npm run review:metadata:check
 ```
 
-For each metadata revision, run the corpus in a fresh Developer Mode conversation after deploying and refreshing the MCP connection. Record:
+## Private ChatGPT iteration
+
+Do not deploy metadata experiments to production just to inspect ChatGPT's UI or tool selection. Run the exact branch locally with `docker compose up -d --build --wait`, then use OpenAI's [Secure MCP Tunnel](https://github.com/openai/tunnel-client) to connect the private `http://127.0.0.1:39100/mcp` endpoint. Follow the current OpenAI tunnel setup rather than copying a pinned tunnel-client binary or maintaining a Glossa wrapper.
+
+In [ChatGPT Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt), create a draft app backed by that tunnel and run **Scan Tools**. After changing tool metadata, rebuild/restart the local relay and use **Refresh** before opening a fresh test chat. The tunnel forwards OAuth-protected MCP traffic and rewrites protected-resource discovery URLs; the configured authorization server itself must remain publicly reachable.
+
+Put the dedicated development Auth0 relay and optional panel settings in `.env`; Compose forwards that file to the local relay without baking it into the image. The local `dev:auth` issuer remains for automated integration tests, not browser-facing ChatGPT OAuth. Do not reuse production identity configuration.
+
+For calls that require a live worker, keep its device credential isolated from the normal production-paired CLI. The current CLI stores one relay-bound device pairing per operating-system user, so switching that same credential to a development relay intentionally revokes and replaces the old pairing. Use a disposable OS account or VM for an interactive development worker, or use `npm run integration:smoke` when ChatGPT UI is not part of the test.
+
+For each metadata revision, run the corpus in a fresh Developer Mode conversation after refreshing the draft app. Record:
 
 - date and Git commit;
 - ChatGPT or Codex surface used;
@@ -30,8 +40,8 @@ For direct and indirect prompts, report recall as the fraction of cases where Gl
 
 Change one routing-sensitive metadata dimension at a time when practical: tool name, title, description, parameter documentation, schema, or annotation. After each change:
 
-1. deploy the exact commit;
-2. refresh or re-scan the MCP connection as appropriate;
+1. run the exact commit through the private tunnel, or deploy it to an intentionally isolated staging environment when a long-lived shared test is required;
+2. refresh or re-scan the draft MCP app as appropriate;
 3. rerun the complete golden corpus on the affected ChatGPT and Codex surfaces;
 4. compare activation, selected tool sequence, arguments, and confirmation behavior to the previous revision;
 5. record the result in the pull request or release decision record before merging.
