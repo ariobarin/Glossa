@@ -494,6 +494,114 @@ export const workerJobSchema = z.discriminatedUnion("type", [
 ]);
 
 export type WorkerJob = z.infer<typeof workerJobSchema>;
+export type WorkerJobType = WorkerJob["type"];
+
+export type WorkerOperationPermission = "read" | "write" | "command";
+export type WorkerOperationLane = "status" | "cancel" | "read" | "mutation";
+
+export interface WorkerOperationMetadata {
+  permission: WorkerOperationPermission;
+  lane: WorkerOperationLane;
+  scanRestrictedInput: boolean;
+  scanRestrictedResult: boolean;
+}
+
+export const WORKER_OPERATIONS = {
+  read_file: {
+    permission: "read",
+    lane: "read",
+    scanRestrictedInput: true,
+    scanRestrictedResult: true,
+  },
+  view_image: {
+    permission: "read",
+    lane: "read",
+    scanRestrictedInput: true,
+    scanRestrictedResult: false,
+  },
+  list_files: {
+    permission: "read",
+    lane: "read",
+    scanRestrictedInput: true,
+    scanRestrictedResult: true,
+  },
+  search_text: {
+    permission: "read",
+    lane: "read",
+    scanRestrictedInput: true,
+    scanRestrictedResult: true,
+  },
+  read_file_range: {
+    permission: "read",
+    lane: "read",
+    scanRestrictedInput: true,
+    scanRestrictedResult: true,
+  },
+  write_file: {
+    permission: "write",
+    lane: "mutation",
+    scanRestrictedInput: true,
+    scanRestrictedResult: false,
+  },
+  edit_file: {
+    permission: "write",
+    lane: "mutation",
+    scanRestrictedInput: true,
+    scanRestrictedResult: true,
+  },
+  make_directory: {
+    permission: "write",
+    lane: "mutation",
+    scanRestrictedInput: true,
+    scanRestrictedResult: false,
+  },
+  delete_path: {
+    permission: "write",
+    lane: "mutation",
+    scanRestrictedInput: true,
+    scanRestrictedResult: false,
+  },
+  move_path: {
+    permission: "write",
+    lane: "mutation",
+    scanRestrictedInput: true,
+    scanRestrictedResult: false,
+  },
+  run_command: {
+    permission: "command",
+    lane: "mutation",
+    scanRestrictedInput: true,
+    scanRestrictedResult: true,
+  },
+  get_command: {
+    permission: "command",
+    lane: "status",
+    scanRestrictedInput: false,
+    scanRestrictedResult: true,
+  },
+  read_command_output: {
+    permission: "command",
+    lane: "status",
+    scanRestrictedInput: false,
+    scanRestrictedResult: true,
+  },
+  cancel_command: {
+    permission: "command",
+    lane: "cancel",
+    scanRestrictedInput: false,
+    scanRestrictedResult: true,
+  },
+} as const satisfies Record<WorkerJobType, WorkerOperationMetadata>;
+
+export const WORKER_JOB_TYPES = Object.freeze(
+  Object.keys(WORKER_OPERATIONS) as WorkerJobType[],
+);
+
+export function workerOperation(
+  type: WorkerJobType,
+): WorkerOperationMetadata {
+  return WORKER_OPERATIONS[type];
+}
 
 export const workerResultSchema = z.object({
   requestId: z.string().uuid(),
