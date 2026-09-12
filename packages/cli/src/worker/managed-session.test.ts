@@ -153,6 +153,34 @@ test("revokes a pairing at its old relay before pairing again", async () => {
   assert.equal(result, pairingResult);
 });
 
+test("explains how to clear an unreachable old relay pairing", async () => {
+  let deleted = false;
+  let paired = false;
+  const oldRelay = "http://127.0.0.1:39100";
+  await assert.rejects(
+    deviceForSession(pairingEndpoints, {
+      ...pairingDependencies(),
+      loadDeviceCredential: async () => ({
+        ...pairingResult,
+        relayOrigin: oldRelay,
+      }),
+      revokePairedDevice: async () => {
+        throw new Error("fetch failed");
+      },
+      deleteDeviceCredential: async () => {
+        deleted = true;
+      },
+      pairDevice: async () => {
+        paired = true;
+        return pairingResult;
+      },
+    }),
+    new RegExp(`previous relay at ${oldRelay.replaceAll(".", "\\.")}.*Run glossa unpair.*fetch failed`),
+  );
+  assert.equal(deleted, false);
+  assert.equal(paired, false);
+});
+
 test("keeps retry diagnostics local and adds the current workspace timing", () => {
   assert.equal(
     statusMessage(
