@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: glossa
       POSTGRES_PASSWORD: glossa
     ports:
-      - "55432:5432"
+      - "127.0.0.1:55432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U glossa -d glossa"]
       interval: 2s
@@ -14,6 +14,37 @@ services:
       retries: 15
     volumes:
       - glossa-postgres:/var/lib/postgresql/data
+
+  relay:
+    build:
+      context: .
+    environment:
+      NODE_ENV: development
+      GLOSSA_BIND_HOST: 0.0.0.0
+      PORT: 39100
+      DATABASE_URL: postgres://glossa:glossa@postgres:5432/glossa
+      GLOSSA_PUBLIC_ORIGIN: ${GLOSSA_PUBLIC_ORIGIN:-http://localhost:39100}
+      GLOSSA_AUTH0_ISSUER: ${GLOSSA_AUTH0_ISSUER:-https://example.auth0.com/}
+      GLOSSA_AUTH0_AUDIENCE: ${GLOSSA_AUTH0_AUDIENCE:-https://mcp.glossa.test/}
+      GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES: ${GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES:-google-oauth2|}
+    ports:
+      - "127.0.0.1:39100:39100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - npm run migrate --workspace @glossa/relay && exec npm run start --workspace @glossa/relay
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:39100/healthz').then((response)=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 2s
+      timeout: 5s
+      retries: 15
 
 volumes:
   glossa-postgres:
