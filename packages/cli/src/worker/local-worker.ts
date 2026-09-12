@@ -9,7 +9,7 @@ import {
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
-import { CommandService } from "./command-service.js";
+import { CommandService, type StartCommandOptions } from "./command-service.js";
 import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
 import { PathPolicy } from "./path-policy.js";
@@ -28,6 +28,19 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
 
 function resultMayContainRestrictedData(job: WorkerJob): boolean {
   return workerOperation(job.type).scanRestrictedResult;
+}
+
+type RunCommandJob = Extract<WorkerJob, { type: "run_command" }>;
+
+function commandStartOptions(job: RunCommandJob): StartCommandOptions {
+  const common = {
+    ...(job.stdin === undefined ? {} : { stdin: job.stdin }),
+    timeoutMs: job.timeoutMs,
+    ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
+  };
+  return job.argv
+    ? { ...common, argv: job.argv }
+    : { ...common, shellCommand: job.shellCommand! };
 }
 
 export class LocalWorker {
@@ -139,13 +152,7 @@ export class LocalWorker {
           value = await this.files.movePath(job.source, job.destination);
           break;
         case "run_command":
-          value = await this.commands.start({
-            ...(job.argv ? { argv: job.argv } : {}),
-            ...(job.shellCommand ? { shellCommand: job.shellCommand } : {}),
-            ...(job.stdin !== undefined ? { stdin: job.stdin } : {}),
-            timeoutMs: job.timeoutMs,
-            ...(job.waitMs === undefined ? {} : { waitMs: job.waitMs }),
-          });
+          value = await this.commands.start(commandStartOptions(job));
           break;
         case "get_command":
           value = await this.commands.get(

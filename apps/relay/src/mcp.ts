@@ -31,6 +31,7 @@ import {
   writeFileRequestSchema,
   workerOperation,
   type WorkerJob,
+  type WorkerErrorResult,
   type WorkerJobType,
   type WorkerResult,
 } from "@glossa/protocol";
@@ -764,8 +765,8 @@ function routedError(error: unknown) {
   return errorResult("relay_failure", "The relay operation failed.");
 }
 
-function workerError(result: WorkerResult) {
-  const code = result.error?.code ?? "worker_failure";
+function workerError(result: WorkerErrorResult) {
+  const code = result.error.code;
   return errorResult(
     code,
     safeWorkerMessages[code] ?? "The local worker operation failed.",

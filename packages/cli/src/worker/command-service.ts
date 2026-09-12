@@ -27,13 +27,16 @@ export type CommandStatus =
   | "canceled"
   | "timed_out";
 
-export interface StartCommandOptions {
-  argv?: string[];
-  shellCommand?: string;
+interface StartCommandCommonOptions {
   stdin?: string;
   timeoutMs?: number;
   waitMs?: number;
 }
+
+export type StartCommandOptions = StartCommandCommonOptions & (
+  | { argv: string[]; shellCommand?: never }
+  | { argv?: never; shellCommand: string }
+);
 
 export type CommandOutputStream = "stdout" | "stderr";
 
@@ -469,12 +472,6 @@ export class CommandService {
       }
       this.#activeCommandId = null;
     }
-    if ((options.argv ? 1 : 0) + (options.shellCommand ? 1 : 0) !== 1) {
-      throw new WorkerError(
-        "invalid_command",
-        "Exactly one of argv or shellCommand is required.",
-      );
-    }
     if (
       process.platform === "win32" &&
       options.argv &&
@@ -500,11 +497,7 @@ export class CommandService {
       );
     }
     if (
-      containsRestrictedAuthenticationData({
-        argv: options.argv,
-        shellCommand: options.shellCommand,
-        stdin: options.stdin,
-      })
+      containsRestrictedAuthenticationData(options)
     ) {
       throw restrictedDataError();
     }

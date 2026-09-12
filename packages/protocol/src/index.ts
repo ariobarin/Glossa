@@ -670,17 +670,31 @@ export function workerOperation(
   return WORKER_OPERATIONS[type];
 }
 
-export const workerResultSchema = z.object({
-  requestId: z.string().uuid(),
-  ok: z.boolean(),
-  value: z.unknown().optional(),
-  error: z
+const workerErrorSchema = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    details: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+export const workerResultSchema = z.discriminatedUnion("ok", [
+  z
     .object({
-      code: z.string(),
-      message: z.string(),
-      details: z.record(z.string(), z.unknown()).optional(),
+      requestId: z.string().uuid(),
+      ok: z.literal(true),
+      value: z.unknown().optional(),
     })
-    .optional(),
-});
+    .strict(),
+  z
+    .object({
+      requestId: z.string().uuid(),
+      ok: z.literal(false),
+      error: workerErrorSchema,
+    })
+    .strict(),
+]);
 
 export type WorkerResult = z.infer<typeof workerResultSchema>;
+export type WorkerSuccessResult = Extract<WorkerResult, { ok: true }>;
+export type WorkerErrorResult = Extract<WorkerResult, { ok: false }>;
