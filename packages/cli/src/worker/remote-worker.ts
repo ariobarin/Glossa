@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  WORKER_JOB_TYPES,
   workerJobSchema,
+  workerOperation,
   type WorkerAccessProfile,
   type WorkerJob,
+  type WorkerOperationLane,
   type WorkerResult,
 } from "@glossa/protocol";
 
@@ -32,7 +35,15 @@ interface RegisteredSession {
   mcpContractVersion?: string;
 }
 
-type JobLane = "status" | "cancel" | "read" | "mutation";
+type JobLane = WorkerOperationLane;
+
+const LANE_CAPACITY: Record<JobLane, number> = {
+  status: 1,
+  cancel: 1,
+  read: 2,
+  mutation: 1,
+};
+const LANE_PRIORITY: JobLane[] = ["status", "cancel", "read", "mutation"];
 
 type LaneCounts = Record<JobLane, number>;
 
@@ -132,26 +143,7 @@ function acceptsCapabilities(
 }
 
 function jobLane(job: WorkerJob): JobLane {
-  switch (job.type) {
-    case "get_command":
-    case "read_command_output":
-      return "status";
-    case "cancel_command":
-      return "cancel";
-    case "read_file":
-    case "view_image":
-    case "list_files":
-    case "search_text":
-    case "read_file_range":
-      return "read";
-    case "write_file":
-    case "edit_file":
-    case "make_directory":
-    case "delete_path":
-    case "move_path":
-    case "run_command":
-      return "mutation";
-  }
+  return workerOperation(job.type).lane;
 }
 
 function acceptedJobTypes(
@@ -160,27 +152,14 @@ function acceptedJobTypes(
   imageReads: boolean,
 ): WorkerJob["type"][] {
   if (total >= MAX_CONCURRENT_JOBS) return [];
-  const accepted: WorkerJob["type"][] = [];
-  if (counts.status < 1) {
-    accepted.push("get_command", "read_command_output");
-  }
-  if (counts.cancel < 1) accepted.push("cancel_command");
-  if (counts.read < 2) {
-    accepted.push("read_file");
-    if (imageReads) accepted.push("view_image");
-    accepted.push("list_files", "search_text", "read_file_range");
-  }
-  if (counts.mutation < 1) {
-    accepted.push(
-      "write_file",
-      "edit_file",
-      "make_directory",
-      "delete_path",
-      "move_path",
-      "run_command",
-    );
-  }
-  return accepted;
+  return LANE_PRIORITY.flatMap((lane) =>
+    counts[lane] < LANE_CAPACITY[lane]
+      ? WORKER_JOB_TYPES.filter((type) =>
+          workerOperation(type).lane === lane &&
+          (type !== "view_image" || imageReads)
+        )
+      : []
+  );
 }
 
 function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
