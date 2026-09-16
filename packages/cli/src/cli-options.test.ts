@@ -64,6 +64,18 @@ test("keeps the reduced direct CLI actions", () => {
   }
 });
 
+test("opts into keep-awake without consuming the workspace path", () => {
+  for (const args of [["--keep-awake", "."], [".", "--keep-awake"]]) {
+    assert.deepEqual(parseInvocation(args), {
+      command: "workspace", path: ".", accessProfile: "workspace", keepAwake: true,
+    });
+  }
+  assert.throws(() => parseInvocation(["--keep-awake", "--keep-awake"]), UsageError);
+  assert.deepEqual(parseInvocation(["--", "--keep-awake"]), {
+    command: "workspace", path: "--keep-awake", accessProfile: "workspace",
+  });
+});
+
 test("parses update actions and settings", () => {
   assert.deepEqual(parseInvocation(["update"]), {
     command: "update",

@@ -6,6 +6,7 @@ import {
   type CliInvocation,
 } from "./cli-options.js";
 import { deviceStatus, formatRelativeTime } from "./device-format.js";
+import { withKeepAwake } from "./keep-awake.js";
 import {
   listDevices,
   loadRelayEndpoints,
@@ -46,7 +47,7 @@ const DISTRIBUTION = __GLOSSA_DISTRIBUTION__;
 const HELP = `Glossa ${VERSION}
 
 Usage:
-  glossa [--access <read-only|workspace|system>] [--label <name>] [directory]
+  glossa [--access <read-only|workspace|system>] [--label <name>] [--keep-awake] [directory]
   glossa unpair
   glossa update [--check]
   glossa update --policy <notify|auto|off>
@@ -59,6 +60,9 @@ Access defaults to workspace: guarded file reads and writes, with commands disab
 Use read-only to prevent file changes. Use system only when ChatGPT must run commands;
 those commands inherit this account's permissions, environment, credentials, and network.
 Update checks run at most once per day before a workspace connects.
+On Windows, --keep-awake prevents idle sleep during the workspace session.
+The display can turn off. Lid closure still follows Windows settings; select
+"Do nothing" for lid closure while plugged in. Use AC power for long sessions.
 
 Keys:
   a  activity
@@ -74,6 +78,7 @@ async function runWorkspaceSession(
   path: string | undefined,
   label: string | undefined,
   accessProfile: WorkerAccessProfile,
+  keepAwake: boolean,
   initialNotice?: string,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
@@ -89,43 +94,53 @@ async function runWorkspaceSession(
       ...(label ? { workspaceLabel: label } : {}),
       ...(initialNotice ? { initialNotice } : {}),
       run: async (signal, onEvent) => {
-        while (!signal.aborted) {
-          const sessionAccessProfile = requestedAccessProfile;
-          const sessionController = new AbortController();
-          activeSessionController = sessionController;
-          const stopSession = (): void => sessionController.abort(signal.reason);
-          if (signal.aborted) sessionController.abort(signal.reason);
-          else signal.addEventListener("abort", stopSession, { once: true });
-          try {
-            await runManagedSession(root, endpoints, {
-              device,
-              workerVersion: VERSION,
-              accessProfile: sessionAccessProfile,
-              ...(label ? { workspaceLabel: label } : {}),
-              signal: sessionController.signal,
-              onEvent: (event) => {
-                postExitNotice = retainPostExitNotice(postExitNotice, event);
-                onEvent(event);
-              },
-              quiet: true,
-              handleProcessSignals: false,
-            });
-          } catch (error) {
-            if (signal.aborted) return;
-            if (
-              sessionController.signal.aborted &&
-              requestedAccessProfile !== sessionAccessProfile
-            ) {
-              continue;
+        const run = async (signal: AbortSignal): Promise<void> => {
+          while (!signal.aborted) {
+            const sessionAccessProfile = requestedAccessProfile;
+            const sessionController = new AbortController();
+            activeSessionController = sessionController;
+            const stopSession = (): void => sessionController.abort(signal.reason);
+            if (signal.aborted) sessionController.abort(signal.reason);
+            else signal.addEventListener("abort", stopSession, { once: true });
+            try {
+              await runManagedSession(root, endpoints, {
+                device,
+                workerVersion: VERSION,
+                accessProfile: sessionAccessProfile,
+                ...(label ? { workspaceLabel: label } : {}),
+                signal: sessionController.signal,
+                onEvent: (event) => {
+                  postExitNotice = retainPostExitNotice(postExitNotice, event);
+                  onEvent(event);
+                },
+                quiet: true,
+                handleProcessSignals: false,
+              });
+            } catch (error) {
+              if (signal.aborted) return;
+              if (
+                sessionController.signal.aborted &&
+                requestedAccessProfile !== sessionAccessProfile
+              ) {
+                continue;
+              }
+              throw error;
+            } finally {
+              signal.removeEventListener("abort", stopSession);
+              if (activeSessionController === sessionController) {
+                activeSessionController = undefined;
+              }
             }
-            throw error;
-          } finally {
-            signal.removeEventListener("abort", stopSession);
-            if (activeSessionController === sessionController) {
-              activeSessionController = undefined;
-            }
+            if (requestedAccessProfile === sessionAccessProfile) return;
           }
-          if (requestedAccessProfile === sessionAccessProfile) return;
+        };
+        if (keepAwake) {
+          await withKeepAwake(signal, async (awakeSignal) => {
+            onEvent({ type: "notice", message: "Keep-awake enabled. Lid closure still follows Windows settings; use AC power for long sessions." });
+            await run(awakeSignal);
+          });
+        } else {
+          await run(signal);
         }
       },
       loadStatus: async (signal) => {
@@ -173,10 +188,11 @@ async function runWorkspace(
   path: string | undefined,
   label: string | undefined,
   accessProfile: WorkerAccessProfile,
+  keepAwake: boolean,
   initialNotice?: string,
 ): Promise<void> {
   await withWorkspaceLease(
-    async () => await runWorkspaceSession(path, label, accessProfile, initialNotice),
+    async () => await runWorkspaceSession(path, label, accessProfile, keepAwake, initialNotice),
   );
 }
 
@@ -286,12 +302,16 @@ async function main(): Promise<void> {
   } else if (invocation.command === "version") {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
+    if (invocation.keepAwake && process.platform !== "win32") {
+      throw new UsageError("--keep-awake is currently supported only on Windows.");
+    }
     const update = await updateBeforeWorkspace();
     if (update.exit) return;
     await runWorkspace(
       invocation.path,
       invocation.label,
       invocation.accessProfile,
+      invocation.keepAwake ?? false,
       update.notice,
     );
   } else if (invocation.command === "unpair") {

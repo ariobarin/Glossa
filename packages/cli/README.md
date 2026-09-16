@@ -28,6 +28,8 @@ Expose only a narrow project you trust. Keep credentials and regulated or sensit
 
 Pass a directory to expose another project, and add `--label <name>` when several online workspaces need a non-sensitive identifier. The terminal shows the selected project, access profile, connection state, and recent activity. Press `q` or Ctrl+C to disconnect.
 
+Windows: `glossa --keep-awake` prevents idle sleep until Glossa exits. For closed-lid use, see [setup](https://github.com/ariobarin/glossa/blob/main/docs/operations.md#keep-a-windows-workspace-awake).
+
 The first time a computer runs Glossa, it shows a short pairing code. Enter it on the Glossa control panel from any browser to enroll the computer; a headless or SSH-only machine needs no local browser. The CLI stores only its revocable device credential, not a Google or Auth0 refresh token. Later workspace sessions reuse that pairing without user sign-in.
 
 Press `d` in the terminal to list and revoke the account's devices. Run `glossa unpair` to revoke this computer and remove its local pairing before moving it to another Glossa account.
