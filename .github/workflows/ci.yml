@@ -33,7 +33,7 @@ jobs:
       - run: docker compose up -d --wait postgres
       - run: npm run integration:smoke
         env:
-          GLOSSA_INTEGRATION_DATABASE_URL: postgres://glossa:glossa@127.0.0.1:5432/glossa
+          GLOSSA_INTEGRATION_DATABASE_URL: postgres://glossa:glossa@127.0.0.1:55432/glossa
       - if: always()
         run: docker compose down -v
 
