@@ -680,7 +680,7 @@ export type CommandStatus = z.infer<typeof commandStatusSchema>;
 export type CommandResult = z.infer<typeof commandResultSchema>;
 export type CommandOutputRangeResult = z.infer<typeof commandOutputRangeResultSchema>;
 
-export const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   invalid_path: "The requested path is invalid.",
   absolute_path: "Absolute paths are not allowed.",
   path_traversal: "Parent path traversal is not allowed.",
@@ -732,6 +732,13 @@ export const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   invalid_range: "The requested file range is invalid.",
   [RESTRICTED_DATA_ERROR_CODE]: RESTRICTED_DATA_ERROR_MESSAGE,
 };
+
+export function workerErrorMessage(code: string): string {
+  const message = Object.hasOwn(WORKER_ERROR_MESSAGES, code)
+    ? WORKER_ERROR_MESSAGES[code]
+    : undefined;
+  return message ?? "The local worker operation failed.";
+}
 
 export const workerResultSchema = z.object({
   requestId: z.string().uuid(),

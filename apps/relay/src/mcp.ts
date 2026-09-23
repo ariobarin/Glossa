@@ -35,7 +35,7 @@ import {
   viewImageMetadataSchema as viewImageOutputSchema,
   viewImageRequestSchema,
   viewImageResultSchema as workerViewImageOutputSchema,
-  WORKER_ERROR_MESSAGES,
+  workerErrorMessage,
   writeFileRequestSchema,
   writeFileResultSchema as writeFileOutputSchema,
   type WorkerJob,
@@ -410,7 +410,7 @@ function workerError(result: WorkerResult) {
   const code = result.error?.code ?? "worker_failure";
   return errorResult(
     code,
-    WORKER_ERROR_MESSAGES[code] ?? "The local worker operation failed.",
+    workerErrorMessage(code),
   );
 }
 
