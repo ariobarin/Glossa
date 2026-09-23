@@ -1,8 +1,8 @@
 # Glossa
 
-Glossa lets ChatGPT work with one project on your computer, using the files and development tools already there.
+Codex ran out, and you're still working. Glossa lets you keep going on your computer with the ChatGPT usage still available through your subscription.
 
-Use it when a task depends on local state such as an existing checkout, uncommitted changes, build tools, test databases, emulators, or generated files. Glossa is not another model or coding agent. ChatGPT handles the conversation and reasoning; Glossa provides controlled access to the local project.
+ChatGPT can use your existing checkout and development tools. Glossa is not another model or coding agent. See [Why Glossa](https://glossa.sh/docs/why).
 
 ## Quick start
 
@@ -76,6 +76,8 @@ Node.js 22.9 or newer and Docker are required:
 npm run dev:setup
 npm run dev
 ```
+
+CLI distributable builds pin React to production mode so idle HUD refreshes do not accumulate development timing records in memory.
 
 Stop local Postgres with `npm run dev:down`.
 

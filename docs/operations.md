@@ -39,6 +39,12 @@ A `system` command has the full operating-system authority of the account that s
 
 The terminal displays the selected root and access profile. Keep it open while using Glossa. Press `q` or Ctrl+C to disconnect.
 
+## Keep a Windows workspace awake
+
+`glossa --keep-awake` prevents idle sleep during sessions, including between tool calls. It defaults off; quitting or crashes release the request. Displays can turn off.
+
+For closed-lid use, set Windows' plugged-in lid action to **Do nothing**. Use AC power and keep the laptop ventilated. Modern Standby limits battery wake requests; manual sleep still works. [Windows limitations](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-powersetrequest).
+
 ## Connect ChatGPT
 
 Create a custom MCP app in ChatGPT Developer Mode using OAuth and:

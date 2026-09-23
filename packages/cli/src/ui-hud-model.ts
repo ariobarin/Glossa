@@ -500,11 +500,11 @@ export function applyHudEvent(
   const activity: HudActivity = {
     tool: event.job.type,
     summary: boundActivitySummary(summarizeJob(event.job)),
-    compactSummary: existing?.compactSummary ?? formatActivityCall(
-      formatCall,
-      "compact",
-      MAX_STORED_ACTIVITY_TARGET_CHARS,
-    ),
+    // Own the bounded text; a V8 substring can otherwise retain the full call.
+    compactSummary: existing?.compactSummary ?? Buffer.from(
+      formatActivityCall(formatCall, "compact", MAX_STORED_ACTIVITY_TARGET_CHARS),
+      "utf16le",
+    ).toString("utf16le"),
     ...(retainFreshCall ? { call: freshCall, callBytes: freshCallBytes } : {}),
     ...(!retainFreshCall && !existing?.callUnavailable
       ? { callUnavailable: "oversized" as const }

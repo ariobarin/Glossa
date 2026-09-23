@@ -14,6 +14,7 @@ export type CliInvocation =
       path?: string;
       label?: string;
       headless?: true;
+      keepAwake?: boolean;
       accessProfile: WorkerAccessProfile;
     }
   | { command: "unpair" }
@@ -41,6 +42,7 @@ function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
   let label: string | undefined;
   let headless = false;
+  let keepAwake = false;
   let accessProfile = DEFAULT_WORKER_ACCESS_PROFILE;
   let accessProfileSet = false;
   let optionsEnded = false;
@@ -50,16 +52,17 @@ function parseWorkspace(args: string[]): CliInvocation {
     if (!optionsEnded && argument === "--") {
       optionsEnded = true;
     } else if (!optionsEnded && argument === "--headless") {
-      if (headless) {
-        throw new UsageError("Use --headless at most once.");
-      }
+      if (headless) throw new UsageError("Use --headless at most once.");
       headless = true;
+    } else if (!optionsEnded && argument === "--keep-awake") {
+      if (keepAwake) throw new UsageError("Use --keep-awake at most once.");
+      keepAwake = true;
     } else if (!optionsEnded && argument === "--label") {
       if (label !== undefined) {
         throw new UsageError("Glossa accepts at most one workspace label.");
       }
       const value = args[index + 1];
-      if (value === undefined || value === "--") {
+      if (value === undefined || ["--", "--label", "--access", "--headless", "--keep-awake"].includes(value)) {
         throw new UsageError("Use --label <name>.");
       }
       const parsed = workspaceLabelSchema.safeParse(value);
@@ -99,6 +102,7 @@ function parseWorkspace(args: string[]): CliInvocation {
     ...(selectedPath ? { path: selectedPath } : {}),
     ...(label ? { label } : {}),
     ...(headless ? { headless: true as const } : {}),
+    ...(keepAwake ? { keepAwake: true } : {}),
     accessProfile,
   };
 }

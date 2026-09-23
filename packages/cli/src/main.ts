@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import type { WorkerAccessProfile } from "@glossa/protocol";
 import {
   parseInvocation,
   UsageError,
@@ -42,7 +41,7 @@ const DISTRIBUTION = __GLOSSA_DISTRIBUTION__;
 const HELP = `Glossa ${VERSION}
 
 Usage:
-  glossa [--headless] [--access <read-only|workspace|system>] [--label <name>] [directory]
+  glossa [--headless] [--access <read-only|workspace|system>] [--label <name>] [--keep-awake] [directory]
   glossa unpair
   glossa update [--check]
   glossa update --policy <notify|auto|off>
@@ -56,6 +55,9 @@ Access defaults to workspace: guarded file reads and writes, with commands disab
 Use read-only to prevent file changes. Use system only when ChatGPT must run commands;
 those commands inherit this account's permissions, environment, credentials, and network.
 Update checks run at most once per day before a workspace connects.
+On Windows, --keep-awake prevents idle sleep during the workspace session.
+The display can turn off. Lid closure still follows Windows settings; select
+"Do nothing" for lid closure while plugged in. Use AC power for long sessions.
 
 Keys:
   a  activity
@@ -68,10 +70,7 @@ Keys:
   q  disconnect and quit`;
 
 async function runWorkspaceSession(
-  path: string | undefined,
-  label: string | undefined,
-  accessProfile: WorkerAccessProfile,
-  headless: boolean,
+  { path, label, accessProfile, headless, keepAwake }: Extract<CliInvocation, { command: "workspace" }>,
   initialNotice?: string,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
@@ -85,6 +84,7 @@ async function runWorkspaceSession(
         device,
         workerVersion: VERSION,
         accessProfile,
+        ...(keepAwake ? { keepAwake: true } : {}),
         ...(label ? { workspaceLabel: label } : {}),
         quiet: true,
       });
@@ -115,6 +115,7 @@ async function runWorkspaceSession(
               device,
               workerVersion: VERSION,
               accessProfile: sessionAccessProfile,
+              ...(keepAwake ? { keepAwake: true } : {}),
               ...(label ? { workspaceLabel: label } : {}),
               signal: sessionController.signal,
               onEvent: (event) => {
@@ -181,24 +182,6 @@ async function runWorkspaceSession(
   } finally {
     await lease.release();
   }
-}
-
-async function runWorkspace(
-  path: string | undefined,
-  label: string | undefined,
-  accessProfile: WorkerAccessProfile,
-  headless: boolean,
-  initialNotice?: string,
-): Promise<void> {
-  await withWorkspaceLease(
-    async () => await runWorkspaceSession(
-      path,
-      label,
-      accessProfile,
-      headless,
-      initialNotice,
-    ),
-  );
 }
 
 async function refreshUpdateInfo(timeoutMs: number): Promise<UpdateInfo> {
@@ -307,15 +290,12 @@ async function main(): Promise<void> {
   } else if (invocation.command === "version") {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
+    if (invocation.keepAwake && process.platform !== "win32") {
+      throw new UsageError("--keep-awake is currently supported only on Windows.");
+    }
     const update = await updateBeforeWorkspace();
     if (update.exit) return;
-    await runWorkspace(
-      invocation.path,
-      invocation.label,
-      invocation.accessProfile,
-      invocation.headless ?? false,
-      update.notice,
-    );
+    await withWorkspaceLease(() => runWorkspaceSession(invocation, update.notice));
   } else if (invocation.command === "unpair") {
     await unpairComputer();
   } else if (invocation.command === "update") {
