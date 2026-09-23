@@ -15,6 +15,7 @@ import {
 } from "../device-store.js";
 import { withDevicePairingLease } from "../device-pairing-lock.js";
 import { pairDevice } from "../device-pairing.js";
+import { withKeepAwake } from "../keep-awake.js";
 import {
   revokePairedDevice,
   type RelayEndpoints,
@@ -56,6 +57,7 @@ export interface ManagedSessionOptions {
   onEvent?: (event: ManagedSessionEvent) => void;
   quiet?: boolean;
   handleProcessSignals?: boolean;
+  keepAwake?: boolean;
   device?: StoredDeviceCredential;
   accessProfile?: WorkerAccessProfile;
   workspaceLabel?: string;
@@ -621,14 +623,23 @@ export async function runManagedSession(
       console.error("Press Ctrl+C to disconnect.");
     }
 
-    await connectRemoteWorker(
+    const connect = (signal: AbortSignal) => connectRemoteWorker(
       endpoints,
       device,
-      worker,
+      worker!,
       sessionOptions,
-      controller.signal,
+      signal,
       () => undefined,
     );
+    if (options.keepAwake) {
+      await withKeepAwake(controller.signal, async (signal) => {
+        const message = "Keep-awake enabled. Lid closure still follows Windows settings; use AC power for long sessions.";
+        report(options, { type: "notice", message }, message);
+        await connect(signal);
+      });
+    } else {
+      await connect(controller.signal);
+    }
   } catch (error) {
     if (error instanceof DeviceRejectedError) {
       await deleteDeviceCredential();

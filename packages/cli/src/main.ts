@@ -46,7 +46,7 @@ const DISTRIBUTION = __GLOSSA_DISTRIBUTION__;
 const HELP = `Glossa ${VERSION}
 
 Usage:
-  glossa [--access <read-only|workspace|system>] [--label <name>] [directory]
+  glossa [--access <read-only|workspace|system>] [--label <name>] [--keep-awake] [directory]
   glossa unpair
   glossa update [--check]
   glossa update --policy <notify|auto|off>
@@ -59,6 +59,9 @@ Access defaults to workspace: guarded file reads and writes, with commands disab
 Use read-only to prevent file changes. Use system only when ChatGPT must run commands;
 those commands inherit this account's permissions, environment, credentials, and network.
 Update checks run at most once per day before a workspace connects.
+On Windows, --keep-awake prevents idle sleep during the workspace session.
+The display can turn off. Lid closure still follows Windows settings; select
+"Do nothing" for lid closure while plugged in. Use AC power for long sessions.
 
 Keys:
   a  activity
@@ -74,6 +77,7 @@ async function runWorkspaceSession(
   path: string | undefined,
   label: string | undefined,
   accessProfile: WorkerAccessProfile,
+  keepAwake: boolean,
   initialNotice?: string,
 ): Promise<void> {
   const root = await selectExposureRoot(path);
@@ -101,6 +105,7 @@ async function runWorkspaceSession(
               device,
               workerVersion: VERSION,
               accessProfile: sessionAccessProfile,
+              keepAwake,
               ...(label ? { workspaceLabel: label } : {}),
               signal: sessionController.signal,
               onEvent: (event) => {
@@ -173,10 +178,11 @@ async function runWorkspace(
   path: string | undefined,
   label: string | undefined,
   accessProfile: WorkerAccessProfile,
+  keepAwake: boolean,
   initialNotice?: string,
 ): Promise<void> {
   await withWorkspaceLease(
-    async () => await runWorkspaceSession(path, label, accessProfile, initialNotice),
+    async () => await runWorkspaceSession(path, label, accessProfile, keepAwake, initialNotice),
   );
 }
 
@@ -286,12 +292,16 @@ async function main(): Promise<void> {
   } else if (invocation.command === "version") {
     console.log(VERSION);
   } else if (invocation.command === "workspace") {
+    if (invocation.keepAwake && process.platform !== "win32") {
+      throw new UsageError("--keep-awake is currently supported only on Windows.");
+    }
     const update = await updateBeforeWorkspace();
     if (update.exit) return;
     await runWorkspace(
       invocation.path,
       invocation.label,
       invocation.accessProfile,
+      invocation.keepAwake ?? false,
       update.notice,
     );
   } else if (invocation.command === "unpair") {

@@ -185,6 +185,7 @@ async function main(): Promise<void> {
           signal: sessionController.signal,
           quiet: true,
           handleProcessSignals: false,
+          keepAwake: process.argv.includes("--keep-awake"),
           onEvent: (event) => {
             if (event.type === "status" && event.status.state === "connected") {
               clearTimeout(timeout);

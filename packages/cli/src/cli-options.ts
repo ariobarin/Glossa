@@ -13,6 +13,7 @@ export type CliInvocation =
       command: "workspace";
       path?: string;
       label?: string;
+      keepAwake?: boolean;
       accessProfile: WorkerAccessProfile;
     }
   | { command: "unpair" }
@@ -39,6 +40,7 @@ const retiredCommands = new Set([
 function parseWorkspace(args: string[]): CliInvocation {
   let selectedPath: string | undefined;
   let label: string | undefined;
+  let keepAwake = false;
   let accessProfile = DEFAULT_WORKER_ACCESS_PROFILE;
   let accessProfileSet = false;
   let optionsEnded = false;
@@ -47,12 +49,15 @@ function parseWorkspace(args: string[]): CliInvocation {
     const argument = args[index]!;
     if (!optionsEnded && argument === "--") {
       optionsEnded = true;
+    } else if (!optionsEnded && argument === "--keep-awake") {
+      if (keepAwake) throw new UsageError("Use --keep-awake at most once.");
+      keepAwake = true;
     } else if (!optionsEnded && argument === "--label") {
       if (label !== undefined) {
         throw new UsageError("Glossa accepts at most one workspace label.");
       }
       const value = args[index + 1];
-      if (value === undefined || value === "--") {
+      if (value === undefined || ["--", "--label", "--access", "--keep-awake"].includes(value)) {
         throw new UsageError("Use --label <name>.");
       }
       const parsed = workspaceLabelSchema.safeParse(value);
@@ -91,6 +96,7 @@ function parseWorkspace(args: string[]): CliInvocation {
     command: "workspace",
     ...(selectedPath ? { path: selectedPath } : {}),
     ...(label ? { label } : {}),
+    ...(keepAwake ? { keepAwake: true } : {}),
     accessProfile,
   };
 }
