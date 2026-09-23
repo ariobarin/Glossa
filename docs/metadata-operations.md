@@ -14,9 +14,9 @@ npm run review:metadata:check
 
 ## Private ChatGPT iteration
 
-Do not deploy metadata experiments to production just to inspect ChatGPT's UI or tool selection. Run the exact branch locally with `docker compose up -d --build --wait`, then use OpenAI's [Secure MCP Tunnel](https://github.com/openai/tunnel-client) to connect the private `http://127.0.0.1:39100/mcp` endpoint. Follow the current OpenAI tunnel setup rather than copying a pinned tunnel-client binary or maintaining a Glossa wrapper.
+Do not deploy metadata experiments to production just to inspect ChatGPT's UI or tool selection. Run the exact branch locally with `docker compose up -d --build --wait`, then use OpenAI's [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) to connect the private `http://127.0.0.1:39100/mcp` endpoint. Follow the current OpenAI tunnel setup rather than copying a pinned tunnel-client binary or maintaining a Glossa wrapper.
 
-In [ChatGPT Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt), create a draft app backed by that tunnel and run **Scan Tools**. After changing tool metadata, rebuild/restart the local relay and use **Refresh** before opening a fresh test chat. The tunnel forwards OAuth-protected MCP traffic and rewrites protected-resource discovery URLs; the configured authorization server itself must remain publicly reachable.
+In [ChatGPT Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt), create a draft app backed by that tunnel and verify the discovered tools. After changing tool metadata, rebuild/restart the local relay and refresh or re-scan its tools before opening a fresh test chat. The tunnel forwards OAuth-protected MCP traffic and rewrites protected-resource discovery URLs; the configured authorization server itself must remain publicly reachable.
 
 Put the dedicated development Auth0 relay and optional panel settings in `.env`; Compose forwards that file to the local relay without baking it into the image. The local `dev:auth` issuer remains for automated integration tests, not browser-facing ChatGPT OAuth. Do not reuse production identity configuration.
 
