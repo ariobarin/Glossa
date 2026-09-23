@@ -181,6 +181,56 @@ test("returns a handle when a command outlives the fast wait", async (context) =
   assert.equal(completed.stdout, "later");
 });
 
+test("bounds concurrent commands and keeps their lifecycles independent", async (context) => {
+  const { commands } = await commandFixture(context);
+  const running = await Promise.all(Array.from({ length: 4 }, (_, index) => commands.start({
+    argv: [process.execPath, "-e", `process.stdout.write('command-${index}'); setTimeout(() => {}, 30000)`],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  })));
+  assert.equal(new Set(running.map((command) => command.commandId)).size, 4);
+  for (const [index, command] of running.entries()) {
+    const ready = await commands.get(command.commandId, 5_000, 0);
+    assert.equal(ready.status, "running");
+    assert.equal(ready.stdout, `command-${index}`);
+    assert.equal((await commands.readOutput(command.commandId, "stdout")).content, `command-${index}`);
+  }
+  const quick = { argv: [process.execPath, "-e", "process.stdout.write('replacement')"], timeoutMs: 10_000, waitMs: 0 };
+  await assert.rejects(commands.start(quick), (error: unknown) =>
+    error instanceof WorkerError && error.code === "command_busy");
+
+  assert.equal((await commands.cancel(running[1]!.commandId)).status, "canceled");
+  await assert.rejects(commands.start({ ...quick, argv: ["glossa-command-that-does-not-exist"] }),
+    (error: unknown) => error instanceof WorkerError && error.code === "command_spawn_failed");
+  const replacement = await commands.start(quick);
+  const completed = await commands.get(replacement.commandId, 15_000);
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.stdout, "replacement");
+  for (const index of [0, 2, 3]) {
+    assert.equal((await commands.get(running[index]!.commandId)).status, "running");
+  }
+
+  const stopping = commands.shutdown();
+  await assert.rejects(commands.start(quick), (error: unknown) =>
+    error instanceof WorkerError && error.code === "worker_shutting_down");
+  await stopping;
+  for (const command of running) {
+    assert.equal((await commands.get(command.commandId)).status, "canceled");
+  }
+});
+
+test("a command timeout does not terminate its concurrent neighbor", async (context) => {
+  const { commands } = await commandFixture(context);
+  const options = {
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"],
+    waitMs: 0,
+  };
+  const neighbor = await commands.start({ ...options, timeoutMs: 60_000 });
+  const expiring = await commands.start({ ...options, timeoutMs: 100 });
+  assert.equal((await commands.get(expiring.commandId, 15_000)).status, "timed_out");
+  assert.equal((await commands.get(neighbor.commandId)).status, "running");
+});
+
 test("returns running output and wakes when command progress changes", async (context) => {
   const { commands } = await commandFixture(context);
   const started = await commands.start({

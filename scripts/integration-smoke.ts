@@ -119,7 +119,7 @@ async function main(): Promise<void> {
   process.env.XDG_CONFIG_HOME = configHome;
   process.env.GLOSSA_RELAY_ORIGIN = relayOrigin;
 
-  devAuth = await startDevAuth();
+  devAuth = await startDevAuth(Number(process.env.GLOSSA_INTEGRATION_AUTH_PORT ?? 39101));
   process.env.GLOSSA_AUTH0_ISSUER = devAuth.issuer;
   process.env.GLOSSA_AUTH0_AUDIENCE = audience;
 
@@ -362,8 +362,47 @@ async function main(): Promise<void> {
   assert.match(output.content as string, /headless-command-ok/);
   assert.equal((await callWorkerTool("cancel_command", { commandId }, systemId)).status, "succeeded");
   console.log("mcp: command status, output ranges and completed-command cancel idempotence passed");
+
+  const concurrent = await Promise.all(Array.from({ length: 4 }, (_, index) => callWorkerTool(
+    "run_command", {
+      command: { argv: [process.execPath, "-e", `process.stdout.write(JSON.stringify({index:${index},pid:process.pid})); setTimeout(() => {}, 30000)`] },
+      timeoutMs: 60_000, waitMs: 0,
+    }, systemId,
+  )));
+  const childPids: number[] = [];
+  for (const [index, started] of concurrent.entries()) {
+    const ready = await callWorkerTool("get_command", { commandId: started.commandId, afterSequence: 0, waitMs: 5_000 }, systemId);
+    assert.equal(ready.status, "running");
+    const identity = JSON.parse(ready.stdout as string) as { index: number; pid: number };
+    assert.equal(identity.index, index);
+    assert.ok(Number.isInteger(identity.pid) && identity.pid > 0);
+    childPids.push(identity.pid);
+  }
+  const overCapacity = await mcp.callTool({
+    name: "run_command", arguments: { workspaceId: systemId, command, waitMs: 0 },
+  });
+  assert.equal(overCapacity.isError, true);
+  assert.match(JSON.stringify(overCapacity.content), /command_busy/);
+  assert.match(JSON.stringify(overCapacity.content), /concurrent command limit/);
+
+  const observing = callWorkerTool("get_command", { commandId: concurrent[0]!.commandId, waitMs: 15_000 }, systemId);
+  const cancelStarted = performance.now();
+  assert.match((await callWorkerTool("read_file", { path: "hello.txt" }, systemId)).content as string, /local integration works/);
+  assert.equal((await callWorkerTool("cancel_command", { commandId: concurrent[0]!.commandId }, systemId)).status, "canceled");
+  assert.equal((await observing).status, "canceled");
+  assert.ok(performance.now() - cancelStarted < 10_000, "status observation blocked reads or cancellation");
+  for (const started of concurrent.slice(1)) {
+    assert.equal((await callWorkerTool("get_command", { commandId: started.commandId }, systemId)).status, "running");
+  }
+  const retained = await callWorkerTool("read_command_output", { commandId: concurrent[1]!.commandId, stream: "stdout" }, systemId);
+  assert.equal((JSON.parse(retained.content as string) as { pid: number }).pid, childPids[1]);
+  assert.equal((await callWorkerTool("run_command", { command, waitMs: 5_000 }, systemId)).status, "succeeded");
+  console.log("mcp: four-command cap, independent output, live cancellation, responsive reads and slot reuse passed");
   await stopHeadless();
-  console.log("headless: all access profiles, command roundtrip, silent output, shutdown and restart passed");
+  for (const pid of childPids) {
+    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  }
+  console.log("headless: all access profiles, silent output, shutdown of every child process and restart passed");
 
   // 6. Teardown also exercises self-revocation.
   await revokePairedDevice(endpoints, device);
