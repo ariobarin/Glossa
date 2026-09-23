@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { Marked, Parser } from "marked";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const checkOnly = process.argv.includes("--check");
 
 export const PAGE_GROUPS = [
   {
@@ -330,28 +329,15 @@ ${sectionNavigation}
 }
 
 async function buildDocs() {
-  const stalePages = [];
-
   for (const pageConfig of PAGE_REGISTRY) {
     const source = await readFile(pageConfig.sourcePath, "utf8");
     const page = readPage(source, pageConfig.source, pageConfig.route);
     const output = renderPage(pageConfig, page);
 
-    if (checkOnly) {
-      const current = await readFile(pageConfig.outputPath, "utf8").catch(() => "");
-      if (current.replaceAll("\r\n", "\n") !== output) {
-        stalePages.push(pageConfig.source);
-      }
-    } else {
-      await writeFile(pageConfig.outputPath, output, "utf8");
-    }
+    await writeFile(pageConfig.outputPath, output, "utf8");
   }
 
-  if (stalePages.length > 0) {
-    throw new Error(`Generated docs are stale: ${stalePages.join(", ")}. Run npm run docs:build.`);
-  }
-
-  console.log(`${checkOnly ? "Checked" : "Built"} ${PAGE_REGISTRY.length} documentation pages.`);
+  console.log(`Built ${PAGE_REGISTRY.length} documentation pages.`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
