@@ -29,6 +29,12 @@ Read `docs/architecture.md` and `docs/security.md` before changing trust boundar
 4. Verify the real CLI or HTTP flow when integration behavior changes.
 5. Open one focused pull request.
 
+## Website builds
+
+Edit Markdown sources, not generated HTML. `npm run docs:build` generates the seven documentation pages, and `npm run site:check` validates them. Only the handwritten `site/index.html` stays tracked. CI and Vercel regenerate documentation before validation or deployment.
+
+The Vercel project uses `site` as its Root Directory, with **Include source files outside of the Root Directory in the Build Step** enabled. `site/vercel.json` runs the shared generator against the repository's Markdown sources.
+
 ## HUD visual changes
 
 When changing the CLI HUD, run `npm run cli:hud-preview -- --screen <screen>` and inspect `.hud-preview/current.png` with Glossa's `view_image` tool before considering the UI done. Use `--width` and `--height` to exercise terminal sizes. The preview uses synthetic state and a real terminal parser, replaces the preview directory on every run, and prints the exact text frame to the command output. Use `npm run cli:hud-preview -- --clean` when the image is no longer needed. Do not capture a live HUD into the repository or ask the user to provide screenshots when the preview can reproduce the state.
