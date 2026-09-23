@@ -507,7 +507,9 @@ test("blocks retained output ranges after restricted data detection", async (con
     waitMs: 0,
   });
   assert.equal(started.status, "running");
-  await delay(150);
+  await assert.rejects(commands.get(started.commandId, 15_000), {
+    code: "restricted_data_blocked",
+  });
 
   await assert.rejects(
     commands.readOutput(started.commandId, "stdout"),

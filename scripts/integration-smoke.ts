@@ -299,6 +299,31 @@ async function main(): Promise<void> {
   assert.equal("data" in imageMetadata, false);
   console.log("mcp: view_image roundtrip returned native image content only");
 
+  // A hostile pattern must not strand the built worker or its read capacity.
+  const patternFile = "a".repeat(64) + ".txt";
+  await writeFile(path.join(workspace, patternFile), "const result = foo(bar); const more = 1;");
+  for (const search of [
+    { query: "^(.+)+$z", matchMode: "regex" },
+    { query: "result", includeGlobs: ["*a".repeat(8) + "z"] },
+    { query: "result", excludeGlobs: ["*a".repeat(8) + "z"] },
+  ]) {
+    const started = performance.now();
+    const timedOut = await mcp.callTool({
+      name: "search_text",
+      arguments: { workspaceId: workspaces[0]!.workspaceId, path: patternFile, ...search },
+    });
+    assert.equal(timedOut.isError, true);
+    assert.match(JSON.stringify(timedOut.content), /scan_timeout/);
+    assert.ok(performance.now() - started < 12_000, "search outlived its local deadline");
+    const recovered = await mcp.callTool({
+      name: "search_text",
+      arguments: { workspaceId: workspaces[0]!.workspaceId, path: patternFile, query: "result", matchMode: "regex" },
+    });
+    assert.notEqual(recovered.isError, true);
+    assert.equal((recovered.structuredContent as { matches: unknown[] }).matches.length, 1);
+  }
+  console.log("search: regex and both glob deadlines plus built-worker recovery passed");
+
   // 5. Permission enforcement and clean restart through the built entrypoint.
   const command = { argv: [process.execPath, "-e", "console.log('headless-command-ok')"] };
   const denied = await mcp.callTool({
