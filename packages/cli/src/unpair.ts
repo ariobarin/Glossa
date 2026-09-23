@@ -27,7 +27,13 @@ export async function unpairComputer(
     return;
   }
 
-  await revoke({ relayOrigin: device.relayOrigin }, device);
+  let message = "Unpaired this computer from Glossa.";
+  try {
+    await revoke({ relayOrigin: device.relayOrigin }, device);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    message = `Removed this computer's local Glossa pairing, but could not confirm revocation at ${device.relayOrigin}: ${reason}. Revoke it from that relay's device panel if it becomes available.`;
+  }
   await remove();
-  log("Unpaired this computer from Glossa.");
+  log(message);
 }

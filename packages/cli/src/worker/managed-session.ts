@@ -461,7 +461,14 @@ export async function deviceForSession(
     const current = await loadDevice();
     if (current?.relayOrigin === endpoints.relayOrigin) return current;
     if (current) {
-      await revoke({ relayOrigin: current.relayOrigin }, current);
+      try {
+        await revoke({ relayOrigin: current.relayOrigin }, current);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Glossa could not revoke this computer using its previous relay at ${current.relayOrigin}. Run glossa unpair to clear the local pairing, then run Glossa again. (${reason})`,
+        );
+      }
       await removeDevice();
     }
 
