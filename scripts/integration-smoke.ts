@@ -1,10 +1,12 @@
 // Full local integration smoke: mock issuer + local relay + real CLI pairing,
 // device-credential management, and an MCP read_file roundtrip through a live
 // worker. Runs entirely against local processes; no production tenant or
-// relay is touched. Requires local Postgres (npm run dev:setup).
+// relay is touched. Requires npm run build and local Postgres.
+import "./fixtures/isolated-cli.mjs";
+import { once } from "node:events";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +25,52 @@ const relayPort = new URL(relayOrigin).port || "80";
 const temporaryPaths: string[] = [];
 let relay: ChildProcess | undefined;
 let devAuth: DevAuthServer | undefined;
+let cli: ChildProcess | undefined;
+let cliOutput = "";
+
+function startHeadless(workspace: string, access: string): void {
+  cliOutput = "";
+  cli = spawn(process.execPath, [
+    "--import", new URL("./fixtures/isolated-cli.mjs", import.meta.url).href,
+    "packages/cli/dist/main.js", "--headless", "--access", access,
+    "--label", "integration-smoke",
+    ...(process.argv.includes("--keep-awake") ? ["--keep-awake"] : []),
+    workspace,
+  ], { cwd: repositoryRoot, env: process.env, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  for (const stream of [cli.stdout!, cli.stderr!]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (text: string) => { cliOutput = (cliOutput + text).slice(-65_536); });
+  }
+}
+
+async function waitForWorker(mcp: Client, access: string): Promise<string> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    assert.equal(cli?.exitCode, null, `headless CLI exited early: ${cliOutput}`);
+    const result = await mcp.callTool({ name: "list_workspaces", arguments: {} });
+    const workers = (result.structuredContent as {
+      workspaces: Array<{ workspaceId: string; workspaceLabel?: string; accessProfile: string }>;
+    }).workspaces;
+    if (workers.length === 1) {
+      assert.equal(workers[0]!.workspaceLabel, "integration-smoke");
+      assert.equal(workers[0]!.accessProfile, access);
+      return workers[0]!.workspaceId;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Headless worker did not connect: ${cliOutput}`);
+}
+
+async function stopHeadless(): Promise<void> {
+  if (!cli || cli.exitCode !== null) return;
+  const closed = once(cli, "close", { signal: AbortSignal.timeout(10_000) });
+  if (process.platform === "win32") cli.send!("stop");
+  else cli.kill("SIGTERM");
+  const [code] = await closed;
+  assert.equal(code, 0, `headless CLI failed to shut down: ${cliOutput}`);
+  assert.doesNotMatch(cliOutput, /\u001b\[|local integration works|headless-command-ok/);
+  cli = undefined;
+}
 
 async function temporaryDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -75,6 +123,13 @@ async function main(): Promise<void> {
   process.env.GLOSSA_AUTH0_ISSUER = devAuth.issuer;
   process.env.GLOSSA_AUTH0_AUDIENCE = audience;
 
+  execFileSync(process.execPath, ["apps/relay/dist/src/migrate.js"], {
+    cwd: repositoryRoot,
+    env: { ...process.env, NODE_ENV: "development", DATABASE_URL: databaseUrl },
+    stdio: "inherit",
+    timeout: 30_000,
+  });
+
   relay = spawn(
     process.execPath,
     ["--import", "tsx", "apps/relay/src/index.ts"],
@@ -104,9 +159,10 @@ async function main(): Promise<void> {
     loadRelayEndpoints,
     revokePairedDevice,
   } = await import("../packages/cli/src/relay-client.js");
-  const { runManagedSession } = await import(
-    "../packages/cli/src/worker/managed-session.js"
-  );
+  const { AsyncEntry } = await import("@napi-rs/keyring");
+  assert.throws(() => new AsyncEntry("Glossa", "device"), /isolated test keyring/);
+  const { configureUpdates } = await import("../packages/cli/src/update-state.js");
+  await configureUpdates("0.0.0", { policy: "off" });
 
   const endpoints = loadRelayEndpoints(process.env);
 
@@ -173,41 +229,9 @@ async function main(): Promise<void> {
     "base64",
   );
   await writeFile(path.join(workspace, "pixel.png"), png);
-  const sessionController = new AbortController();
-  const connected = new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("worker did not connect")), 15_000);
-    void (async () => {
-      try {
-        await runManagedSession(workspace, endpoints, {
-          device,
-          workerVersion: "0.0.0-dev",
-          accessProfile: "workspace",
-          signal: sessionController.signal,
-          quiet: true,
-          handleProcessSignals: false,
-          onEvent: (event) => {
-            if (event.type === "status" && event.status.state === "connected") {
-              clearTimeout(timeout);
-              resolve();
-            }
-          },
-        });
-      } catch {
-        // Aborted during teardown.
-      } finally {
-        clearTimeout(timeout);
-        resolve();
-      }
-    })();
-  });
-  await connected;
-  console.log("worker: connected through the local relay");
-
-  const online = await mcp.callTool({ name: "list_workspaces", arguments: {} });
-  const workspaces = (online.structuredContent as {
-    workspaces: Array<{ workspaceId: string }>;
-  }).workspaces;
-  assert.equal(workspaces.length, 1, "one online workspace");
+  startHeadless(workspace, "workspace");
+  const workspaces = [{ workspaceId: await waitForWorker(mcp, "workspace") }];
+  console.log("worker: built headless CLI connected without a terminal");
 
   const read = await mcp.callTool({
     name: "read_file",
@@ -215,6 +239,44 @@ async function main(): Promise<void> {
   });
   assert.match(JSON.stringify(read.structuredContent), /local integration works/);
   console.log("mcp: read_file roundtrip returned workspace content");
+
+  const callWorkerTool = async (
+    name: string, args: Record<string, unknown>, workspaceId = workspaces[0]!.workspaceId,
+  ) => {
+    const result = await mcp.callTool({ name, arguments: { ...args, workspaceId } });
+    assert.notEqual(result.isError, true, JSON.stringify(result.content));
+    assert.ok(result.structuredContent);
+    return result.structuredContent;
+  };
+  assert.equal((await callWorkerTool("make_directory", { path: "roundtrip" })).created, true);
+  const revision = await callWorkerTool("write_file", { path: "roundtrip/note.txt", content: "first\nsecond\n" });
+  assert.match(revision.sha256 as string, /^[a-f0-9]{64}$/);
+  const listing = await callWorkerTool("list_files", { path: "roundtrip" });
+  assert.deepEqual(listing.entries, [{ path: "roundtrip/note.txt", type: "file", bytes: 13 }]);
+  const range = await callWorkerTool("read_file_range", { path: "roundtrip/note.txt", startLine: 2, lineCount: 1 });
+  assert.equal((range.content as string).trimEnd(), "second");
+  assert.equal(range.startLine, 2);
+  assert.equal(range.endLine, 2);
+  const search = await callWorkerTool("search_text", { path: "roundtrip", query: "second" });
+  assert.deepEqual(search.matches, [{ path: "roundtrip/note.txt", line: 2, column: 1, text: "second", lineTruncated: false }]);
+  const edited = await callWorkerTool("edit_file", {
+    path: "roundtrip/note.txt", expectedSha256: revision.sha256,
+    edits: [{ oldText: "second", newText: "updated" }],
+  });
+  assert.equal(edited.replacements, 1);
+  assert.equal((await callWorkerTool("move_path", { source: "roundtrip/note.txt", destination: "moved.txt" })).movedType, "file");
+  assert.equal(await readFile(path.join(workspace, "moved.txt"), "utf8"), "first\nupdated\n");
+  assert.equal((await callWorkerTool("delete_path", { path: "moved.txt" })).deletedType, "file");
+  assert.equal((await callWorkerTool("delete_path", { path: "roundtrip" })).deletedType, "directory");
+  await assert.rejects(readFile(path.join(workspace, "moved.txt")), { code: "ENOENT" });
+  const missing = await mcp.callTool({
+    name: "read_file", arguments: { workspaceId: workspaces[0]!.workspaceId, path: "moved.txt" },
+  });
+  assert.equal(missing.isError, true);
+  assert.match(JSON.stringify(missing.content), /path_not_found/);
+  assert.match(JSON.stringify(missing.content), /The requested path does not exist/);
+  assert.doesNotMatch(JSON.stringify(missing.content), /ENOENT/);
+  console.log("mcp: filesystem mutations, traversal, revision guard and safe missing-file error passed");
 
   const image = await mcp.callTool({
     name: "view_image",
@@ -237,8 +299,73 @@ async function main(): Promise<void> {
   assert.equal("data" in imageMetadata, false);
   console.log("mcp: view_image roundtrip returned native image content only");
 
-  // 5. Teardown also exercises self-revocation.
-  sessionController.abort();
+  // A hostile pattern must not strand the built worker or its read capacity.
+  const patternFile = "a".repeat(64) + ".txt";
+  await writeFile(path.join(workspace, patternFile), "const result = foo(bar); const more = 1;");
+  for (const search of [
+    { query: "^(.+)+$z", matchMode: "regex" },
+    { query: "result", includeGlobs: ["*a".repeat(8) + "z"] },
+    { query: "result", excludeGlobs: ["*a".repeat(8) + "z"] },
+  ]) {
+    const started = performance.now();
+    const timedOut = await mcp.callTool({
+      name: "search_text",
+      arguments: { workspaceId: workspaces[0]!.workspaceId, path: patternFile, ...search },
+    });
+    assert.equal(timedOut.isError, true);
+    assert.match(JSON.stringify(timedOut.content), /scan_timeout/);
+    assert.ok(performance.now() - started < 12_000, "search outlived its local deadline");
+    const recovered = await mcp.callTool({
+      name: "search_text",
+      arguments: { workspaceId: workspaces[0]!.workspaceId, path: patternFile, query: "result", matchMode: "regex" },
+    });
+    assert.notEqual(recovered.isError, true);
+    assert.equal((recovered.structuredContent as { matches: unknown[] }).matches.length, 1);
+  }
+  console.log("search: regex and both glob deadlines plus built-worker recovery passed");
+
+  // 5. Permission enforcement and clean restart through the built entrypoint.
+  const command = { argv: [process.execPath, "-e", "console.log('headless-command-ok')"] };
+  const denied = await mcp.callTool({
+    name: "run_command", arguments: { workspaceId: workspaces[0]!.workspaceId, command },
+  });
+  assert.equal(denied.isError, true);
+  assert.match(JSON.stringify(denied.content), /command_access_disabled/);
+  const written = await mcp.callTool({
+    name: "write_file",
+    arguments: { workspaceId: workspaces[0]!.workspaceId, path: "written.txt", content: "headless write" },
+  });
+  assert.notEqual(written.isError, true);
+  await stopHeadless();
+  const disconnected = await mcp.callTool({ name: "list_workspaces", arguments: {} });
+  assert.equal((disconnected.structuredContent as { availability: string }).availability, "offline");
+
+  startHeadless(workspace, "read-only");
+  const readOnlyId = await waitForWorker(mcp, "read-only");
+  const forbiddenWrite = await mcp.callTool({
+    name: "write_file", arguments: { workspaceId: readOnlyId, path: "forbidden.txt", content: "must not write" },
+  });
+  assert.equal(forbiddenWrite.isError, true);
+  assert.match(JSON.stringify(forbiddenWrite.content), /write_access_disabled/);
+  await stopHeadless();
+
+  startHeadless(workspace, "system");
+  const systemId = await waitForWorker(mcp, "system");
+  const executed = await mcp.callTool({
+    name: "run_command", arguments: { workspaceId: systemId, command, waitMs: 5_000 },
+  });
+  assert.notEqual(executed.isError, true);
+  assert.match(JSON.stringify(executed.structuredContent), /headless-command-ok/);
+  const commandId = (executed.structuredContent as { commandId: string }).commandId;
+  assert.equal((await callWorkerTool("get_command", { commandId }, systemId)).status, "succeeded");
+  const output = await callWorkerTool("read_command_output", { commandId, stream: "stdout", offset: 0, maxBytes: 128 }, systemId);
+  assert.match(output.content as string, /headless-command-ok/);
+  assert.equal((await callWorkerTool("cancel_command", { commandId }, systemId)).status, "succeeded");
+  console.log("mcp: command status, output ranges and completed-command cancel idempotence passed");
+  await stopHeadless();
+  console.log("headless: all access profiles, command roundtrip, silent output, shutdown and restart passed");
+
+  // 6. Teardown also exercises self-revocation.
   await revokePairedDevice(endpoints, device);
   await mcp.close();
   console.log("unpair: device credential revoked");
@@ -248,6 +375,11 @@ try {
   await main();
   console.log("Local integration smoke passed.");
 } finally {
+  if (cli && cli.exitCode === null) {
+    const closed = once(cli, "close");
+    cli.kill();
+    await closed;
+  }
   relay?.kill();
   await devAuth?.close();
   await Promise.all(

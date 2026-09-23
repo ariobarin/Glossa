@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  workerJobAuthority,
   workerPermissions,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -69,13 +70,6 @@ interface ResultWaiter {
   timer: NodeJS.Timeout;
 }
 
-export class RevokedDeviceRegistrationError extends Error {
-  constructor() {
-    super("device_revoked");
-    this.name = "RevokedDeviceRegistrationError";
-  }
-}
-
 function jobPermissionError(
   worker: ConnectedWorker,
   job: WorkerJob,
@@ -88,23 +82,11 @@ function jobPermissionError(
     return "worker_protocol_unsupported";
   }
   const permissions = workerPermissions(worker.accessProfile);
-  if (
-    (job.type === "write_file" ||
-      job.type === "edit_file" ||
-      job.type === "make_directory" ||
-      job.type === "delete_path" ||
-      job.type === "move_path") &&
-    !permissions.writeFiles
-  ) {
+  const authority = workerJobAuthority(job.type);
+  if (authority === "write" && !permissions.writeFiles) {
     return "write_access_disabled";
   }
-  if (
-    (job.type === "run_command" ||
-      job.type === "get_command" ||
-      job.type === "read_command_output" ||
-      job.type === "cancel_command") &&
-    !permissions.runCommands
-  ) {
+  if (authority === "command" && !permissions.runCommands) {
     return "command_access_disabled";
   }
   return null;
@@ -116,9 +98,13 @@ export class RouterState {
   readonly #workerSessions = new Map<string, string>();
   readonly #workerCountsByDevice = new Map<string, number>();
   readonly #deviceSeenPersistedAt = new Map<string, number>();
-  readonly #revokedDeviceIds = new Set<string>();
+  #revocationVersion = Symbol();
   readonly #results = new Map<string, ResultWaiter>();
   #lastPrunedAt = 0;
+
+  get revocationVersion(): symbol {
+    return this.#revocationVersion;
+  }
 
   register(
     accountId: string,
@@ -133,9 +119,6 @@ export class RouterState {
     } = { accessProfile: "system" },
   ): { generation: string; workerToken: string } {
     this.#pruneStaleWorkers();
-    if (this.#revokedDeviceIds.has(deviceId)) {
-      throw new RevokedDeviceRegistrationError();
-    }
     const generation = randomUUID();
     const workerToken = `glw_${randomBytes(32).toString("base64url")}`;
     const sessionDigest = workerTokenDigest(workerToken);
@@ -239,7 +222,7 @@ export class RouterState {
   }
 
   unregisterDevice(deviceId: string): void {
-    this.#revokedDeviceIds.add(deviceId);
+    this.#revocationVersion = Symbol();
     for (const worker of [...this.#workers.values()]) {
       if (worker.deviceId === deviceId) {
         this.unregisterWorker(worker.accountId, worker.deviceId, worker.workerId);

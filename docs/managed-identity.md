@@ -56,7 +56,7 @@ GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES=google-oauth2|
 GLOSSA_AUTH0_ALLOWED_SUBJECTS=auth0|REVIEWER_USER_ID
 ```
 
-Do not use `auth0|` as a provider-wide prefix for managed review. That would admit every database identity in the tenant rather than only the dedicated reviewer. The relay accepts at most eight unique provider prefixes and 32 unique exact subjects. Existing self-hosted deployments may keep the legacy singular `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX`; do not set both singular and plural prefix variables.
+Do not use `auth0|` as a provider-wide prefix for managed review. That would admit every database identity in the tenant rather than only the dedicated reviewer. The relay accepts at most eight unique provider prefixes and 32 unique exact subjects. Self-hosted deployments must use the plural `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES`; the removed singular setting fails startup with migration guidance.
 
 Do not place the reviewer subject or credentials in this repository, test fixtures, deployment logs, screenshots, support issues, or pull-request descriptions.
 
@@ -96,6 +96,6 @@ Before treating an identity change as deployed:
 5. Start a reviewer fixture worker and confirm `list_workspaces` returns its profile and permissions.
 6. Attempt authentication with a different `auth0|` database subject and confirm the relay returns `identity_provider_not_allowed` without creating an account.
 7. Attempt authentication with a subject from an unlisted provider and confirm the same denial.
-8. Confirm prefix configuration rejects duplicates, missing `|` separators, empty values, and simultaneous plural and legacy singular settings.
+8. Confirm prefix configuration rejects duplicates, missing `|` separators, empty values, and the removed singular setting.
 9. Confirm exact-subject configuration rejects malformed, empty, and duplicate entries.
 10. Confirm secrets, the reviewer subject, and reviewer credentials are absent from Git history, build output, site content, logs, and the final submission packet.

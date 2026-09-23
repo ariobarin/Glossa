@@ -51,7 +51,6 @@ const repositoryTextPaths = [
 const forbiddenLanguage = [
   ["open-beta positioning", /\bopen beta\b/i],
   ["usage-plan workaround positioning", /other 50% of your plan/i],
-  ["Codex-limit positioning", /(?:\bcodex\b.{0,80}\b(?:limit|quota|plan)\b|\b(?:limit|quota|plan)\b.{0,80}\bcodex\b)/i],
   ["prerelease install command", /@ariobarin\/glossa@beta/i],
   ["prerelease MCP contract", /0\.1\.0-beta/i],
   ["submission packet marked not ready", /status:\s*draft,\s*not ready/i],
@@ -212,9 +211,7 @@ assert.ok(
   "MCP must expose the restricted-data boundary and its limitation",
 );
 
-const homepage = await requiredText("site/index.html", [
-  "Connect ChatGPT to the <span>project on your computer.</span>",
-]);
+const homepage = await readFile(join(repositoryRoot, "site/index.html"), "utf8");
 assert.doesNotMatch(
   homepage,
   /hero-footnote|One folder\. You choose the access\. Use the tools already there\./,

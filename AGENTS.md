@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Glossa is a thin execution bridge between ChatGPT and an explicitly exposed local coding workspace. Keep the hosted relay small and keep filesystem and process authority on the local worker.
+Glossa lets people keep working through available ChatGPT subscription usage when Codex runs out. That extra source of usage is the reason to use it; connecting ChatGPT to the local project is how it works. Lead product introductions with that purpose. Use a direct, informal voice that addresses the reader. Keep first-person personal stories on the founder's website. Do not promise unlimited usage or Codex feature parity. Plan limits and model/tool availability still apply.
+
+Technically, Glossa is a thin execution bridge between ChatGPT and an explicitly exposed local coding workspace. Keep the hosted relay small and keep filesystem and process authority on the local worker.
 
 Read `docs/architecture.md` and `docs/security.md` before changing trust boundaries.
 
@@ -26,6 +28,12 @@ Read `docs/architecture.md` and `docs/security.md` before changing trust boundar
 3. Run `npm run check`.
 4. Verify the real CLI or HTTP flow when integration behavior changes.
 5. Open one focused pull request.
+
+## Website builds
+
+Edit Markdown sources, not generated HTML. `npm run docs:build` generates the seven documentation pages, and `npm run site:check` validates them. Only the handwritten `site/index.html` stays tracked. CI and Vercel regenerate documentation before validation or deployment.
+
+Keep Vercel's Root Directory set to `site` and enable **Include source files outside of the Root Directory in the Build Step**. The commands in `site/vercel.json` use npm's project-root discovery to find the shared generator and Markdown sources.
 
 ## HUD visual changes
 

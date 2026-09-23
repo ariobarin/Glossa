@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { setImmediate } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { renderHud } from "./ui-hud.js";
 import {
   applyHudEvent,
@@ -16,6 +19,50 @@ function connectedState(): HudState {
     connectedBefore: true,
   };
 }
+
+test("expired activity calls release their backing strings", async () => {
+  if (!global.gc) {
+    const child = spawnSync(process.execPath, [
+      "--expose-gc", "--import", "tsx",
+      "--test-name-pattern=^expired activity calls release their backing strings$",
+      fileURLToPath(import.meta.url),
+    ], {
+      encoding: "utf8", timeout: 30_000,
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+    });
+    assert.equal(child.status, 0, child.stdout + child.stderr);
+    return;
+  }
+  const retainedHeap = async (): Promise<number> => {
+    for (let pass = 0; pass < 3; pass += 1) {
+      await setImmediate();
+      global.gc!();
+    }
+    return process.memoryUsage().heapUsed;
+  };
+  let state = connectedState();
+  const addCalls = (start: number): void => {
+    for (let index = start; index < start + 300; index += 1) {
+      state = applyHudEvent(state, {
+        type: "activity",
+        phase: "returned",
+        ok: true,
+        job: {
+          type: "run_command",
+          requestId: `request-${index}`,
+          shellCommand: Buffer.from(`echo ${index} ${"x".repeat(60_000)}`).toString(),
+          timeoutMs: 1_000,
+        },
+      });
+    }
+  };
+  addCalls(0);
+  const baseline = await retainedHeap();
+  addCalls(300);
+  const growth = await retainedHeap() - baseline;
+  assert.equal(state.activities[0]?.callUnavailable, "expired");
+  assert.ok(growth < 8 * 1024 * 1024, `Expired calls retained ${growth} bytes.`);
+});
 
 test("workspace is quiet until there is activity", () => {
   const output = renderHud(connectedState(), 60, false, 16);

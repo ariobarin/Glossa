@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { setImmediate } from "node:timers/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import type { WorkerJob, WorkerResult } from "@glossa/protocol";
@@ -8,6 +12,40 @@ const accountId = "00000000-0000-4000-8000-000000000001";
 const deviceId = "00000000-0000-4000-8000-000000000002";
 const firstWorkerId = "00000000-0000-4000-8000-000000000003";
 const secondWorkerId = "00000000-0000-4000-8000-000000000004";
+
+test("revocation history uses constant memory", async () => {
+  if (!global.gc) {
+    const child = spawnSync(process.execPath, [
+      "--expose-gc", "--import", "tsx",
+      "--test-name-pattern=^revocation history uses constant memory$",
+      fileURLToPath(import.meta.url),
+    ], {
+      encoding: "utf8", timeout: 30_000,
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+    });
+    assert.equal(child.status, 0, child.stdout + child.stderr);
+    return;
+  }
+  const retainedHeap = async (): Promise<number> => {
+    for (let pass = 0; pass < 3; pass += 1) {
+      await setImmediate();
+      global.gc!();
+    }
+    return process.memoryUsage().heapUsed;
+  };
+  const state = new RouterState();
+  const revoke = (count: number): void => {
+    for (let index = 0; index < count; index += 1) {
+      state.unregisterDevice(Buffer.from(randomUUID()).toString());
+    }
+  };
+  revoke(20_000);
+  const baseline = await retainedHeap();
+  revoke(100_000);
+  const growth = await retainedHeap() - baseline;
+  assert.equal(state.listDevices(accountId).length, 0);
+  assert.ok(growth < 2 * 1024 * 1024, `Revocations retained ${growth} bytes.`);
+});
 
 test("routes multiple workers enrolled on one computer independently", async () => {
   const state = new RouterState();

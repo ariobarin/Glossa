@@ -16,6 +16,7 @@ import {
   RESTRICTED_DATA_ERROR_CODE,
   RESTRICTED_DATA_ERROR_MESSAGE,
 } from "@glossa/protocol";
+import { BoundedBuffer } from "./bounded-buffer.js";
 import { WorkerError } from "./errors.js";
 import type { PathPolicy } from "./path-policy.js";
 
@@ -64,11 +65,9 @@ export interface CommandOutputRange {
 }
 
 interface CapturedStream {
-  head: Buffer[];
-  headBytes: number;
+  head: BoundedBuffer;
   tail: Buffer;
-  retained: Buffer[];
-  retainedBytes: number;
+  retained: BoundedBuffer;
   totalBytes: number;
   retentionTruncated: boolean;
 }
@@ -175,29 +174,10 @@ function appendTail(existing: Buffer, chunk: Buffer): Buffer {
 function capture(_record: CommandRecord, stream: CapturedStream, chunk: Buffer): boolean {
   if (chunk.byteLength === 0) return false;
   stream.totalBytes += chunk.byteLength;
-  const retentionBudget = MAX_COMMAND_RETAINED_STREAM_BYTES - stream.retainedBytes;
-  if (retentionBudget > 0) {
-    const retained = chunk.subarray(0, Math.min(chunk.byteLength, retentionBudget));
-    if (retained.byteLength > 0) {
-      stream.retained.push(Buffer.from(retained));
-      stream.retainedBytes += retained.byteLength;
-    }
-  }
-  if (chunk.byteLength > Math.max(0, retentionBudget)) {
+  if (stream.retained.append(chunk) < chunk.byteLength) {
     stream.retentionTruncated = true;
   }
-  let offset = 0;
-  if (stream.headBytes < STREAM_HEAD_BYTES) {
-    const accepted = chunk.subarray(
-      0,
-      Math.min(chunk.byteLength, STREAM_HEAD_BYTES - stream.headBytes),
-    );
-    if (accepted.byteLength > 0) {
-      stream.head.push(Buffer.from(accepted));
-      stream.headBytes += accepted.byteLength;
-      offset = accepted.byteLength;
-    }
-  }
+  const offset = stream.head.append(chunk);
   if (offset < chunk.byteLength) {
     stream.tail = appendTail(stream.tail, chunk.subarray(offset));
   }
@@ -213,15 +193,20 @@ function markChanged(record: CommandRecord): void {
 
 async function waitForChange(
   record: CommandRecord,
-  afterSequence: number,
+  afterSequence: number | undefined,
   waitMs: number,
 ): Promise<void> {
-  if (record.status !== "running" || record.sequence > afterSequence || waitMs === 0) {
+  const ready = (): boolean => record.status !== "running" ||
+    (afterSequence !== undefined && record.sequence > afterSequence);
+  if (ready() || waitMs === 0) {
     return;
   }
   let changed!: () => void;
   const change = new Promise<void>((resolve) => {
-    changed = resolve;
+    changed = () => {
+      if (ready()) resolve();
+      else record.changeWaiters.add(changed);
+    };
     record.changeWaiters.add(changed);
   });
   const waitController = new AbortController();
@@ -238,18 +223,16 @@ async function waitForChange(
 
 function emptyCapture(): CapturedStream {
   return {
-    head: [],
-    headBytes: 0,
+    head: new BoundedBuffer(STREAM_HEAD_BYTES),
     tail: Buffer.alloc(0),
-    retained: [],
-    retainedBytes: 0,
+    retained: new BoundedBuffer(MAX_COMMAND_RETAINED_STREAM_BYTES),
     totalBytes: 0,
     retentionTruncated: false,
   };
 }
 
 function retainedBytes(stream: CapturedStream, complete: boolean): number {
-  const head = Buffer.concat(stream.head, stream.headBytes);
+  const head = stream.head.toBuffer();
   const retained = Buffer.concat([head, stream.tail]);
   const content = stream.totalBytes <= MAX_COMMAND_OUTPUT_BYTES
     ? (
@@ -318,7 +301,7 @@ function retainedRange(
   requestedOffset: number,
   maxBytes: number,
 ): { offset: number; content: string; nextOffset?: number } {
-  const retained = Buffer.concat(stream.retained, stream.retainedBytes);
+  const retained = stream.retained.toBuffer();
   let offset = requestedOffset;
   while (offset < retained.byteLength && isUtf8Continuation(retained[offset])) {
     offset += 1;
@@ -355,7 +338,7 @@ function renderStream(
   if (budget <= 0 || stream.totalBytes === 0) {
     return { content: "", truncated: stream.totalBytes > 0 };
   }
-  const head = Buffer.concat(stream.head, stream.headBytes);
+  const head = stream.head.toBuffer();
   const retained = Buffer.concat([head, stream.tail]);
   if (stream.totalBytes <= budget) {
     const content = complete
@@ -618,17 +601,7 @@ export class CommandService {
         "The command could not be started.",
       );
     });
-    if (record.status === "running" && waitMs > 0) {
-      const waitController = new AbortController();
-      try {
-        await Promise.race([
-          record.completion,
-          delay(waitMs, undefined, { signal: waitController.signal }),
-        ]);
-      } finally {
-        waitController.abort();
-      }
-    }
+    await waitForChange(record, undefined, waitMs);
     return this.snapshot(record);
   }
 
@@ -653,21 +626,7 @@ export class CommandService {
         "The command sequence is invalid for this command.",
       );
     }
-    if (record.status === "running" && waitMs > 0) {
-      if (afterSequence === undefined) {
-        const waitController = new AbortController();
-        try {
-          await Promise.race([
-            record.completion,
-            delay(waitMs, undefined, { signal: waitController.signal }),
-          ]);
-        } finally {
-          waitController.abort();
-        }
-      } else {
-        await waitForChange(record, afterSequence, waitMs);
-      }
-    }
+    await waitForChange(record, afterSequence, waitMs);
     return this.snapshot(record);
   }
 
@@ -703,7 +662,7 @@ export class CommandService {
     }
     if (record.restrictedDataDetected) throw restrictedDataError();
     const stream = record[streamName];
-    if (offset > stream.retainedBytes) {
+    if (offset > stream.retained.byteLength) {
       throw new WorkerError(
         "output_offset_out_of_range",
         "The command output offset exceeds the retained stream length.",
@@ -721,7 +680,7 @@ export class CommandService {
       offset: range.offset,
       content: range.content,
       ...(range.nextOffset === undefined ? {} : { nextOffset: range.nextOffset }),
-      retainedBytes: stream.retainedBytes,
+      retainedBytes: stream.retained.byteLength,
       totalBytes: stream.totalBytes,
       retentionTruncated: stream.retentionTruncated,
       complete: record.status !== "running",

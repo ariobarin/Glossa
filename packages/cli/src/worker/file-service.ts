@@ -27,15 +27,26 @@ import {
   MAX_SEARCH_TEXT_SNIPPET_CHARS,
   MAX_STRUCTURED_READ_TIMEOUT_MS,
   MAX_TEXT_BYTES,
+  type DeletePathResult,
+  type EditFileResult,
+  type ListFilesResult,
+  type MakeDirectoryResult,
+  type MovePathResult,
+  type ReadFileRangeResult,
+  type ReadFileResult,
+  type SearchTextResult,
+  type ViewImageResult,
+  type WriteFileResult,
 } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
 import { samePath, type PathPolicy } from "./path-policy.js";
+import { SearchMatcher } from "./search-matcher.js";
 
 function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-export type ImageMimeType = "image/png" | "image/jpeg" | "image/webp";
+type ImageMimeType = ViewImageResult["mimeType"];
 
 function imageMimeType(content: Uint8Array): ImageMimeType | undefined {
   if (
@@ -134,88 +145,19 @@ async function requireRevision(target: string, expectedSha256: string): Promise<
   }
 }
 
-export interface ReadTextResult {
-  content: string;
-  sha256: string;
-  bytes: number;
-}
-
-export interface ReadImageResult {
-  data: string;
-  mimeType: ImageMimeType;
-  sha256: string;
-  bytes: number;
-}
-
-export interface ListedFileEntry {
-  path: string;
-  type: "file" | "directory";
-  bytes?: number;
-}
-
-export interface ListFilesResult {
-  entries: ListedFileEntry[];
-  truncated: boolean;
-  scannedEntries: number;
-  skippedLinks: number;
-  nextCursor?: string;
-}
-
-export interface SearchTextMatch {
-  path: string;
-  line: number;
-  column: number;
-  text: string;
-  lineTruncated: boolean;
-}
-
-export interface SearchTextResult {
-  matches: SearchTextMatch[];
-  truncated: boolean;
-  scannedFiles: number;
-  scannedBytes: number;
-  skippedFiles: number;
-  skippedLinks: number;
-}
-
-export interface ReadTextRangeResult {
-  content: string;
-  startLine: number;
-  endLine: number;
-  totalLines: number;
-  sha256: string;
-  bytes: number;
-  contentBytes: number;
-  nextLine?: number;
-}
-
-export interface WriteTextResult {
-  sha256: string;
-  bytes: number;
-}
+type ReadTextResult = ReadFileResult;
+type ReadImageResult = ViewImageResult;
+type ListedFileEntry = ListFilesResult["entries"][number];
+type SearchTextMatch = SearchTextResult["matches"][number];
+type ReadTextRangeResult = ReadFileRangeResult;
+type WriteTextResult = WriteFileResult;
 
 export interface EditTextOperation {
   oldText: string;
   newText: string;
 }
 
-export interface EditTextResult extends WriteTextResult {
-  replacements: number;
-  diff: string;
-  diffTruncated: boolean;
-}
-
-export interface MakeDirectoryResult {
-  created: boolean;
-}
-
-export interface DeletePathResult {
-  deletedType: "file" | "directory";
-}
-
-export interface MovePathResult {
-  movedType: "file" | "directory";
-}
+type EditTextResult = EditFileResult;
 
 interface LocatedEdit extends EditTextOperation {
   start: number;
@@ -463,9 +405,11 @@ async function defaultBeforeDeadline<T>(
 }
 
 async function closeDirectory(handle: Dir): Promise<void> {
-  await handle.close().catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "ERR_DIR_CLOSED") throw error;
-  });
+  try {
+    await handle.close();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ERR_DIR_CLOSED") throw error;
+  }
 }
 
 function boundedPositiveInteger(
@@ -1063,24 +1007,11 @@ export class FileService {
       ?.map((extension) => extension.toLowerCase());
     const includeGlobs = options.includeGlobs;
     const excludeGlobs = options.excludeGlobs;
-    const globMatches = (relativePath: string, patterns: string[] | undefined): boolean => {
-      if (!patterns) return false;
-      const normalized = relativePath.replaceAll("\\", "/");
-      try {
-        return patterns.some((pattern) => path.posix.matchesGlob(normalized, pattern));
-      } catch {
-        throw new WorkerError("invalid_search", "Search glob pattern is invalid.");
-      }
-    };
-    let matcher: RegExp;
-    try {
-      matcher = new RegExp(
-        options.matchMode === "regex" ? options.query : escapeRegExp(options.query),
-        options.caseSensitive === true ? "u" : "iu",
-      );
-    } catch {
-      throw new WorkerError("invalid_search", "Search regular expression is invalid.");
-    }
+    const matcher = options.matchMode === "regex" ? undefined : new RegExp(
+      escapeRegExp(options.query),
+      options.caseSensitive === true ? "u" : "iu",
+    );
+    let isolatedMatcher: SearchMatcher | undefined;
     const start = await this.#withinDeadline(
       this.policy.resolveExisting(options.path ?? "."),
       deadlineAt,
@@ -1104,8 +1035,14 @@ export class FileService {
       ) {
         return false;
       }
-      if (includeGlobs && !globMatches(relative, includeGlobs)) return false;
-      if (globMatches(relative, excludeGlobs)) return false;
+      if (includeGlobs || excludeGlobs) {
+        this.#assertBeforeDeadline(deadlineAt);
+        const included = await isolatedMatcher!.includesPath(
+          relative.replaceAll("\\", "/"), deadlineAt - this.#now(),
+        );
+        this.#assertBeforeDeadline(deadlineAt);
+        if (!included) return false;
+      }
       if (scannedFiles >= MAX_SEARCH_FILES) {
         scanTruncated = true;
         return true;
@@ -1160,12 +1097,8 @@ export class FileService {
       scannedFiles += 1;
       scannedBytes += result.bytes;
       const lines = result.content.replace(/\r\n?/g, "\n").split("\n");
-      for (const [index, line] of lines.entries()) {
-        if (index % 256 === 0) this.#assertBeforeDeadline(deadlineAt);
-        const match = matcher.exec(line);
-        if (!match) continue;
-        const matchIndex = match.index;
-        const snippet = searchSnippet(line, matchIndex, match[0].length);
+      const addMatch = (index: number, matchIndex: number, matchLength: number): void => {
+        const snippet = searchSnippet(lines[index]!, matchIndex, matchLength);
         matches.push({
           path: relative,
           line: index + 1,
@@ -1173,6 +1106,19 @@ export class FileService {
           text: snippet.text,
           lineTruncated: snippet.truncated,
         });
+      };
+      if (options.matchMode === "regex") {
+        this.#assertBeforeDeadline(deadlineAt);
+        const found = await isolatedMatcher!.match(lines, matchLimit - matches.length, deadlineAt - this.#now());
+        this.#assertBeforeDeadline(deadlineAt);
+        for (const [line, index, length] of found) addMatch(line, index, length);
+        return matches.length >= matchLimit;
+      }
+      for (const [index, line] of lines.entries()) {
+        if (index % 256 === 0) this.#assertBeforeDeadline(deadlineAt);
+        const match = matcher!.exec(line);
+        if (!match) continue;
+        addMatch(index, match.index, match[0].length);
         if (matches.length >= matchLimit) return true;
       }
       return false;
@@ -1235,12 +1181,25 @@ export class FileService {
       return false;
     };
 
-    if (startStat.isFile()) {
-      await searchFile(start);
-    } else if (startStat.isDirectory()) {
-      await visit(start);
-    } else {
-      throw new WorkerError("not_file", "The requested path is not a file or directory.");
+    try {
+      if (options.matchMode === "regex" || includeGlobs || excludeGlobs) {
+        this.#assertBeforeDeadline(deadlineAt);
+        isolatedMatcher = await SearchMatcher.create({
+          ...(options.matchMode === "regex" ? { query: options.query } : {}),
+          caseSensitive: options.caseSensitive === true,
+          ...(includeGlobs ? { includeGlobs } : {}),
+          ...(excludeGlobs ? { excludeGlobs } : {}),
+        }, deadlineAt - this.#now());
+      }
+      if (startStat.isFile()) {
+        await searchFile(start);
+      } else if (startStat.isDirectory()) {
+        await visit(start);
+      } else {
+        throw new WorkerError("not_file", "The requested path is not a file or directory.");
+      }
+    } finally {
+      await isolatedMatcher?.close();
     }
 
     return {

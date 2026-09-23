@@ -55,6 +55,12 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - bind ephemeral worker credentials to one account, device, worker ID, and generation;
 - verify account isolation with direct integration checks before deployment.
 
+### Panel sign-in interception
+
+**Threat:** an attacker transfers their authorization callback to another browser, causing that user to pair a computer with the attacker's account.
+
+The panel binds each login to a signed, ten-minute browser cookie and uses PKCE S256 to bind the authorization code to that login. The callback rejects missing, mismatched, tampered, or expired transactions before exchanging the code and clears the login cookie when handling the callback. Production uses a host-only `Secure`, `HttpOnly`, `SameSite=Lax` cookie. Authorization-code reuse is rejected by the identity provider; the panel does not keep a server-side transaction ledger.
+
 ### Pairing authorization interception
 
 **Threat:** an attacker tricks a user into redeeming a pairing code for an unintended computer or captures a pairing code before the legitimate user redeems it.
@@ -114,8 +120,9 @@ Device management authority is scoped to the token's own account, and enrolling 
 - let the user select `read-only`, `workspace`, or explicit `system` authority at startup;
 - enforce the selected authority in both the relay and local worker;
 - treat startup as authorization only for operations inside the selected profile, without claiming per-command local confirmation;
-- show the selected profile and compact write or command activity locally;
-- provide visible status, immediate disconnect, logout, and device revocation;
+- show the selected profile and compact write or command activity in interactive sessions;
+- require explicit `--headless` startup for sessions without the local status and activity UI;
+- provide immediate disconnect, logout, and device revocation controls;
 - treat all file and command output as untrusted data rather than instructions;
 - reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.
 
