@@ -6,7 +6,7 @@ import "./fixtures/isolated-cli.mjs";
 import { once } from "node:events";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -240,6 +240,44 @@ async function main(): Promise<void> {
   assert.match(JSON.stringify(read.structuredContent), /local integration works/);
   console.log("mcp: read_file roundtrip returned workspace content");
 
+  const callWorkerTool = async (
+    name: string, args: Record<string, unknown>, workspaceId = workspaces[0]!.workspaceId,
+  ) => {
+    const result = await mcp.callTool({ name, arguments: { ...args, workspaceId } });
+    assert.notEqual(result.isError, true, JSON.stringify(result.content));
+    assert.ok(result.structuredContent);
+    return result.structuredContent;
+  };
+  assert.equal((await callWorkerTool("make_directory", { path: "roundtrip" })).created, true);
+  const revision = await callWorkerTool("write_file", { path: "roundtrip/note.txt", content: "first\nsecond\n" });
+  assert.match(revision.sha256 as string, /^[a-f0-9]{64}$/);
+  const listing = await callWorkerTool("list_files", { path: "roundtrip" });
+  assert.deepEqual(listing.entries, [{ path: "roundtrip/note.txt", type: "file", bytes: 13 }]);
+  const range = await callWorkerTool("read_file_range", { path: "roundtrip/note.txt", startLine: 2, lineCount: 1 });
+  assert.equal((range.content as string).trimEnd(), "second");
+  assert.equal(range.startLine, 2);
+  assert.equal(range.endLine, 2);
+  const search = await callWorkerTool("search_text", { path: "roundtrip", query: "second" });
+  assert.deepEqual(search.matches, [{ path: "roundtrip/note.txt", line: 2, column: 1, text: "second", lineTruncated: false }]);
+  const edited = await callWorkerTool("edit_file", {
+    path: "roundtrip/note.txt", expectedSha256: revision.sha256,
+    edits: [{ oldText: "second", newText: "updated" }],
+  });
+  assert.equal(edited.replacements, 1);
+  assert.equal((await callWorkerTool("move_path", { source: "roundtrip/note.txt", destination: "moved.txt" })).movedType, "file");
+  assert.equal(await readFile(path.join(workspace, "moved.txt"), "utf8"), "first\nupdated\n");
+  assert.equal((await callWorkerTool("delete_path", { path: "moved.txt" })).deletedType, "file");
+  assert.equal((await callWorkerTool("delete_path", { path: "roundtrip" })).deletedType, "directory");
+  await assert.rejects(readFile(path.join(workspace, "moved.txt")), { code: "ENOENT" });
+  const missing = await mcp.callTool({
+    name: "read_file", arguments: { workspaceId: workspaces[0]!.workspaceId, path: "moved.txt" },
+  });
+  assert.equal(missing.isError, true);
+  assert.match(JSON.stringify(missing.content), /path_not_found/);
+  assert.match(JSON.stringify(missing.content), /The requested path does not exist/);
+  assert.doesNotMatch(JSON.stringify(missing.content), /ENOENT/);
+  console.log("mcp: filesystem mutations, traversal, revision guard and safe missing-file error passed");
+
   const image = await mcp.callTool({
     name: "view_image",
     arguments: { workspaceId: workspaces[0]!.workspaceId, path: "pixel.png" },
@@ -293,6 +331,12 @@ async function main(): Promise<void> {
   });
   assert.notEqual(executed.isError, true);
   assert.match(JSON.stringify(executed.structuredContent), /headless-command-ok/);
+  const commandId = (executed.structuredContent as { commandId: string }).commandId;
+  assert.equal((await callWorkerTool("get_command", { commandId }, systemId)).status, "succeeded");
+  const output = await callWorkerTool("read_command_output", { commandId, stream: "stdout", offset: 0, maxBytes: 128 }, systemId);
+  assert.match(output.content as string, /headless-command-ok/);
+  assert.equal((await callWorkerTool("cancel_command", { commandId }, systemId)).status, "succeeded");
+  console.log("mcp: command status, output ranges and completed-command cancel idempotence passed");
   await stopHeadless();
   console.log("headless: all access profiles, command roundtrip, silent output, shutdown and restart passed");
 

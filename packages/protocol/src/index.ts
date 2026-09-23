@@ -82,29 +82,14 @@ export function workerPermissions(
   }
 }
 
-export const WORKER_JOB_TYPES = [
-  "get_command",
-  "read_command_output",
-  "cancel_command",
-  "read_file",
-  "view_image",
-  "list_files",
-  "search_text",
-  "read_file_range",
-  "write_file",
-  "edit_file",
-  "make_directory",
-  "delete_path",
-  "move_path",
-  "run_command",
-] as const;
-
-export const workerJobTypeSchema = z.enum(WORKER_JOB_TYPES);
-export type WorkerJobType = z.infer<typeof workerJobTypeSchema>;
+export type WorkerJobType = WorkerJob["type"];
 export type WorkerJobAuthority = "read" | "write" | "command";
 export type WorkerJobLane = "status" | "cancel" | "read" | "mutation";
 
 export const WORKER_JOB_METADATA = {
+  get_command: { authority: "command", lane: "status", textualResult: true },
+  read_command_output: { authority: "command", lane: "status", textualResult: true },
+  cancel_command: { authority: "command", lane: "cancel", textualResult: true },
   read_file: { authority: "read", lane: "read", textualResult: true },
   view_image: { authority: "read", lane: "read", textualResult: false },
   list_files: { authority: "read", lane: "read", textualResult: true },
@@ -116,9 +101,6 @@ export const WORKER_JOB_METADATA = {
   delete_path: { authority: "write", lane: "mutation", textualResult: false },
   move_path: { authority: "write", lane: "mutation", textualResult: false },
   run_command: { authority: "command", lane: "mutation", textualResult: true },
-  get_command: { authority: "command", lane: "status", textualResult: true },
-  read_command_output: { authority: "command", lane: "status", textualResult: true },
-  cancel_command: { authority: "command", lane: "cancel", textualResult: true },
 } as const satisfies Record<
   WorkerJobType,
   {
@@ -127,6 +109,9 @@ export const WORKER_JOB_METADATA = {
     textualResult: boolean;
   }
 >;
+
+export const WORKER_JOB_TYPES = Object.keys(WORKER_JOB_METADATA) as readonly WorkerJobType[];
+export const workerJobTypeSchema = z.enum(WORKER_JOB_TYPES);
 
 export function workerJobAuthority(type: WorkerJobType): WorkerJobAuthority {
   return WORKER_JOB_METADATA[type].authority;
