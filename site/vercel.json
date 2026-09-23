@@ -1,4 +1,8 @@
 {
+  "ignoreCommand": "git diff HEAD^ HEAD --quiet -- ':(top)site' ':(top)docs' ':(top)scripts' ':(top)package.json' ':(top)package-lock.json'",
+  "installCommand": "npm ci --ignore-scripts --no-audit --no-fund",
+  "buildCommand": "npm run docs:build && npm run site:check",
+  "outputDirectory": ".",
   "cleanUrls": true,
   "redirects": [
     {
