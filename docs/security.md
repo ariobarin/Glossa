@@ -55,6 +55,12 @@ Use the default `workspace` profile when file changes, directory creation, delet
 - bind ephemeral worker credentials to one account, device, worker ID, and generation;
 - verify account isolation with direct integration checks before deployment.
 
+### Panel sign-in interception
+
+**Threat:** an attacker transfers their authorization callback to another browser, causing that user to pair a computer with the attacker's account.
+
+The panel binds each login to a signed, ten-minute browser cookie and uses PKCE S256 to bind the authorization code to that login. The callback rejects missing, mismatched, tampered, or expired transactions before exchanging the code and clears the login cookie when handling the callback. Production uses a host-only `Secure`, `HttpOnly`, `SameSite=Lax` cookie. Authorization-code reuse is rejected by the identity provider; the panel does not keep a server-side transaction ledger.
+
 ### Pairing authorization interception
 
 **Threat:** an attacker tricks a user into redeeming a pairing code for an unintended computer or captures a pairing code before the legitimate user redeems it.
