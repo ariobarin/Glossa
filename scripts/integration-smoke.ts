@@ -1,11 +1,11 @@
 // Full local integration smoke: mock issuer + local relay + real CLI pairing,
 // device-credential management, and an MCP read_file roundtrip through a live
 // worker. Runs entirely against local processes; no production tenant or
-// relay is touched. Requires npm run build and local Postgres (npm run dev:setup).
+// relay is touched. Requires npm run build and local Postgres.
 import "./fixtures/isolated-cli.mjs";
 import { once } from "node:events";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -122,6 +122,13 @@ async function main(): Promise<void> {
   devAuth = await startDevAuth();
   process.env.GLOSSA_AUTH0_ISSUER = devAuth.issuer;
   process.env.GLOSSA_AUTH0_AUDIENCE = audience;
+
+  execFileSync(process.execPath, ["apps/relay/dist/src/migrate.js"], {
+    cwd: repositoryRoot,
+    env: { ...process.env, NODE_ENV: "development", DATABASE_URL: databaseUrl },
+    stdio: "inherit",
+    timeout: 30_000,
+  });
 
   relay = spawn(
     process.execPath,
