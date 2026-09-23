@@ -336,6 +336,7 @@ export async function revokePairedDevice(
 ): Promise<void> {
   const response = await fetchRequest(`${endpoints.relayOrigin}/device`, {
     method: "DELETE",
+    signal: AbortSignal.timeout(8_000),
     headers: { authorization: `Device ${device.token}` },
   });
   if (response.ok || response.status === 401 || response.status === 404) return;

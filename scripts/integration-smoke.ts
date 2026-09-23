@@ -369,6 +369,26 @@ async function main(): Promise<void> {
   await revokePairedDevice(endpoints, device);
   await mcp.close();
   console.log("unpair: device credential revoked");
+
+  // Exercise explicit local recovery through the built CLI with an offline relay.
+  const relayClosed = once(relay!, "close", { signal: AbortSignal.timeout(10_000) });
+  relay!.kill();
+  await relayClosed;
+  relay = undefined;
+  cliOutput = "";
+  cli = spawn(process.execPath, [
+    "--import", new URL("./fixtures/isolated-cli.mjs", import.meta.url).href,
+    "packages/cli/dist/main.js", "unpair",
+  ], { cwd: repositoryRoot, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  for (const stream of [cli.stdout!, cli.stderr!]) {
+    stream.on("data", (text: Buffer) => { cliOutput = (cliOutput + text.toString()).slice(-65_536); });
+  }
+  const [code] = await once(cli, "close", { signal: AbortSignal.timeout(12_000) });
+  assert.equal(code, 0, `offline unpair failed: ${cliOutput}`);
+  assert.match(cliOutput, /could not confirm revocation/);
+  assert.equal(await deviceStore.loadDeviceCredential(), null);
+  cli = undefined;
+  console.log("unpair: built CLI cleared its isolated pairing with the relay offline");
 }
 
 try {
