@@ -3,6 +3,8 @@ import {
   DEFAULT_WORKER_ACCESS_PROFILE,
   RESTRICTED_DATA_ERROR_CODE,
   RESTRICTED_DATA_ERROR_MESSAGE,
+  workerJobAuthority,
+  workerJobHasTextualResult,
   workerPermissions,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -71,22 +73,6 @@ function jobInputContainsRestrictedData(job: WorkerJob): boolean {
   }
 }
 
-function resultMayContainRestrictedData(job: WorkerJob): boolean {
-  // view_image is intentionally absent: its base64 payload represents opaque media,
-  // not text that the authentication-secret detector can meaningfully classify.
-  return (
-    job.type === "read_file" ||
-    job.type === "list_files" ||
-    job.type === "search_text" ||
-    job.type === "read_file_range" ||
-    job.type === "edit_file" ||
-    job.type === "run_command" ||
-    job.type === "get_command" ||
-    job.type === "read_command_output" ||
-    job.type === "cancel_command"
-  );
-}
-
 export class LocalWorker {
   private constructor(
     readonly accessProfile: WorkerAccessProfile,
@@ -111,26 +97,14 @@ export class LocalWorker {
   async handle(job: WorkerJob): Promise<WorkerResult> {
     try {
       const permissions = workerPermissions(this.accessProfile);
-      if (
-        (job.type === "write_file" ||
-          job.type === "edit_file" ||
-          job.type === "make_directory" ||
-          job.type === "delete_path" ||
-          job.type === "move_path") &&
-        !permissions.writeFiles
-      ) {
+      const authority = workerJobAuthority(job.type);
+      if (authority === "write" && !permissions.writeFiles) {
         throw new WorkerError(
           "write_access_disabled",
           "This worker was started without file-write access.",
         );
       }
-      if (
-        (job.type === "run_command" ||
-          job.type === "get_command" ||
-          job.type === "read_command_output" ||
-          job.type === "cancel_command") &&
-        !permissions.runCommands
-      ) {
+      if (authority === "command" && !permissions.runCommands) {
         throw new WorkerError(
           "command_access_disabled",
           "This worker was started without system-command access.",
@@ -236,7 +210,7 @@ export class LocalWorker {
           break;
       }
       if (
-        resultMayContainRestrictedData(job) &&
+        workerJobHasTextualResult(job.type) &&
         containsRestrictedAuthenticationData(value)
       ) {
         throw restrictedDataError();
