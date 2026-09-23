@@ -18,6 +18,9 @@ services:
   relay:
     build:
       context: .
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: development
       GLOSSA_BIND_HOST: 0.0.0.0
