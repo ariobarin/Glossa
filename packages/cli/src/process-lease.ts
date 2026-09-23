@@ -26,12 +26,31 @@ function guardName(lockName: string): string {
   return `${lockName}.guard`;
 }
 
-function newOwner(): ProcessLeaseOwner {
-  return {
+async function createLock(file: string, signal?: AbortSignal): Promise<AcquiredProcessLease> {
+  const owner: ProcessLeaseOwner = {
     pid: process.pid,
     startedAt: new Date().toISOString(),
     token: randomUUID(),
   };
+  for (let attempt = 0; ; attempt += 1) {
+    signal?.throwIfAborted();
+    try {
+      await writeFile(file, `${JSON.stringify(owner)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      return { file, token: owner.token };
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException;
+      if (
+        process.platform !== "win32" || failure.code !== "EPERM" ||
+        failure.syscall !== "open" || attempt === 5
+      ) throw error;
+    }
+    // Windows can deny opens until another handle releases a deleted lock.
+    await delay(50, undefined, signal ? { signal } : undefined);
+  }
 }
 
 async function readOwner(file: string): Promise<ProcessLeaseOwner | undefined> {
@@ -76,14 +95,8 @@ async function acquireGuard(
   const file = path.join(directory, guardName(options.lockName));
   for (;;) {
     signal?.throwIfAborted();
-    const owner = newOwner();
     try {
-      await writeFile(file, `${JSON.stringify(owner)}\n`, {
-        encoding: "utf8",
-        flag: "wx",
-        mode: 0o600,
-      });
-      return { file, token: owner.token };
+      return await createLock(file, signal);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
@@ -123,14 +136,8 @@ async function acquireProcessLease(
   const file = path.join(directory, options.lockName);
   for (;;) {
     signal?.throwIfAborted();
-    const owner = newOwner();
     try {
-      await writeFile(file, `${JSON.stringify(owner)}\n`, {
-        encoding: "utf8",
-        flag: "wx",
-        mode: 0o600,
-      });
-      return { file, token: owner.token };
+      return await createLock(file, signal);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
