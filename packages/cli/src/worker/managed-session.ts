@@ -385,6 +385,8 @@ export function visibleWorker(
   worker: WorkerHandler,
   options: ManagedSessionOptions,
 ): WorkerHandler {
+  if (options.quiet && !options.onEvent) return worker;
+
   return {
     async handle(job: WorkerJob): Promise<WorkerResult> {
       const visibleJob = activitySafeJob(job);

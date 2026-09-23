@@ -1,7 +1,5 @@
 # Operations guide
 
-This guide covers installation, workspace selection, access profiles, account controls, updates, and troubleshooting for the managed Glossa service.
-
 ## Install
 
 The npm package supports Windows, macOS, and Linux and requires Node.js 22.9 or newer:
@@ -53,7 +51,7 @@ Create a custom MCP app in ChatGPT Developer Mode using OAuth and:
 https://mcp.glossa.sh/mcp
 ```
 
-Authorize Glossa in ChatGPT and run **Scan Tools**. On first `glossa`, enter the printed pairing code on the Glossa control panel. A headless worker prints the code to redeem from any browser and retains no login credentials.
+Authorize Glossa and run **Scan Tools**. On first launch, redeem the printed pairing code on the control panel from any browser. The CLI stores only a revocable device credential.
 
 Verify discovery with:
 
@@ -76,7 +74,17 @@ Glossa does not derive labels from local paths. A duplicate process for the same
 
 ## Interactive HUD
 
-The HUD opens on **Workspace**, showing the exposed directory, paired computer, current access boundary, and newest activity. `A` opens full **Activity** history; `W` or Escape returns to Workspace. Workspace arrows change access, with confirmation before increases. `D` opens **Devices** for account-level device administration; use up/down and Enter or `R` to revoke. `?` opens Help.
+**Workspace** shows the root, paired computer, access and newest activity. `A` opens **Activity**; `W` or Escape returns. Workspace arrows change access, with confirmation before increases. `D` opens **Devices**; up/down selects and Enter or `R` revokes. `?` opens Help.
+
+## Headless workers
+
+Use `--headless` when an operating-system supervisor runs an unattended worker:
+
+```shell
+glossa --headless --label recovery C:\path\to\project
+```
+
+Headless mode omits the HUD and activity history; all workspace options still apply. SIGINT or SIGTERM disconnects. Use `notify` updates or configure the supervisor to restart after successful updates and failures.
 
 ## Updates
 
@@ -97,7 +105,7 @@ Disconnect every running workspace before installing an update.
 glossa unpair
 ```
 
-A paired computer manages the account's devices from the devices view in its terminal UI: press `d` to list devices and active workspaces, and revoke a device with Enter. `unpair` revokes this computer and removes its local pairing. Disconnect Glossa in ChatGPT separately to revoke the client authorization.
+Press `d` in the interactive HUD to list devices and active workspaces; Enter revokes a selected device. `unpair` revokes this computer and removes its pairing. Disconnect Glossa in ChatGPT separately to revoke client authorization.
 
 ## Verify a setup
 

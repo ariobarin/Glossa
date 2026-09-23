@@ -1,9 +1,11 @@
 // Full local integration smoke: mock issuer + local relay + real CLI pairing,
 // device-credential management, and an MCP read_file roundtrip through a live
 // worker. Runs entirely against local processes; no production tenant or
-// relay is touched. Requires local Postgres (npm run dev:setup).
+// relay is touched. Requires npm run build and local Postgres.
+import "./fixtures/isolated-cli.mjs";
+import { once } from "node:events";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -23,6 +25,52 @@ const relayPort = new URL(relayOrigin).port || "80";
 const temporaryPaths: string[] = [];
 let relay: ChildProcess | undefined;
 let devAuth: DevAuthServer | undefined;
+let cli: ChildProcess | undefined;
+let cliOutput = "";
+
+function startHeadless(workspace: string, access: string): void {
+  cliOutput = "";
+  cli = spawn(process.execPath, [
+    "--import", new URL("./fixtures/isolated-cli.mjs", import.meta.url).href,
+    "packages/cli/dist/main.js", "--headless", "--access", access,
+    "--label", "integration-smoke",
+    ...(process.argv.includes("--keep-awake") ? ["--keep-awake"] : []),
+    workspace,
+  ], { cwd: repositoryRoot, env: process.env, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  for (const stream of [cli.stdout!, cli.stderr!]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (text: string) => { cliOutput = (cliOutput + text).slice(-65_536); });
+  }
+}
+
+async function waitForWorker(mcp: Client, access: string): Promise<string> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    assert.equal(cli?.exitCode, null, `headless CLI exited early: ${cliOutput}`);
+    const result = await mcp.callTool({ name: "list_workspaces", arguments: {} });
+    const workers = (result.structuredContent as {
+      workspaces: Array<{ workspaceId: string; workspaceLabel?: string; accessProfile: string }>;
+    }).workspaces;
+    if (workers.length === 1) {
+      assert.equal(workers[0]!.workspaceLabel, "integration-smoke");
+      assert.equal(workers[0]!.accessProfile, access);
+      return workers[0]!.workspaceId;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Headless worker did not connect: ${cliOutput}`);
+}
+
+async function stopHeadless(): Promise<void> {
+  if (!cli || cli.exitCode !== null) return;
+  const closed = once(cli, "close", { signal: AbortSignal.timeout(10_000) });
+  if (process.platform === "win32") cli.send!("stop");
+  else cli.kill("SIGTERM");
+  const [code] = await closed;
+  assert.equal(code, 0, `headless CLI failed to shut down: ${cliOutput}`);
+  assert.doesNotMatch(cliOutput, /\u001b\[|local integration works|headless-command-ok/);
+  cli = undefined;
+}
 
 async function temporaryDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -75,6 +123,13 @@ async function main(): Promise<void> {
   process.env.GLOSSA_AUTH0_ISSUER = devAuth.issuer;
   process.env.GLOSSA_AUTH0_AUDIENCE = audience;
 
+  execFileSync(process.execPath, ["apps/relay/dist/src/migrate.js"], {
+    cwd: repositoryRoot,
+    env: { ...process.env, NODE_ENV: "development", DATABASE_URL: databaseUrl },
+    stdio: "inherit",
+    timeout: 30_000,
+  });
+
   relay = spawn(
     process.execPath,
     ["--import", "tsx", "apps/relay/src/index.ts"],
@@ -104,9 +159,10 @@ async function main(): Promise<void> {
     loadRelayEndpoints,
     revokePairedDevice,
   } = await import("../packages/cli/src/relay-client.js");
-  const { runManagedSession } = await import(
-    "../packages/cli/src/worker/managed-session.js"
-  );
+  const { AsyncEntry } = await import("@napi-rs/keyring");
+  assert.throws(() => new AsyncEntry("Glossa", "device"), /isolated test keyring/);
+  const { configureUpdates } = await import("../packages/cli/src/update-state.js");
+  await configureUpdates("0.0.0", { policy: "off" });
 
   const endpoints = loadRelayEndpoints(process.env);
 
@@ -173,42 +229,9 @@ async function main(): Promise<void> {
     "base64",
   );
   await writeFile(path.join(workspace, "pixel.png"), png);
-  const sessionController = new AbortController();
-  const connected = new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("worker did not connect")), 15_000);
-    void (async () => {
-      try {
-        await runManagedSession(workspace, endpoints, {
-          device,
-          workerVersion: "0.0.0-dev",
-          accessProfile: "workspace",
-          signal: sessionController.signal,
-          quiet: true,
-          handleProcessSignals: false,
-          keepAwake: process.argv.includes("--keep-awake"),
-          onEvent: (event) => {
-            if (event.type === "status" && event.status.state === "connected") {
-              clearTimeout(timeout);
-              resolve();
-            }
-          },
-        });
-      } catch {
-        // Aborted during teardown.
-      } finally {
-        clearTimeout(timeout);
-        resolve();
-      }
-    })();
-  });
-  await connected;
-  console.log("worker: connected through the local relay");
-
-  const online = await mcp.callTool({ name: "list_workspaces", arguments: {} });
-  const workspaces = (online.structuredContent as {
-    workspaces: Array<{ workspaceId: string }>;
-  }).workspaces;
-  assert.equal(workspaces.length, 1, "one online workspace");
+  startHeadless(workspace, "workspace");
+  const workspaces = [{ workspaceId: await waitForWorker(mcp, "workspace") }];
+  console.log("worker: built headless CLI connected without a terminal");
 
   const read = await mcp.callTool({
     name: "read_file",
@@ -238,8 +261,42 @@ async function main(): Promise<void> {
   assert.equal("data" in imageMetadata, false);
   console.log("mcp: view_image roundtrip returned native image content only");
 
-  // 5. Teardown also exercises self-revocation.
-  sessionController.abort();
+  // 5. Permission enforcement and clean restart through the built entrypoint.
+  const command = { argv: [process.execPath, "-e", "console.log('headless-command-ok')"] };
+  const denied = await mcp.callTool({
+    name: "run_command", arguments: { workspaceId: workspaces[0]!.workspaceId, command },
+  });
+  assert.equal(denied.isError, true);
+  assert.match(JSON.stringify(denied.content), /command_access_disabled/);
+  const written = await mcp.callTool({
+    name: "write_file",
+    arguments: { workspaceId: workspaces[0]!.workspaceId, path: "written.txt", content: "headless write" },
+  });
+  assert.notEqual(written.isError, true);
+  await stopHeadless();
+  const disconnected = await mcp.callTool({ name: "list_workspaces", arguments: {} });
+  assert.equal((disconnected.structuredContent as { availability: string }).availability, "offline");
+
+  startHeadless(workspace, "read-only");
+  const readOnlyId = await waitForWorker(mcp, "read-only");
+  const forbiddenWrite = await mcp.callTool({
+    name: "write_file", arguments: { workspaceId: readOnlyId, path: "forbidden.txt", content: "must not write" },
+  });
+  assert.equal(forbiddenWrite.isError, true);
+  assert.match(JSON.stringify(forbiddenWrite.content), /write_access_disabled/);
+  await stopHeadless();
+
+  startHeadless(workspace, "system");
+  const systemId = await waitForWorker(mcp, "system");
+  const executed = await mcp.callTool({
+    name: "run_command", arguments: { workspaceId: systemId, command, waitMs: 5_000 },
+  });
+  assert.notEqual(executed.isError, true);
+  assert.match(JSON.stringify(executed.structuredContent), /headless-command-ok/);
+  await stopHeadless();
+  console.log("headless: all access profiles, command roundtrip, silent output, shutdown and restart passed");
+
+  // 6. Teardown also exercises self-revocation.
   await revokePairedDevice(endpoints, device);
   await mcp.close();
   console.log("unpair: device credential revoked");
@@ -249,6 +306,11 @@ try {
   await main();
   console.log("Local integration smoke passed.");
 } finally {
+  if (cli && cli.exitCode === null) {
+    const closed = once(cli, "close");
+    cli.kill();
+    await closed;
+  }
   relay?.kill();
   await devAuth?.close();
   await Promise.all(

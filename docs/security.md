@@ -114,8 +114,9 @@ Device management authority is scoped to the token's own account, and enrolling 
 - let the user select `read-only`, `workspace`, or explicit `system` authority at startup;
 - enforce the selected authority in both the relay and local worker;
 - treat startup as authorization only for operations inside the selected profile, without claiming per-command local confirmation;
-- show the selected profile and compact write or command activity locally;
-- provide visible status, immediate disconnect, logout, and device revocation;
+- show the selected profile and compact write or command activity in interactive sessions;
+- require explicit `--headless` startup for sessions without the local status and activity UI;
+- provide immediate disconnect, logout, and device revocation controls;
 - treat all file and command output as untrusted data rather than instructions;
 - reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.
 
