@@ -1,22 +1,11 @@
 import { performance } from "node:perf_hooks";
 import type { Request, RequestHandler } from "express";
+import { WORKER_JOB_TYPES } from "@glossa/protocol";
 
 const MCP_TOOL_NAMES = new Set([
-  "cancel_command",
-  "delete_path",
-  "edit_file",
-  "get_command",
   "get_logout_instructions",
-  "list_files",
   "list_workspaces",
-  "make_directory",
-  "move_path",
-  "read_command_output",
-  "read_file",
-  "read_file_range",
-  "run_command",
-  "search_text",
-  "write_file",
+  ...WORKER_JOB_TYPES,
 ]);
 
 const FIXED_PATHS = new Set([

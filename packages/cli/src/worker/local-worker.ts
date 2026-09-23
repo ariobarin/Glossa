@@ -3,6 +3,7 @@ import {
   DEFAULT_WORKER_ACCESS_PROFILE,
   RESTRICTED_DATA_ERROR_CODE,
   RESTRICTED_DATA_ERROR_MESSAGE,
+  workerOperation,
   workerPermissions,
   type WorkerAccessProfile,
   type WorkerJob,
@@ -21,70 +22,12 @@ function restrictedDataError(): WorkerError {
 }
 
 function jobInputContainsRestrictedData(job: WorkerJob): boolean {
-  switch (job.type) {
-    case "read_file":
-    case "view_image":
-      return containsRestrictedAuthenticationData(job.path);
-    case "list_files":
-      return containsRestrictedAuthenticationData({
-        path: job.path,
-        cursor: job.cursor,
-      });
-    case "search_text":
-      return containsRestrictedAuthenticationData({
-        query: job.query,
-        path: job.path,
-        extensions: job.extensions,
-        includeGlobs: job.includeGlobs,
-        excludeGlobs: job.excludeGlobs,
-      });
-    case "read_file_range":
-      return containsRestrictedAuthenticationData(job.path);
-    case "write_file":
-      return containsRestrictedAuthenticationData({
-        path: job.path,
-        content: job.content,
-      });
-    case "edit_file":
-      return containsRestrictedAuthenticationData({
-        path: job.path,
-        edits: job.edits,
-      });
-    case "make_directory":
-    case "delete_path":
-      return containsRestrictedAuthenticationData(job.path);
-    case "move_path":
-      return containsRestrictedAuthenticationData({
-        source: job.source,
-        destination: job.destination,
-      });
-    case "run_command":
-      return containsRestrictedAuthenticationData({
-        argv: job.argv,
-        shellCommand: job.shellCommand,
-        stdin: job.stdin,
-      });
-    case "get_command":
-    case "read_command_output":
-    case "cancel_command":
-      return false;
-  }
+  return workerOperation(job.type).scanRestrictedInput &&
+    containsRestrictedAuthenticationData(job);
 }
 
 function resultMayContainRestrictedData(job: WorkerJob): boolean {
-  // view_image is intentionally absent: its base64 payload represents opaque media,
-  // not text that the authentication-secret detector can meaningfully classify.
-  return (
-    job.type === "read_file" ||
-    job.type === "list_files" ||
-    job.type === "search_text" ||
-    job.type === "read_file_range" ||
-    job.type === "edit_file" ||
-    job.type === "run_command" ||
-    job.type === "get_command" ||
-    job.type === "read_command_output" ||
-    job.type === "cancel_command"
-  );
+  return workerOperation(job.type).scanRestrictedResult;
 }
 
 export class LocalWorker {
@@ -111,26 +54,14 @@ export class LocalWorker {
   async handle(job: WorkerJob): Promise<WorkerResult> {
     try {
       const permissions = workerPermissions(this.accessProfile);
-      if (
-        (job.type === "write_file" ||
-          job.type === "edit_file" ||
-          job.type === "make_directory" ||
-          job.type === "delete_path" ||
-          job.type === "move_path") &&
-        !permissions.writeFiles
-      ) {
+      const requiredPermission = workerOperation(job.type).permission;
+      if (requiredPermission === "write" && !permissions.writeFiles) {
         throw new WorkerError(
           "write_access_disabled",
           "This worker was started without file-write access.",
         );
       }
-      if (
-        (job.type === "run_command" ||
-          job.type === "get_command" ||
-          job.type === "read_command_output" ||
-          job.type === "cancel_command") &&
-        !permissions.runCommands
-      ) {
+      if (requiredPermission === "command" && !permissions.runCommands) {
         throw new WorkerError(
           "command_access_disabled",
           "This worker was started without system-command access.",
