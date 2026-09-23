@@ -57,7 +57,7 @@ function parseWorkspace(args: string[]): CliInvocation {
         throw new UsageError("Glossa accepts at most one workspace label.");
       }
       const value = args[index + 1];
-      if (value === undefined || value === "--") {
+      if (value === undefined || ["--", "--label", "--access", "--keep-awake"].includes(value)) {
         throw new UsageError("Use --label <name>.");
       }
       const parsed = workspaceLabelSchema.safeParse(value);

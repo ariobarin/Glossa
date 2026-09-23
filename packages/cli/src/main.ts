@@ -6,7 +6,6 @@ import {
   type CliInvocation,
 } from "./cli-options.js";
 import { deviceStatus, formatRelativeTime } from "./device-format.js";
-import { withKeepAwake } from "./keep-awake.js";
 import {
   listDevices,
   loadRelayEndpoints,
@@ -94,53 +93,44 @@ async function runWorkspaceSession(
       ...(label ? { workspaceLabel: label } : {}),
       ...(initialNotice ? { initialNotice } : {}),
       run: async (signal, onEvent) => {
-        const run = async (signal: AbortSignal): Promise<void> => {
-          while (!signal.aborted) {
-            const sessionAccessProfile = requestedAccessProfile;
-            const sessionController = new AbortController();
-            activeSessionController = sessionController;
-            const stopSession = (): void => sessionController.abort(signal.reason);
-            if (signal.aborted) sessionController.abort(signal.reason);
-            else signal.addEventListener("abort", stopSession, { once: true });
-            try {
-              await runManagedSession(root, endpoints, {
-                device,
-                workerVersion: VERSION,
-                accessProfile: sessionAccessProfile,
-                ...(label ? { workspaceLabel: label } : {}),
-                signal: sessionController.signal,
-                onEvent: (event) => {
-                  postExitNotice = retainPostExitNotice(postExitNotice, event);
-                  onEvent(event);
-                },
-                quiet: true,
-                handleProcessSignals: false,
-              });
-            } catch (error) {
-              if (signal.aborted) return;
-              if (
-                sessionController.signal.aborted &&
-                requestedAccessProfile !== sessionAccessProfile
-              ) {
-                continue;
-              }
-              throw error;
-            } finally {
-              signal.removeEventListener("abort", stopSession);
-              if (activeSessionController === sessionController) {
-                activeSessionController = undefined;
-              }
+        while (!signal.aborted) {
+          const sessionAccessProfile = requestedAccessProfile;
+          const sessionController = new AbortController();
+          activeSessionController = sessionController;
+          const stopSession = (): void => sessionController.abort(signal.reason);
+          if (signal.aborted) sessionController.abort(signal.reason);
+          else signal.addEventListener("abort", stopSession, { once: true });
+          try {
+            await runManagedSession(root, endpoints, {
+              device,
+              workerVersion: VERSION,
+              accessProfile: sessionAccessProfile,
+              keepAwake,
+              ...(label ? { workspaceLabel: label } : {}),
+              signal: sessionController.signal,
+              onEvent: (event) => {
+                postExitNotice = retainPostExitNotice(postExitNotice, event);
+                onEvent(event);
+              },
+              quiet: true,
+              handleProcessSignals: false,
+            });
+          } catch (error) {
+            if (signal.aborted) return;
+            if (
+              sessionController.signal.aborted &&
+              requestedAccessProfile !== sessionAccessProfile
+            ) {
+              continue;
             }
-            if (requestedAccessProfile === sessionAccessProfile) return;
+            throw error;
+          } finally {
+            signal.removeEventListener("abort", stopSession);
+            if (activeSessionController === sessionController) {
+              activeSessionController = undefined;
+            }
           }
-        };
-        if (keepAwake) {
-          await withKeepAwake(signal, async (awakeSignal) => {
-            onEvent({ type: "notice", message: "Keep-awake enabled. Lid closure still follows Windows settings; use AC power for long sessions." });
-            await run(awakeSignal);
-          });
-        } else {
-          await run(signal);
+          if (requestedAccessProfile === sessionAccessProfile) return;
         }
       },
       loadStatus: async (signal) => {
