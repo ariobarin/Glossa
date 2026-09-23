@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { setImmediate } from "node:timers/promises";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -26,6 +29,47 @@ async function commandFixture(
   });
   return { root: policy.root, commands };
 }
+
+test("expired status waits release their subscriptions", async (context) => {
+  if (!global.gc) {
+    const child = spawnSync(process.execPath, [
+      "--expose-gc", "--import", "tsx",
+      "--test-name-pattern=^expired status waits release their subscriptions$",
+      fileURLToPath(import.meta.url),
+    ], {
+      encoding: "utf8", timeout: 30_000,
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+    });
+    assert.equal(child.status, 0, child.stdout + child.stderr);
+    return;
+  }
+  const { commands } = await commandFixture(context);
+  const command = await commands.start({
+    argv: [process.execPath, "-e", "setInterval(() => {}, 1000)"],
+    timeoutMs: 60_000,
+    waitMs: 0,
+  });
+  const retainedHeap = async (): Promise<number> => {
+    for (let pass = 0; pass < 3; pass += 1) {
+      await setImmediate();
+      global.gc!();
+    }
+    return process.memoryUsage().heapUsed;
+  };
+  const wait = async (count: number): Promise<void> => {
+    for (let index = 0; index < count; index += 100) {
+      const snapshots = await Promise.all(
+        Array.from({ length: 100 }, () => commands.get(command.commandId, 1)),
+      );
+      assert.ok(snapshots.every((snapshot) => snapshot.status === "running"));
+    }
+  };
+  await wait(2_000);
+  const baseline = await retainedHeap();
+  await wait(10_000);
+  const growth = await retainedHeap() - baseline;
+  assert.ok(growth < 1024 * 1024, `Expired waits retained ${growth} bytes.`);
+});
 
 test("normalizes unresolved direct commands as spawn failures", async (context) => {
   const { commands } = await commandFixture(context);
@@ -154,11 +198,17 @@ test("returns running output and wakes when command progress changes", async (co
   assert.equal(first.stdout, "first");
   assert.ok(first.sequence > started.sequence);
 
+  let completionReturned = false;
+  const completion = commands.get(started.commandId, 5_000).then((snapshot) => {
+    completionReturned = true;
+    return snapshot;
+  });
   const second = await commands.get(started.commandId, 5_000, first.sequence);
   assert.equal(second.stdout, "first second");
   assert.ok(second.sequence > first.sequence);
+  assert.equal(completionReturned, false);
 
-  const completed = await commands.get(started.commandId, 5_000);
+  const completed = await completion;
   assert.equal(completed.status, "succeeded");
   assert.equal(completed.stdout, "first second");
   assert.ok(completed.sequence > second.sequence);

@@ -54,6 +54,30 @@ test("parses explicit least-privilege and system access profiles", () => {
   });
 });
 
+test("parses headless workspace sessions", () => {
+  assert.deepEqual(
+    parseInvocation([
+      "--headless",
+      "--access",
+      "system",
+      "--label",
+      "recovery",
+      ".",
+    ]),
+    {
+      command: "workspace",
+      path: ".",
+      label: "recovery",
+      headless: true,
+      accessProfile: "system",
+    },
+  );
+  assert.throws(
+    () => parseInvocation(["--headless", "--headless"]),
+    new UsageError("Use --headless at most once."),
+  );
+});
+
 test("keeps the reduced direct CLI actions", () => {
   assert.deepEqual(parseInvocation(["unpair"]), { command: "unpair" });
   for (const retired of ["status", "devices", "logout", "login"]) {
@@ -62,6 +86,27 @@ test("keeps the reduced direct CLI actions", () => {
       new UsageError(`The ${retired} command is no longer available.`),
     );
   }
+});
+
+test("opts into keep-awake without consuming the workspace path", () => {
+  for (const args of [["--keep-awake", "."], [".", "--keep-awake"]]) {
+    assert.deepEqual(parseInvocation(args), {
+      command: "workspace", path: ".", accessProfile: "workspace", keepAwake: true,
+    });
+  }
+  assert.throws(() => parseInvocation(["--keep-awake", "--keep-awake"]), UsageError);
+  assert.deepEqual(parseInvocation(["--", "--keep-awake"]), {
+    command: "workspace", path: "--keep-awake", accessProfile: "workspace",
+  });
+});
+
+test("does not swallow workspace options as labels", () => {
+  for (const option of ["--", "--label", "--access", "--headless", "--keep-awake"]) {
+    assert.throws(() => parseInvocation(["--label", option]), /Use --label <name>/);
+  }
+  assert.deepEqual(parseInvocation(["--label", "-draft", "--keep-awake", "--headless"]), {
+    command: "workspace", label: "-draft", accessProfile: "workspace", keepAwake: true, headless: true,
+  });
 });
 
 test("parses update actions and settings", () => {

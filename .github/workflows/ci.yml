@@ -30,6 +30,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: docker compose up -d --wait postgres
+      - run: npm run integration:smoke
+        env:
+          GLOSSA_INTEGRATION_DATABASE_URL: postgres://glossa:glossa@127.0.0.1:55432/glossa
+      - if: always()
+        run: docker compose down -v
+
+  relay-container:
+    name: Relay container smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker compose up -d --build --wait
+      - run: curl --fail --silent --show-error http://127.0.0.1:39100/healthz
+      - name: Verify graceful shutdown
+        run: |
+          container=$(docker compose ps -q relay)
+          docker compose stop -t 15 relay
+          test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
+      - if: always()
+        run: docker compose down -v
 
   check-windows:
     name: Full repository check (Windows)
