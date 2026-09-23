@@ -50,7 +50,7 @@ Build and run the relay image with the same `.env` file:
 ```powershell
 docker build -t glossa-relay .
 docker run --rm --env-file .env glossa-relay npm run migrate --workspace @glossa/relay
-docker run --rm --env-file .env -p 39100:39100 glossa-relay
+docker run --rm --env-file .env -p 127.0.0.1:39100:39100 glossa-relay
 ```
 
 Or install, build, migrate, and start it directly with Node.js:
@@ -62,7 +62,7 @@ npm run migrate --workspace @glossa/relay
 npm run start --workspace @glossa/relay
 ```
 
-Terminate TLS in front of the relay. Confirm `https://mcp.example.com/healthz` returns an object with `ok` set to `true`.
+Terminate TLS in front of the relay. The example binds HTTP to loopback for a proxy on the Docker host; use a private network instead when the proxy runs elsewhere. Do not expose the HTTP listener directly to the Internet. Confirm `https://mcp.example.com/healthz` returns an object with `ok` set to `true`.
 
 ## Control panel
 
