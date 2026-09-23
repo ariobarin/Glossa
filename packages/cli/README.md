@@ -28,7 +28,7 @@ Expose only a narrow project you trust. Keep credentials and regulated or sensit
 
 Pass a directory for another project and `--label <name>` to identify concurrent workers. Interactive mode shows the root, access, connection, and recent activity. Press `q` or Ctrl+C to disconnect.
 
-Run `glossa --headless` under an operating-system supervisor for an unattended worker. It accepts the same options but skips the HUD and local activity history. Send SIGINT or SIGTERM to disconnect it. Use the `notify` update policy, or configure the supervisor to restart after a successful automatic update as well as after failures.
+Run `glossa --headless` under an operating-system supervisor for an unattended worker. It accepts the same options but skips the HUD and local activity history. Send SIGINT or SIGTERM to disconnect it. Use `notify` updates, or configure the supervisor to restart after successful automatic updates and failures.
 
 Windows: `glossa --headless --keep-awake` also prevents idle sleep until Glossa exits. For closed-lid use, see [setup](https://github.com/ariobarin/glossa/blob/main/docs/operations.md#keep-a-windows-workspace-awake).
 

@@ -101,11 +101,11 @@ test("opts into keep-awake without consuming the workspace path", () => {
 });
 
 test("does not swallow workspace options as labels", () => {
-  for (const option of ["--", "--label", "--access", "--keep-awake"]) {
+  for (const option of ["--", "--label", "--access", "--headless", "--keep-awake"]) {
     assert.throws(() => parseInvocation(["--label", option]), /Use --label <name>/);
   }
-  assert.deepEqual(parseInvocation(["--label", "-draft", "--keep-awake"]), {
-    command: "workspace", label: "-draft", accessProfile: "workspace", keepAwake: true,
+  assert.deepEqual(parseInvocation(["--label", "-draft", "--keep-awake", "--headless"]), {
+    command: "workspace", label: "-draft", accessProfile: "workspace", keepAwake: true, headless: true,
   });
 });
 
