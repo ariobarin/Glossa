@@ -82,6 +82,49 @@ export function workerPermissions(
   }
 }
 
+export type WorkerJobType = WorkerJob["type"];
+export type WorkerJobAuthority = "read" | "write" | "command";
+export type WorkerJobLane = "status" | "cancel" | "read" | "mutation";
+
+export const WORKER_JOB_METADATA = {
+  get_command: { authority: "command", lane: "status", textualResult: true },
+  read_command_output: { authority: "command", lane: "status", textualResult: true },
+  cancel_command: { authority: "command", lane: "cancel", textualResult: true },
+  read_file: { authority: "read", lane: "read", textualResult: true },
+  view_image: { authority: "read", lane: "read", textualResult: false },
+  list_files: { authority: "read", lane: "read", textualResult: true },
+  search_text: { authority: "read", lane: "read", textualResult: true },
+  read_file_range: { authority: "read", lane: "read", textualResult: true },
+  write_file: { authority: "write", lane: "mutation", textualResult: false },
+  edit_file: { authority: "write", lane: "mutation", textualResult: true },
+  make_directory: { authority: "write", lane: "mutation", textualResult: false },
+  delete_path: { authority: "write", lane: "mutation", textualResult: false },
+  move_path: { authority: "write", lane: "mutation", textualResult: false },
+  run_command: { authority: "command", lane: "mutation", textualResult: true },
+} as const satisfies Record<
+  WorkerJobType,
+  {
+    authority: WorkerJobAuthority;
+    lane: WorkerJobLane;
+    textualResult: boolean;
+  }
+>;
+
+export const WORKER_JOB_TYPES = Object.keys(WORKER_JOB_METADATA) as readonly WorkerJobType[];
+export const workerJobTypeSchema = z.enum(WORKER_JOB_TYPES);
+
+export function workerJobAuthority(type: WorkerJobType): WorkerJobAuthority {
+  return WORKER_JOB_METADATA[type].authority;
+}
+
+export function workerJobLane(type: WorkerJobType): WorkerJobLane {
+  return WORKER_JOB_METADATA[type].lane;
+}
+
+export function workerJobHasTextualResult(type: WorkerJobType): boolean {
+  return WORKER_JOB_METADATA[type].textualResult;
+}
+
 export const relativePathSchema = z
   .string()
   .max(4096)
