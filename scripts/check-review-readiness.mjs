@@ -286,18 +286,16 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "Recommended portal test subset",
   "exactly five positive and exactly three negative",
   "Demo recording URL",
-  "Plugin package gate",
-  "Post-registration packaging sequence",
+  "Submit the remote MCP server directly",
+  "**With MCP**",
   "@modelcontextprotocol/inspector@latest",
   "API Playground",
-  "@plugin-creator",
   "site/glossa-symbol-badge.svg",
   "OAuth 2.1",
   "OAuth scope rationale",
   "A token with `glossa:access` therefore cannot turn a `read-only` or `workspace` worker into a command-capable worker",
   "Package name: `glossa`",
   "Package description:",
-  "author.name` and `interface.developerName` must match",
   "Category: `Developer Tools`",
   "interface.logo",
   "interface.composerIcon",
@@ -311,12 +309,11 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "What's the weather tomorrow?",
   "use a shell command instead",
   "npm run restricted-output",
-  "host-confirmation regression suite",
   "`make_directory` and `move_path` are writes but not destructive",
 ]);
 await requiredText("docs/demo-recording.md", [
   "# Plugin submission demo recording",
-  "installed Glossa plugin",
+  "reviewed Glossa production connection",
   "ChatGPT",
   "Codex",
   "Run npm test",
@@ -327,14 +324,12 @@ await requiredText("docs/submission-readiness.md", [
   "NO-GO for final public submission",
   "npm run review:check:submission",
   "global data residency",
-  "make_directory` scans as `readOnlyHint: false`, `destructiveHint: false",
   "Restricted Data decision",
-  "plugin_asdk_app...",
   "Exactly five positive and exactly three negative",
   "interface.logo",
   "interface.composerIcon",
   "ChatGPT and Codex behavior gates",
-  "only when every source/deployment",
+  "only when every gate above has evidence",
 ]);
 const shortDescription = submissionPacket.match(
   /Proposed short description:\r?\n\r?\n> ([^\r\n]+)/,
@@ -386,7 +381,7 @@ assert.deepEqual(
 for (const capability of capabilities) {
   assert.ok(capability.length <= 120, `capability exceeds 120 characters: ${capability}`);
 }
-const manifestUrlLine = submissionPacket.match(/- Plugin manifest URLs: ([^\r\n]+)/)?.[1] ?? "";
+const manifestUrlLine = submissionPacket.match(/- Listing URL values: ([^\r\n]+)/)?.[1] ?? "";
 const manifestUrlEntries = [...manifestUrlLine.matchAll(
   /`(websiteURL|privacyPolicyURL|termsOfServiceURL|supportURL)=(https:\/\/[^`\s]+)`/g,
 )].map((match) => ({ field: match[1], url: match[2] }));
