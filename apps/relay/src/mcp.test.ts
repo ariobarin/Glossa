@@ -1124,6 +1124,9 @@ test("returns safe actionable messages for public file-policy errors", async (co
   await client.connect(clientTransport);
 
   const cases = [
+    ["constructor", "The local worker operation failed."],
+    ["toString", "The local worker operation failed."],
+    ["__proto__", "The local worker operation failed."],
     ["invalid_path", "The requested path is invalid."],
     ["absolute_path", "Absolute paths are not allowed."],
     ["path_traversal", "Parent path traversal is not allowed."],

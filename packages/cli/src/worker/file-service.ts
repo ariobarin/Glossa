@@ -27,6 +27,16 @@ import {
   MAX_SEARCH_TEXT_SNIPPET_CHARS,
   MAX_STRUCTURED_READ_TIMEOUT_MS,
   MAX_TEXT_BYTES,
+  type DeletePathResult,
+  type EditFileResult,
+  type ListFilesResult,
+  type MakeDirectoryResult,
+  type MovePathResult,
+  type ReadFileRangeResult,
+  type ReadFileResult,
+  type SearchTextResult,
+  type ViewImageResult,
+  type WriteFileResult,
 } from "@glossa/protocol";
 import { WorkerError } from "./errors.js";
 import { samePath, type PathPolicy } from "./path-policy.js";
@@ -35,7 +45,7 @@ function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-export type ImageMimeType = "image/png" | "image/jpeg" | "image/webp";
+type ImageMimeType = ViewImageResult["mimeType"];
 
 function imageMimeType(content: Uint8Array): ImageMimeType | undefined {
   if (
@@ -134,88 +144,19 @@ async function requireRevision(target: string, expectedSha256: string): Promise<
   }
 }
 
-export interface ReadTextResult {
-  content: string;
-  sha256: string;
-  bytes: number;
-}
-
-export interface ReadImageResult {
-  data: string;
-  mimeType: ImageMimeType;
-  sha256: string;
-  bytes: number;
-}
-
-export interface ListedFileEntry {
-  path: string;
-  type: "file" | "directory";
-  bytes?: number;
-}
-
-export interface ListFilesResult {
-  entries: ListedFileEntry[];
-  truncated: boolean;
-  scannedEntries: number;
-  skippedLinks: number;
-  nextCursor?: string;
-}
-
-export interface SearchTextMatch {
-  path: string;
-  line: number;
-  column: number;
-  text: string;
-  lineTruncated: boolean;
-}
-
-export interface SearchTextResult {
-  matches: SearchTextMatch[];
-  truncated: boolean;
-  scannedFiles: number;
-  scannedBytes: number;
-  skippedFiles: number;
-  skippedLinks: number;
-}
-
-export interface ReadTextRangeResult {
-  content: string;
-  startLine: number;
-  endLine: number;
-  totalLines: number;
-  sha256: string;
-  bytes: number;
-  contentBytes: number;
-  nextLine?: number;
-}
-
-export interface WriteTextResult {
-  sha256: string;
-  bytes: number;
-}
+type ReadTextResult = ReadFileResult;
+type ReadImageResult = ViewImageResult;
+type ListedFileEntry = ListFilesResult["entries"][number];
+type SearchTextMatch = SearchTextResult["matches"][number];
+type ReadTextRangeResult = ReadFileRangeResult;
+type WriteTextResult = WriteFileResult;
 
 export interface EditTextOperation {
   oldText: string;
   newText: string;
 }
 
-export interface EditTextResult extends WriteTextResult {
-  replacements: number;
-  diff: string;
-  diffTruncated: boolean;
-}
-
-export interface MakeDirectoryResult {
-  created: boolean;
-}
-
-export interface DeletePathResult {
-  deletedType: "file" | "directory";
-}
-
-export interface MovePathResult {
-  movedType: "file" | "directory";
-}
+type EditTextResult = EditFileResult;
 
 interface LocatedEdit extends EditTextOperation {
   start: number;
