@@ -499,94 +499,161 @@ export type WorkerJobType = WorkerJob["type"];
 export type WorkerOperationPermission = "read" | "write" | "command";
 export type WorkerOperationLane = "status" | "cancel" | "read" | "mutation";
 
+export interface WorkerMcpAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
+export interface WorkerMcpMetadata {
+  title: string;
+  annotations: WorkerMcpAnnotations;
+}
+
+const MCP_READ_ONLY: WorkerMcpAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+const MCP_DESTRUCTIVE_MUTATION: WorkerMcpAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+const MCP_DIRECTORY_CREATE: WorkerMcpAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+const MCP_MOVE: WorkerMcpAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+const MCP_RUN_COMMAND: WorkerMcpAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: true,
+};
+const MCP_CANCEL_COMMAND: WorkerMcpAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
 export interface WorkerOperationMetadata {
   permission: WorkerOperationPermission;
   lane: WorkerOperationLane;
   scanRestrictedInput: boolean;
   scanRestrictedResult: boolean;
+  mcp: WorkerMcpMetadata;
 }
 
 export const WORKER_OPERATIONS = {
   read_file: {
     permission: "read",
+    mcp: { title: "Read Workspace File", annotations: MCP_READ_ONLY },
     lane: "read",
     scanRestrictedInput: true,
     scanRestrictedResult: true,
   },
   view_image: {
     permission: "read",
+    mcp: { title: "View Workspace Image", annotations: MCP_READ_ONLY },
     lane: "read",
     scanRestrictedInput: true,
     scanRestrictedResult: false,
   },
   list_files: {
     permission: "read",
+    mcp: { title: "List Workspace Files", annotations: MCP_READ_ONLY },
     lane: "read",
     scanRestrictedInput: true,
     scanRestrictedResult: true,
   },
   search_text: {
     permission: "read",
+    mcp: { title: "Search Workspace Text", annotations: MCP_READ_ONLY },
     lane: "read",
     scanRestrictedInput: true,
     scanRestrictedResult: true,
   },
   read_file_range: {
     permission: "read",
+    mcp: { title: "Read Workspace File Range", annotations: MCP_READ_ONLY },
     lane: "read",
     scanRestrictedInput: true,
     scanRestrictedResult: true,
   },
   write_file: {
     permission: "write",
+    mcp: {
+      title: "Create or Replace Workspace File",
+      annotations: MCP_DESTRUCTIVE_MUTATION,
+    },
     lane: "mutation",
     scanRestrictedInput: true,
     scanRestrictedResult: false,
   },
   edit_file: {
     permission: "write",
+    mcp: { title: "Edit Workspace File", annotations: MCP_DESTRUCTIVE_MUTATION },
     lane: "mutation",
     scanRestrictedInput: true,
     scanRestrictedResult: true,
   },
   make_directory: {
     permission: "write",
+    mcp: { title: "Create Workspace Directory", annotations: MCP_DIRECTORY_CREATE },
     lane: "mutation",
     scanRestrictedInput: true,
     scanRestrictedResult: false,
   },
   delete_path: {
     permission: "write",
+    mcp: { title: "Delete Workspace Path", annotations: MCP_DESTRUCTIVE_MUTATION },
     lane: "mutation",
     scanRestrictedInput: true,
     scanRestrictedResult: false,
   },
   move_path: {
     permission: "write",
+    mcp: { title: "Move Workspace Path", annotations: MCP_MOVE },
     lane: "mutation",
     scanRestrictedInput: true,
     scanRestrictedResult: false,
   },
   run_command: {
     permission: "command",
+    mcp: { title: "Run Workspace Command", annotations: MCP_RUN_COMMAND },
     lane: "mutation",
     scanRestrictedInput: true,
     scanRestrictedResult: true,
   },
   get_command: {
     permission: "command",
+    mcp: { title: "Check Workspace Command", annotations: MCP_READ_ONLY },
     lane: "status",
     scanRestrictedInput: false,
     scanRestrictedResult: true,
   },
   read_command_output: {
     permission: "command",
+    mcp: { title: "Read Workspace Command Output", annotations: MCP_READ_ONLY },
     lane: "status",
     scanRestrictedInput: false,
     scanRestrictedResult: true,
   },
   cancel_command: {
     permission: "command",
+    mcp: { title: "Stop Workspace Command", annotations: MCP_CANCEL_COMMAND },
     lane: "cancel",
     scanRestrictedInput: false,
     scanRestrictedResult: true,
