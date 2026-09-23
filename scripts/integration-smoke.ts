@@ -383,8 +383,8 @@ async function main(): Promise<void> {
   for (const stream of [cli.stdout!, cli.stderr!]) {
     stream.on("data", (text: Buffer) => { cliOutput = (cliOutput + text.toString()).slice(-65_536); });
   }
-  const [code] = await once(cli, "close", { signal: AbortSignal.timeout(12_000) });
-  assert.equal(code, 0, `offline unpair failed: ${cliOutput}`);
+  const [unpairExitCode] = await once(cli, "close", { signal: AbortSignal.timeout(12_000) });
+  assert.equal(unpairExitCode, 0, `offline unpair failed: ${cliOutput}`);
   assert.match(cliOutput, /could not confirm revocation/);
   assert.equal(await deviceStore.loadDeviceCredential(), null);
   cli = undefined;
