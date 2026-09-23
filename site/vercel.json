@@ -1,6 +1,6 @@
 {
-  "installCommand": "cd .. && npm ci --ignore-scripts --no-audit --no-fund",
-  "buildCommand": "cd .. && npm run docs:build && npm run site:check",
+  "installCommand": "npm ci --ignore-scripts --no-audit --no-fund",
+  "buildCommand": "npm run docs:build && npm run site:check",
   "outputDirectory": ".",
   "cleanUrls": true,
   "redirects": [
