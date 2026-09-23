@@ -190,10 +190,14 @@ for (const tool of expectedTools) {
   assert.ok(registration, `${tool} must have one MCP registration`);
   const [readOnlyHint, destructiveHint, idempotentHint, openWorldHint] =
     expectedToolAnnotations[tool];
-  assert.match(registration, new RegExp(`readOnlyHint: ${readOnlyHint}`));
-  assert.match(registration, new RegExp(`destructiveHint: ${destructiveHint}`));
-  assert.match(registration, new RegExp(`idempotentHint: ${idempotentHint}`));
-  assert.match(registration, new RegExp(`openWorldHint: ${openWorldHint}`));
+  const sharedAnnotations = registration.match(/annotations: ([A-Z_]+)/)?.[1];
+  const annotations = sharedAnnotations
+    ? mcpSource.match(new RegExp(`const ${sharedAnnotations} = \\{[\\s\\S]*?\\n\\}`))?.[0] ?? ""
+    : registration;
+  assert.match(annotations, new RegExp(`readOnlyHint: ${readOnlyHint}`));
+  assert.match(annotations, new RegExp(`destructiveHint: ${destructiveHint}`));
+  assert.match(annotations, new RegExp(`idempotentHint: ${idempotentHint}`));
+  assert.match(annotations, new RegExp(`openWorldHint: ${openWorldHint}`));
 }
 assert.ok(
   mcpSource.includes("accessProfile") && mcpSource.includes("permissions"),
