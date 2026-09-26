@@ -530,6 +530,45 @@ test("searches regular directory entries without redundant lstat calls", async (
   assert.equal(result.skippedLinks, 0);
 });
 
+test("reads search candidates concurrently while preserving result order", async (context) => {
+  const root = await temporaryDirectory(context);
+  for (const name of ["a.txt", "b.txt", "c.txt", "d.txt"]) {
+    await writeFile(path.join(root, name), `needle ${name}\n`, "utf8");
+  }
+  let activeReads = 0;
+  let maxActiveReads = 0;
+  const delays = new Map([
+    ["a.txt", 40],
+    ["b.txt", 30],
+    ["c.txt", 20],
+    ["d.txt", 10],
+  ]);
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      readFileBytes: async (target) => {
+        activeReads += 1;
+        maxActiveReads = Math.max(maxActiveReads, activeReads);
+        try {
+          await new Promise((resolve) =>
+            setTimeout(resolve, delays.get(path.basename(target)) ?? 0)
+          );
+          return await readFile(target);
+        } finally {
+          activeReads -= 1;
+        }
+      },
+    },
+  );
+
+  const result = await files.searchText({ query: "needle" });
+  assert.equal(maxActiveReads, 4);
+  assert.deepEqual(
+    result.matches.map((match) => match.path),
+    ["a.txt", "b.txt", "c.txt", "d.txt"],
+  );
+});
+
 test("reads bounded complete line ranges with continuation metadata", async (context) => {
   const root = await temporaryDirectory(context);
   const files = new FileService(await PathPolicy.create(root));
