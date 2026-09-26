@@ -530,6 +530,41 @@ test("searches regular directory entries without redundant lstat calls", async (
   assert.equal(result.skippedLinks, 0);
 });
 
+test("reads search candidates concurrently while preserving result order", async (context) => {
+  const root = await temporaryDirectory(context);
+  const names = Array.from(
+    { length: 16 },
+    (_, index) => `file-${String(index).padStart(2, "0")}.txt`,
+  );
+  for (const name of names) {
+    await writeFile(path.join(root, name), `needle ${name}\n`, "utf8");
+  }
+  let activeReads = 0;
+  let maxActiveReads = 0;
+  const files = new FileService(
+    await PathPolicy.create(root),
+    {
+      readFileBytes: async (target) => {
+        activeReads += 1;
+        maxActiveReads = Math.max(maxActiveReads, activeReads);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          return await readFile(target);
+        } finally {
+          activeReads -= 1;
+        }
+      },
+    },
+  );
+
+  const result = await files.searchText({ query: "needle" });
+  assert.equal(maxActiveReads, 16);
+  assert.deepEqual(
+    result.matches.map((match) => match.path),
+    names,
+  );
+});
+
 test("reads bounded complete line ranges with continuation metadata", async (context) => {
   const root = await temporaryDirectory(context);
   const files = new FileService(await PathPolicy.create(root));
