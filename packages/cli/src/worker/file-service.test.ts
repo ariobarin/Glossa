@@ -532,17 +532,15 @@ test("searches regular directory entries without redundant lstat calls", async (
 
 test("reads search candidates concurrently while preserving result order", async (context) => {
   const root = await temporaryDirectory(context);
-  for (const name of ["a.txt", "b.txt", "c.txt", "d.txt"]) {
+  const names = Array.from(
+    { length: 16 },
+    (_, index) => `file-${String(index).padStart(2, "0")}.txt`,
+  );
+  for (const name of names) {
     await writeFile(path.join(root, name), `needle ${name}\n`, "utf8");
   }
   let activeReads = 0;
   let maxActiveReads = 0;
-  const delays = new Map([
-    ["a.txt", 40],
-    ["b.txt", 30],
-    ["c.txt", 20],
-    ["d.txt", 10],
-  ]);
   const files = new FileService(
     await PathPolicy.create(root),
     {
@@ -550,9 +548,7 @@ test("reads search candidates concurrently while preserving result order", async
         activeReads += 1;
         maxActiveReads = Math.max(maxActiveReads, activeReads);
         try {
-          await new Promise((resolve) =>
-            setTimeout(resolve, delays.get(path.basename(target)) ?? 0)
-          );
+          await new Promise((resolve) => setTimeout(resolve, 250));
           return await readFile(target);
         } finally {
           activeReads -= 1;
@@ -562,10 +558,10 @@ test("reads search candidates concurrently while preserving result order", async
   );
 
   const result = await files.searchText({ query: "needle" });
-  assert.equal(maxActiveReads, 4);
+  assert.equal(maxActiveReads, 16);
   assert.deepEqual(
     result.matches.map((match) => match.path),
-    ["a.txt", "b.txt", "c.txt", "d.txt"],
+    names,
   );
 });
 
