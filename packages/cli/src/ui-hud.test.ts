@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { ActivityLog } from "./activity-log.js";
 import type { ReadStream, WriteStream } from "node:tty";
 import { applyHudEvent, initialHudState, type HudState } from "./ui-hud-model.js";
 import { renderHud, runSessionHud } from "./ui-hud.js";
+
+function activityLogDirectory(context: TestContext): string {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "glossa-hud-logs-"));
+  context.after(() => rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
 
 function connectedState(): HudState {
   return {
@@ -431,7 +441,7 @@ test("activity view follows newest activity without an agent block", () => {
   assert.doesNotMatch(output, /file-1\.txt/);
 });
 
-test("activity keyboard toggles density and inspects the selected call", async () => {
+test("activity keyboard toggles density and inspects the selected call", async (context) => {
   const input = new PassThrough() as PassThrough & {
     isTTY: boolean;
     isRaw: boolean;
@@ -462,6 +472,7 @@ test("activity keyboard toggles density and inspects the selected call", async (
 
   const run = runSessionHud(
     {
+      activityLogDirectory: activityLogDirectory(context),
       workspace: "C:\\code\\glossa",
       run: async (signal, onEvent) => {
         onEvent({
@@ -551,7 +562,7 @@ test("activity keyboard toggles density and inspects the selected call", async (
   }
 });
 
-test("devices keyboard navigation revokes the selected device", async () => {
+test("devices keyboard navigation revokes the selected device", async (context) => {
   const input = new PassThrough() as PassThrough & {
     isTTY: boolean;
     isRaw: boolean;
@@ -590,6 +601,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
   const revoked: string[] = [];
   const run = runSessionHud(
     {
+      activityLogDirectory: activityLogDirectory(context),
       workspace: "C:\\code\\glossa",
       run: async (signal, onEvent) => {
         onEvent({
@@ -632,7 +644,7 @@ test("devices keyboard navigation revokes the selected device", async () => {
   await run;
 });
 
-test("workspace access controls deescalate directly and confirm escalation", async () => {
+test("workspace access controls deescalate directly and confirm escalation", async (context) => {
   const input = new PassThrough() as PassThrough & {
     isTTY: boolean;
     isRaw: boolean;
@@ -665,6 +677,7 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   const changes: string[] = [];
   const run = runSessionHud(
     {
+      activityLogDirectory: activityLogDirectory(context),
       workspace: "C:\\code\\glossa",
       run: async (signal, onEvent) => {
         reportSession = (accessProfile) => {
@@ -728,7 +741,7 @@ test("workspace access controls deescalate directly and confirm escalation", asy
   await run;
 });
 
-test("runtime owns the TTY lifecycle and survives resize", async () => {
+test("runtime owns the TTY lifecycle and survives resize", async (context) => {
   const input = new PassThrough() as PassThrough & {
     isTTY: boolean;
     isRaw: boolean;
@@ -759,6 +772,7 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
 
   const run = runSessionHud(
     {
+      activityLogDirectory: activityLogDirectory(context),
       workspace: "C:\\code\\glossa",
       workspaceLabel: "ink-test",
       initialNotice: "Glossa 0.2.4 is available. Run glossa update after disconnecting.",
@@ -798,4 +812,79 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
   assert.match(rendered, /Glossa 0\.2\.4 is available\. Run glossa update after disconnecting\./);
   assert.match(rendered, /\u001b\[\?1049h/);
   assert.match(rendered, /\u001b\[\?1049l/);
+});
+
+test("a failed Activity write disconnects without throwing through the worker callback", async (context) => {
+  const input = new PassThrough() as unknown as ReadStream;
+  Object.assign(input, { isTTY: true, isRaw: false, setRawMode: () => input, ref: () => input, unref: () => input });
+  const output = new PassThrough() as unknown as WriteStream;
+  Object.assign(output, { isTTY: true, columns: 80, rows: 24 });
+  output.on("data", () => undefined);
+  context.mock.method(ActivityLog.prototype, "append", () => { throw new Error("ENOSPC"); });
+  let callbackReturned = false;
+  await assert.rejects(runSessionHud({
+    workspace: ".",
+    activityLogDirectory: activityLogDirectory(context),
+    run: async (signal, onEvent) => {
+      onEvent({ type: "activity", phase: "returned", ok: true,
+        job: { type: "read_file", requestId: "request-1", path: "note.txt" } });
+      callbackReturned = true;
+      assert.equal(signal.aborted, true);
+    },
+    loadStatus: async () => { throw new Error("unused"); },
+    revokeDevice: async () => undefined,
+    changeAccessProfile: () => undefined,
+  }, input, output), /local Activity logs/);
+  assert.equal(callbackReturned, true);
+});
+
+test("runtime pages disk history and keeps selection anchored while new activity arrives", async (context) => {
+  const input = new PassThrough() as unknown as ReadStream;
+  Object.assign(input, { isTTY: true, isRaw: false, setRawMode: () => input, ref: () => input, unref: () => input });
+  const output = new PassThrough() as unknown as WriteStream;
+  Object.assign(output, { isTTY: true, columns: 100, rows: 24 });
+  let rendered = "";
+  output.on("data", (chunk) => { rendered += chunk.toString(); });
+  let emit: Parameters<Parameters<typeof runSessionHud>[0]["run"]>[1] | undefined;
+  const run = runSessionHud({
+    workspace: ".",
+    activityLogDirectory: activityLogDirectory(context),
+    run: async (signal, onEvent) => {
+      emit = onEvent;
+      for (let index = 0; index < 120; index += 1) {
+        onEvent({ type: "activity", phase: "returned", ok: true,
+          job: { type: "read_file", requestId: "request-" + index, path: "file-" + index + ".txt" } });
+      }
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    },
+    loadStatus: async () => { throw new Error("unused"); },
+    revokeDevice: async () => undefined,
+    changeAccessProfile: () => undefined,
+  }, input, output);
+  try {
+    await waitFor(() => rendered.includes("Glossa / Workspace"));
+    input.write("a");
+    await waitFor(() => rendered.includes("file-119.txt"));
+    const beforeOlder = rendered.length;
+    input.write("\u001b[A");
+    await waitFor(() => /file-9\d.txt/.test(rendered.slice(beforeOlder)));
+    const beforeSelect = rendered.length;
+    input.write("\r");
+    await waitFor(() => rendered.slice(beforeSelect).includes("Enter Inspect"));
+    emit!({ type: "activity", phase: "returned", ok: true,
+      job: { type: "read_file", requestId: "new-request", path: "newest.txt" } });
+    const beforeInspect = rendered.length;
+    input.write("\r");
+    await waitFor(() => rendered.slice(beforeInspect).includes("Activity / Read File"));
+    assert.match(rendered.slice(beforeInspect), /file-9\d.txt/);
+    assert.doesNotMatch(rendered.slice(beforeInspect), /newest.txt/);
+    input.write("w");
+    await waitFor(() => rendered.slice(beforeInspect).includes("Glossa / Workspace"));
+    const beforeTail = rendered.length;
+    input.write("a");
+    await waitFor(() => rendered.slice(beforeTail).includes("newest.txt"));
+  } finally {
+    input.write("q");
+    await run;
+  }
 });

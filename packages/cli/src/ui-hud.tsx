@@ -16,6 +16,9 @@ import {
 } from "ink";
 
 import {
+  activityAt,
+  activityCount,
+  activitySlice,
   applyHudEvent,
   initialHudState,
   type HudActivity,
@@ -29,6 +32,8 @@ import {
   formatActivityCall,
   type HudActivityMode,
 } from "./ui-hud-activity.js";
+
+import { ActivityLog } from "./activity-log.js";
 
 const COLORS = {
   ink: "#f4f1fb",
@@ -81,10 +86,13 @@ interface HudScreenMetrics {
 class HudStore {
   #state: HudState;
   #listeners = new Set<() => void>();
+  readonly #activityLog: ActivityLog;
 
-  constructor(workspace: string, initialNotice?: string) {
+  constructor(workspace: string, activityLog: ActivityLog, initialNotice?: string) {
+    this.#activityLog = activityLog;
     this.#state = {
       ...initialHudState(workspace),
+      activityHistory: activityLog.snapshot(),
       ...(initialNotice ? { notice: initialNotice } : {}),
     };
   }
@@ -104,7 +112,12 @@ class HudStore {
   }
 
   event(event: Parameters<typeof applyHudEvent>[1]): void {
-    this.update((state) => applyHudEvent(state, event));
+    if (event.type === "activity") {
+      const activityHistory = this.#activityLog.append(event);
+      this.update((state) => ({ ...state, activityHistory }));
+    } else {
+      this.update((state) => applyHudEvent(state, event));
+    }
   }
 }
 
@@ -158,11 +171,13 @@ function activitySummary(activity: HudActivity): string {
 }
 
 function selectedActivity(state: HudState): HudActivity | undefined {
+  if (state.activitySelectionIndex !== undefined) return activityAt(state, state.activitySelectionIndex);
   if (!state.activitySelection) return undefined;
   return state.activities.find((activity) => activity.requestId === state.activitySelection);
 }
 
 function selectedActivityIndex(state: HudState): number {
+  if (state.activitySelectionIndex !== undefined) return state.activitySelectionIndex;
   const selected = selectedActivity(state);
   return selected
     ? state.activities.findIndex((activity) => activity.requestId === selected.requestId)
@@ -225,7 +240,7 @@ function contextualFooterHints(
 ): HudHint[] {
   if (state.prompt || state.busy) return [];
   if (state.view === "activity") {
-    if (state.activities.length === 0) return [];
+    if (activityCount(state) === 0) return [];
     const density = {
       key: "Tab",
       label: state.activityMode === "compact" ? "Detailed" : "Compact",
@@ -243,7 +258,7 @@ function contextualFooterHints(
     return [
       density,
       ...(window.start > 0 ? [{ key: "↑", label: "Older" }] : []),
-      ...(window.end < state.activities.length ? [{ key: "↓", label: "Newer" }] : []),
+      ...(window.end < activityCount(state) ? [{ key: "↓", label: "Newer" }] : []),
       ...(window.end > window.start ? [{ key: "Enter", label: "Select" }] : []),
     ];
   }
@@ -453,11 +468,11 @@ function activityBrowseWindow(state: HudState, bodyBudget: number): {
   end: number;
 } {
   const capacity = activityListCapacity(bodyBudget);
-  const total = state.activities.length;
+  const total = activityCount(state);
   if (capacity <= 0 || total === 0) return { capacity, start: 0, end: 0 };
 
-  let end = total;
-  if (state.activityBrowseAnchor) {
+  let end = state.activityBrowseEnd === undefined ? total : Math.min(total, state.activityBrowseEnd);
+  if (state.activityBrowseEnd === undefined && state.activityBrowseAnchor) {
     const anchorIndex = state.activities.findIndex(
       (activity) => activity.requestId === state.activityBrowseAnchor,
     );
@@ -485,7 +500,7 @@ function activityWindow(state: HudState, bodyBudget: number): {
   ) {
     return { ...browsing, selection };
   }
-  const total = state.activities.length;
+  const total = activityCount(state);
   const maxStart = Math.max(0, total - browsing.capacity);
   const centered = selection - Math.floor(browsing.capacity / 2);
   const start = Math.min(maxStart, Math.max(0, centered));
@@ -509,26 +524,30 @@ function activityCenterSelection(state: HudState, bodyBudget: number): string | 
   const { start, end } = activityBrowseWindow(state, bodyBudget);
   if (end <= start) return undefined;
   const index = start + Math.floor((end - start) / 2);
-  return state.activities[index]?.requestId;
+  return activityAt(state, index)?.requestId;
 }
 
 function activityPageUpdate(
   state: HudState,
   bodyBudget: number,
   direction: "older" | "newer",
-): { activityBrowseAnchor: string | undefined } | undefined {
+): { activityBrowseAnchor?: string | undefined; activityBrowseEnd?: number | undefined } | undefined {
   const window = activityBrowseWindow(state, bodyBudget);
   if (window.capacity <= 0) return undefined;
   if (direction === "older") {
     if (window.start <= 0) return undefined;
     return {
-      activityBrowseAnchor: activityBrowseAnchorForEnd(state.activities, window.start),
+      ...(state.activityHistory
+        ? { activityBrowseEnd: window.start }
+        : { activityBrowseAnchor: activityBrowseAnchorForEnd(state.activities, window.start) }),
     };
   }
-  if (window.end >= state.activities.length) return undefined;
-  const end = Math.min(state.activities.length, window.end + window.capacity);
+  if (window.end >= activityCount(state)) return undefined;
+  const end = Math.min(activityCount(state), window.end + window.capacity);
   return {
-    activityBrowseAnchor: activityBrowseAnchorForEnd(state.activities, end),
+    ...(state.activityHistory
+      ? { activityBrowseEnd: end >= activityCount(state) ? undefined : end }
+      : { activityBrowseAnchor: activityBrowseAnchorForEnd(state.activities, end) }),
   };
 }
 
@@ -539,26 +558,32 @@ function activitySelectionUpdate(
 ): {
   activitySelection: string;
   activityBrowseAnchor: string | undefined;
+  activitySelectionIndex?: number;
+  activityBrowseEnd?: number | undefined;
 } | undefined {
   const currentIndex = selectedActivityIndex(state);
   if (currentIndex < 0) return undefined;
   const targetIndex = Math.min(
-    state.activities.length - 1,
+    activityCount(state) - 1,
     Math.max(0, currentIndex + direction),
   );
   if (targetIndex === currentIndex) return undefined;
 
   const window = activityWindow(state, bodyBudget);
   let activityBrowseAnchor = state.activityBrowseAnchor;
+  let activityBrowseEnd = state.activityBrowseEnd;
   if (targetIndex < window.start) {
-    activityBrowseAnchor = activityBrowseAnchorForEnd(state.activities, window.start);
+    if (state.activityHistory) activityBrowseEnd = window.start;
+    else activityBrowseAnchor = activityBrowseAnchorForEnd(state.activities, window.start);
   } else if (targetIndex >= window.end) {
-    const end = Math.min(state.activities.length, window.end + window.capacity);
-    activityBrowseAnchor = activityBrowseAnchorForEnd(state.activities, end);
+    const end = Math.min(activityCount(state), window.end + window.capacity);
+    if (state.activityHistory) activityBrowseEnd = end >= activityCount(state) ? undefined : end;
+    else activityBrowseAnchor = activityBrowseAnchorForEnd(state.activities, end);
   }
   return {
-    activitySelection: state.activities[targetIndex]!.requestId,
+    activitySelection: activityAt(state, targetIndex)!.requestId,
     activityBrowseAnchor,
+    ...(state.activityHistory ? { activitySelectionIndex: targetIndex, activityBrowseEnd } : {}),
   };
 }
 
@@ -617,8 +642,8 @@ function Header({ state, usable, bodyBudget, color }: {
     ? activityWindow(state, bodyBudget)
     : undefined;
   const activityRange = activityListWindow &&
-      activityListWindow.capacity > 0 && state.activities.length > activityListWindow.capacity
-    ? ` (${activityListWindow.start + 1}-${activityListWindow.end}/${state.activities.length})`
+      activityListWindow.capacity > 0 && activityCount(state) > activityListWindow.capacity
+    ? ` (${activityListWindow.start + 1}-${activityListWindow.end}/${activityCount(state)})`
     : "";
   const deviceWindow = state.view === "devices"
     ? deviceListWindow(state, bodyBudget, usable)
@@ -753,11 +778,11 @@ function WorkspaceView({ state, usable, bodyBudget, color, now }: {
   if (state.deviceName) fixedLines += 1;
   if (state.accessProfile) fixedLines += 2;
   if (showConnectionMessage) fixedLines += 2;
-  const activityCapacity = !state.prompt && !state.busy && state.activities.length > 0
+  const activityCapacity = !state.prompt && !state.busy && activityCount(state) > 0
     ? Math.min(3, Math.max(0, bodyBudget - fixedLines - 3))
     : 0;
   const activityPreview = activityCapacity > 0
-    ? state.activities.slice(-activityCapacity)
+    ? activitySlice(state, -activityCapacity, activityCount(state))
     : [];
   const accessHint = state.connection === "connected" &&
       state.accessProfile &&
@@ -905,14 +930,14 @@ function ActivityView({ state, usable, bodyBudget, color, now }: {
 }): React.ReactNode {
   const window = activityWindow(state, bodyBudget);
   const visible = window.capacity > 0
-    ? state.activities.slice(window.start, window.end)
+    ? activitySlice(state, window.start, window.end)
     : [];
   const selection = selectedActivity(state)?.requestId;
 
   return (
     <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
       <Blank />
-      {state.activities.length === 0 ? (
+      {activityCount(state) === 0 ? (
         <Text color={color ? COLORS.muted : undefined}>No activity yet.</Text>
       ) : visible.map((activity) => (
         <ActivityRow
@@ -1407,15 +1432,15 @@ function HudRuntime({ store, actions, signal, stop }: {
   useEffect(() => {
     if (
       (state.view !== "activity" && state.view !== "activity-detail" && state.view !== "workspace") ||
-      state.activities.length === 0
+      activityCount(state) === 0
     ) return;
-    const hasWorkingActivity = state.activities.some((activity) => activity.state === "working");
+    const hasWorkingActivity = state.activityHistory?.hasWorking ?? state.activities.some((activity) => activity.state === "working");
     const interval = hasWorkingActivity
       ? ACTIVITY_LIVE_REFRESH_INTERVAL_MS
       : ACTIVITY_IDLE_REFRESH_INTERVAL_MS;
     const timer = setInterval(() => setClock((value) => value + 1), interval);
     return () => clearInterval(timer);
-  }, [state.view, state.activities]);
+  }, [state.view, state.activities, state.activityHistory]);
 
   useEffect(() => {
     store.update((current) => {
@@ -1544,6 +1569,7 @@ function HudRuntime({ store, actions, signal, stop }: {
         store.update((state) => ({
           ...state,
           activitySelection: undefined,
+          activitySelectionIndex: undefined,
           notice: undefined,
         }));
         return;
@@ -1579,6 +1605,12 @@ function HudRuntime({ store, actions, signal, stop }: {
             store.update((state) => ({
               ...state,
               activitySelection,
+              ...(state.activityHistory ? {
+                activitySelectionIndex: (() => {
+                  const window = activityBrowseWindow(state, metrics.bodyBudget);
+                  return window.start + Math.floor((window.end - window.start) / 2);
+                })(),
+              } : {}),
               notice: undefined,
             }));
           }
@@ -1641,6 +1673,8 @@ function HudRuntime({ store, actions, signal, stop }: {
         ...state,
         view: "activity",
         activitySelection: undefined,
+        activitySelectionIndex: undefined,
+        activityBrowseEnd: preserveBrowsePage ? state.activityBrowseEnd : undefined,
         activityBrowseAnchor: preserveBrowsePage ? state.activityBrowseAnchor : undefined,
         activityDetailScroll: 0,
         notice: undefined,
@@ -1720,7 +1754,8 @@ export async function runSessionHud(
   }
 
   const controller = new AbortController();
-  const store = new HudStore(actions.workspace, actions.initialNotice);
+  const activityLog = new ActivityLog(actions.activityLogDirectory);
+  const store = new HudStore(actions.workspace, activityLog, actions.initialNotice);
   let instance: ReturnType<typeof render> | undefined;
 
   const stop = (): void => {
@@ -1731,49 +1766,61 @@ export async function runSessionHud(
   process.once("SIGINT", stopFromSignal);
   process.once("SIGTERM", stopFromSignal);
 
-  output.write(terminalTitleSequence(actions.workspaceLabel));
-  instance = render(
-    <HudRuntime
-      store={store}
-      actions={actions}
-      signal={controller.signal}
-      stop={stop}
-    />,
-    {
-      stdin: input,
-      stdout: output,
-      exitOnCtrlC: false,
-      patchConsole: false,
-      alternateScreen: true,
-      incrementalRendering: true,
-      interactive: true,
-      maxFps: 30,
-    },
-  );
-
-  const session = actions.run(controller.signal, (event) => store.event(event)).then(() => {
-    if (!controller.signal.aborted) {
-      store.update((state) => ({ ...state, connection: "disconnected" }));
-    }
-  }).catch((error: unknown) => {
-    if (!controller.signal.aborted) {
-      store.update((state) => ({
-        ...state,
-        connection: "error",
-        message: error instanceof Error ? error.message : String(error),
-      }));
-      instance?.unmount();
-    }
-    throw error;
-  });
-  void session.catch(() => undefined);
-
+  let logError: Error | undefined;
   try {
+    output.write(terminalTitleSequence(actions.workspaceLabel));
+    instance = render(
+      <HudRuntime
+        store={store}
+        actions={actions}
+        signal={controller.signal}
+        stop={stop}
+      />,
+      {
+        stdin: input,
+        stdout: output,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        alternateScreen: true,
+        incrementalRendering: true,
+        interactive: true,
+        maxFps: 30,
+      },
+    );
+
+    const session = actions.run(controller.signal, (event) => {
+      if (logError) return;
+      try {
+        store.event(event);
+      } catch {
+        // Logging must not turn an already completed mutation into a tool error.
+        logError = new Error("Could not read or write local Activity logs. Check disk space and permissions.");
+        stop();
+      }
+    }).then(() => {
+      if (!controller.signal.aborted) {
+        store.update((state) => ({ ...state, connection: "disconnected" }));
+      }
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) {
+        store.update((state) => ({
+          ...state,
+          connection: "error",
+          message: error instanceof Error ? error.message : String(error),
+        }));
+        instance?.unmount();
+      }
+      throw error;
+    });
+    void session.catch(() => undefined);
+
     await instance.waitUntilExit();
     await session;
+    if (logError) throw logError;
   } finally {
     controller.abort();
     process.removeListener("SIGINT", stopFromSignal);
     process.removeListener("SIGTERM", stopFromSignal);
+    activityLog.close();
   }
 }

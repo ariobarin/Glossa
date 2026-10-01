@@ -2,7 +2,7 @@
 
 Glossa routes requests between an authenticated ChatGPT or MCP client and a local project that you explicitly expose from your computer.
 
-*Last updated August 17, 2026*
+*Last updated October 1, 2026*
 
 Public Glossa does not support processing payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Do not expose a workspace containing those categories to the public app. See [Security and permissions](/security).
 
@@ -32,6 +32,8 @@ Account, device, and audit metadata are retained for the life of the account or 
 Active worker IDs, profiles, labels, capabilities, command routes, pending jobs, command output, and liveness state are held only in relay memory. When recognizable authentication data is blocked, the matched content is not returned to the client.
 
 The Glossa CLI stores OAuth and device credentials on the user's computer using the operating-system credential store when available. If that store is unavailable, the CLI warns before using a restricted local credential file.
+
+Interactive CLI sessions also save local Activity logs under the Glossa configuration directory's `logs/` folder. These files contain tool metadata, bounded invocation details and output previews; file-write bodies, edit text, and stdin bodies are excluded. Logs remain on your computer after exit and are never uploaded to the relay. Delete a session's `.jsonl` and `.idx` files after it exits to remove that history. Headless sessions create no Activity logs.
 
 ## Service providers
 
