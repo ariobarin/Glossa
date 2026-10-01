@@ -381,7 +381,7 @@ export function buildPanel(
       "Set-Cookie",
       `${SESSION_COOKIE}=; ${cookieFlags(config)}; Max-Age=0`,
     );
-    response.redirect(303, "/panel");
+    response.redirect(303, issuerUrl(config, "v2/logout").toString());
   });
 
   // Everything below requires a valid session bound to an active account.
