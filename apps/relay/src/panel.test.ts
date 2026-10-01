@@ -357,6 +357,30 @@ test("shows active devices without revoked history", async (context) => {
   assert.ok(!body.includes("revoked"));
 });
 
+test("signing out does not immediately start another sign-in", async (context) => {
+  const harness = await startPanel(context, storeWith({}));
+  const cookie = await signIn(harness.origin);
+  const page = await fetch(`${harness.origin}/panel`, { headers: { cookie } });
+  const body = await page.text();
+  const action = body.match(/<form method="post" action="([^"]+)"><button[^>]*>Sign out<\/button>/)?.[1];
+  assert.ok(action, "the devices page exposes its signout form");
+  let response = await fetch(new URL(action, harness.origin), {
+    method: "POST", headers: { cookie }, redirect: "manual",
+  });
+  assert.equal(response.status, 303);
+  assert.ok(response.headers.getSetCookie().some((value) => value.startsWith("glossa_panel=;") && value.includes("Path=/panel;") && value.includes("Max-Age=0")));
+  for (let hops = 0; [302, 303].includes(response.status) && hops < 4; hops += 1) {
+    const target = new URL(response.headers.get("location")!, harness.origin);
+    assert.notEqual(target.pathname, "/authorize", "signout must not restart SSO sign-in");
+    if (target.origin !== harness.origin) break;
+    response = await fetch(target, { redirect: "manual" });
+  }
+  assert.equal(response.headers.get("location"), "https://identity.glossa.test/v2/logout");
+  const signedOut = await fetch(`${harness.origin}/panel`, { redirect: "manual" });
+  assert.equal(signedOut.status, 302);
+  assert.equal(signedOut.headers.get("location"), "/panel/auth/login");
+});
+
 test("rejects a tampered session cookie", async (context) => {
   const harness = await startPanel(context, storeWith({}));
   const cookie = await signIn(harness.origin);

@@ -79,7 +79,7 @@ The CLI keeps no account session: a computer is either paired to an account or n
 
 1. Stop every Glossa worker with Ctrl+C or `q`.
 2. Run `glossa unpair`.
-3. End the Auth0 browser session so the next panel sign-in offers the account chooser. The MCP `get_logout_instructions` tool returns the browser logout URL.
+3. Click **Sign out** on the control panel. This clears the panel session and opens Auth0's browser logout endpoint, ending the Auth0 session so it cannot silently sign you back in. Reopen the panel to sign in with the intended account. The MCP `get_logout_instructions` tool also returns the Auth0 browser logout URL, but that URL alone does not clear an existing panel session.
 4. Disconnect Glossa under **Settings > Apps** in ChatGPT and connect it again with the intended account.
 5. Start Glossa and redeem its new pairing code on the panel while signed in to the intended identity.
 
