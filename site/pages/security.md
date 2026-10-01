@@ -20,7 +20,8 @@ The selected profile appears in the local terminal and in `list_workspaces`. Bot
 - File changes require `workspace` or `system`; commands require an explicit `system` session.
 - OAuth, account scoping, device credentials, and HTTPS protect the relay connection.
 - The hosted relay keeps account, device, routing, and metadata-only audit records. It does not durably store file contents, command arguments, command output, environment variables, tokens, or local absolute paths.
-- The local worker keeps command state only transiently. Default command responses remain bounded; when output is truncated, up to 1 MiB of stdout and 1 MiB of stderr can be read back in bounded ranges without rerunning the command. Terminal command records last no more than five minutes, at most eight recent records are kept, and retained output is deleted with its record.
+- Interactive CLI sessions save Activity metadata, bounded invocation details and output previews to local `logs/` files. They stay on your computer after exit; headless sessions create none.
+- The local worker keeps command execution state only transiently. Default command responses remain bounded; when output is truncated, up to 1 MiB of stdout and 1 MiB of stderr can be read back in bounded ranges without rerunning the command. Terminal command records last no more than five minutes, at most eight recent records are kept, and retained output is deleted with its record.
 - Press Ctrl+C or `q` in the worker terminal to disconnect immediately.
 
 ## Sensitive data

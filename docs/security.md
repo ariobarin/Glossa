@@ -232,6 +232,8 @@ A fully malicious relay can still send any protocol job to a connected worker. T
 
 ## Data retention
 
+The following retention restrictions apply to the hosted relay and durable audit storage. Interactive CLI sessions additionally keep a local Activity journal, described below.
+
 Durably retain only what is needed for account, device, and security operation:
 
 - device ID, user-supplied name, platform, created, last-seen, and revoked timestamps;
@@ -249,5 +251,11 @@ Do not durably retain:
 - repository names unless explicitly supplied as an ephemeral label;
 - OAuth, device, or worker bearer secrets;
 - reviewer passwords or other portal credentials.
+
+### Local Activity logs
+
+Interactive sessions write the metadata already shown in Activity to JSONL files in the computer's Glossa configuration directory under `logs/` (`%APPDATA%\Glossa\logs` on Windows; `$XDG_CONFIG_HOME/glossa/logs` or `~/.config/glossa/logs` elsewhere). Each session uses a random file name and a companion disk index; session events and credentials are not serialized. Tool arguments and previews may themselves contain local paths. Directories are created with mode 0700 and files with mode 0600 on systems that enforce POSIX modes; Windows uses the user's configuration-directory ACLs. Headless sessions create no Activity logs.
+
+These user-local logs can contain tool arguments (including relative file paths and command text) and bounded output previews. File-write bodies, edit text, and stdin bodies remain excluded, and existing authentication-secret input redaction and result checks still run before Activity receives an event. Records are capped at 64 KiB; oversized invocation details are omitted while compact history remains available. The CLI caches at most 64 records and 1 MiB of estimated string data and reads older rows from disk on demand. Journals remain after exit for local inspection and can be deleted when their session is no longer running; they are never uploaded to the relay. A disk failure ends the interactive session rather than falling back to an accumulating memory history.
 
 Additional defenses must extend these controls rather than replace them.

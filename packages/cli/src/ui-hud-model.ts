@@ -58,6 +58,13 @@ type HudPrompt =
   | { type: "revoke-confirm"; deviceIndex: number }
   | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
 
+export interface HudActivityHistory {
+  readonly length: number;
+  readonly hasWorking: boolean;
+  at(index: number): HudActivity | undefined;
+  slice(start: number, end: number): HudActivity[];
+}
+
 export interface HudState {
   workspace: string;
   accessProfile?: WorkerAccessProfile;
@@ -72,6 +79,9 @@ export interface HudState {
   connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
+  activityHistory?: HudActivityHistory;
+  activitySelectionIndex?: number | undefined;
+  activityBrowseEnd?: number | undefined;
   activityMode: HudActivityMode;
   activitySelection: string | undefined;
   activityBrowseAnchor: string | undefined;
@@ -91,6 +101,7 @@ export interface HudState {
 export interface HudUiActions {
   workspace: string;
   workspaceLabel?: string;
+  activityLogDirectory?: string;
   initialNotice?: string;
   run(
     signal: AbortSignal,
@@ -535,4 +546,16 @@ export function applyHudEvent(
     activities: boundedActivities,
     activitySelection,
   };
+}
+
+export function activityCount(state: HudState): number {
+  return state.activityHistory?.length ?? state.activities.length;
+}
+
+export function activityAt(state: HudState, index: number): HudActivity | undefined {
+  return state.activityHistory ? state.activityHistory.at(index) : state.activities[index];
+}
+
+export function activitySlice(state: HudState, start: number, end: number): HudActivity[] {
+  return state.activityHistory ? state.activityHistory.slice(start, end) : state.activities.slice(start, end);
 }

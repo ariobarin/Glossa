@@ -22,3 +22,6 @@ dist/
 /site/privacy.html
 /site/support.html
 /site/terms.html
+
+# Local activity journals and their disk indexes.
+logs/

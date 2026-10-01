@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { WorkerJob } from "@glossa/protocol";
 import type { ActivityEventJob } from "../activity-call.js";
+import { ActivityLog } from "../activity-log.js";
 import { LocalWorker } from "./local-worker.js";
 import { visibleWorker, type ManagedSessionEvent } from "./managed-session.js";
 
@@ -49,5 +50,33 @@ test("real worker activity carries counts instead of file, edit, and stdin bodie
   } finally {
     await local.shutdown();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("real worker events round-trip through the disk Activity journal", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "glossa-disk-activity-"));
+  const logDirectory = await mkdtemp(path.join(os.tmpdir(), "glossa-worker-log-"));
+  const log = new ActivityLog(logDirectory);
+  const local = await LocalWorker.create(root, "workspace");
+  const worker = visibleWorker(local, { quiet: true,
+    onEvent: (event) => { if (event.type === "activity") log.append(event); } });
+  try {
+    const written = await worker.handle({ type: "write_file", requestId: "write-request",
+      path: "note.txt", content: "file-body-not-in-write-log" });
+    assert.equal(written.ok, true);
+    const history = log.snapshot();
+    assert.equal(history.length, 1);
+    assert.equal(history.hasWorking, false);
+    assert.equal(history.at(0)!.state, "returned");
+    assert.deepEqual(history.at(0)!.call, { type: "write_file", path: "note.txt", contentBytes: 26 });
+    assert.equal(history.at(0)!.output!.kind, "success");
+    const records = (await readFile(log.file, "utf8")).trim().split("\n").map((record) => JSON.parse(record));
+    assert.deepEqual(records.map((record) => record.state), ["working", "returned"]);
+    assert.doesNotMatch(JSON.stringify(records), /file-body-not-in-write-log/);
+  } finally {
+    log.close();
+    await local.shutdown();
+    await rm(root, { recursive: true, force: true });
+    await rm(logDirectory, { recursive: true, force: true });
   }
 });

@@ -44,3 +44,5 @@ glossa update --check
 ```
 
 See the [quickstart](https://glossa.sh/docs/quickstart), [operations guide](https://github.com/ariobarin/glossa/blob/main/docs/operations.md), and [security overview](https://glossa.sh/security).
+
+See [local Activity logs](https://github.com/ariobarin/Glossa/blob/main/docs/security.md#local-activity-logs).
