@@ -1,6 +1,8 @@
 # App submission packet
 
-Status: source and release gates are mechanically healthy for the `0.2.3` CLI release candidate, and the PR #215 annotation corrections are deployed. MCP contract `3.1.0` adds `view_image` with rolling compatibility for pre-image workers/relays. Final public submission still requires the current OAuth/tool-security metadata pass, construction and installation of the actual plugin package after a real `plugin_asdk_app...` connection ID exists, exact portal validator compliance, the required demo recording, cross-surface ChatGPT/Codex validation, and the explicit Restricted Data decision. Publish CLI `0.2.3`, deploy the matching source commit, and reconnect the reviewer workspace so it advertises `imageReads` before the production scan.
+Status: **NO-GO for final public submission** until the [submission readiness](submission-readiness.md) gates are satisfied. Passing repository and public-endpoint checks does not verify reviewer access, portal state, host confirmations, or Restricted Data compliance.
+
+Requirements checked September 23, 2026: [submission flow](https://developers.openai.com/plugins/deploy/submission), [final submission errors and limits](https://developers.openai.com/plugins/deploy/submission-errors), [MCP review requirements](https://developers.openai.com/plugins/deploy/app-review), and [plugin guidelines](https://developers.openai.com/plugins/app-guidelines). The flow describes at least five positive and three negative tests; the final validator requires exactly five and three, so this packet uses exactly those counts.
 
 This packet centralizes marketplace copy, tool explanations, reviewer setup, test cases, security tradeoffs, and portal-only fields. Confirm every field against the production deployment immediately before submission.
 
@@ -20,15 +22,10 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 
 ### Portal-ready MCP values
 
-- Submission type: MCP only
+- Submission type: **With MCP**, remote MCP only
 - Package name: `glossa`
 - Initial plugin version: `0.1.0`
 - Package description: `Connect ChatGPT and Codex to a user-controlled local development workspace through the Glossa MCP relay.`
-- Package author name: use the exact verified publisher identity selected for submission; `author.name` and `interface.developerName` must match
-- Package author URL: `https://glossa.sh`
-- Package homepage: `https://glossa.sh`
-- Package repository: `https://github.com/ariobarin/glossa`
-- Package license: `MIT`
 - Display name: `Glossa`
 - Category: `Developer Tools`
 - Capabilities: `Read local project files`, `Edit local project files`, `Run local project commands`
@@ -42,10 +39,11 @@ This packet centralizes marketplace copy, tool explanations, reviewer setup, tes
 - Reviewer credentials: dedicated reviewer username and password entered only in the portal's protected reviewer fields
 - OpenAI project: use a project with global data residency; OpenAI currently does not accept MCP plugin submissions from projects with EU data residency
 - Developer identity: select the verified individual or business identity that should appear as publisher
-- Plugin manifest URLs: `websiteURL=https://glossa.sh`, `privacyPolicyURL=https://glossa.sh/privacy`, `termsOfServiceURL=https://glossa.sh/terms`, `supportURL=https://glossa.sh/support`
+- Listing URL values: `websiteURL=https://glossa.sh`, `privacyPolicyURL=https://glossa.sh/privacy`, `termsOfServiceURL=https://glossa.sh/terms`, `supportURL=https://glossa.sh/support`
 - Required branding assets: both `interface.logo` and `interface.composerIcon`; each must be a square PNG/JPEG/WebP/SVG, at least 48×48 and at most 4096×4096 pixels, and no larger than 5 MiB
 - Screenshots: omit them because Glossa has no custom MCP UI
-- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows across the supported ChatGPT and Codex surfaces
+- Demo recording URL: required for an MCP-backed public submission; demonstrate the reviewed production connection's main workflows across supported ChatGPT and Codex surfaces. See [recording instructions](demo-recording.md).
+- Branding source: use the existing square `site/glossa-symbol-badge.svg` for both logo and composer icon; no new artwork or package wrapper is needed
 
 Proposed short description:
 
@@ -57,7 +55,7 @@ Proposed full description:
 
 ## Distinct product purpose
 
-Glossa is not intended to extend usage quotas, route around limits, or recreate general ChatGPT features. Its distinct purpose is to bridge a remote ChatGPT conversation to state and tools that already exist on the user's computer: an existing checkout, uncommitted changes, local build tools, test databases, emulators, generated files, and a development environment unavailable to a remote service.
+Glossa lets users continue local project work through available ChatGPT usage when Codex runs out. It does not increase quotas, bypass account limits, or promise Codex feature parity. Its distinct capability is access to the user's existing checkout, uncommitted changes, local build tools, test databases, emulators, and generated files. Plan limits and model/tool availability still apply.
 
 The MCP instructions and every tool description tell the model not to invoke Glossa for general questions, writing, web research, built-in ChatGPT tasks, credential inspection, or work that does not require the local workspace.
 
@@ -163,19 +161,13 @@ The deployed tool scan must match this table exactly. In particular, `run_comman
 | `cancel_command` | Yes | Repeating cancellation targets the same command lifecycle and does not introduce an additional effect beyond stopping that process tree. |
 | `write_file`, `edit_file`, `delete_path`, `move_path`, `run_command` | No | Repeating the action can create a different filesystem/process outcome, fail against changed state, or duplicate external effects. |
 
-## Plugin package gate
+## Submit the remote MCP server directly
 
-After the production MCP connection is registered in Developer Mode, capture its generated `plugin_asdk_app...` technical ID and build the actual plugin package. The package must include `.codex-plugin/plugin.json` and an `.app.json` that references that registered MCP connection. The manifest should use package name `glossa`, plugin version `0.1.0`, the package description/author/homepage/repository/license values above, display name `Glossa`, short/full descriptions from this packet, the exact same verified publisher text in `author.name` and `interface.developerName`, `Developer Tools`, the three declared capabilities, all four listing URLs, at most three starter prompts, and required `logo` plus `composerIcon` assets. Do not invent or precommit a fake technical ID.
+Choose **With MCP** in the [submission portal](https://platform.openai.com/apps-manage). Submit `https://mcp.glossa.sh/mcp` as a new Universal MCP submission, not an existing integration ID. An `.app.json` reference or local marketplace package is not a public-submission prerequisite and cannot replace submitting the server itself.
 
-Post-registration packaging sequence:
+Configure OAuth and protected reviewer credentials, verify the domain, then select **Scan Tools**. Review the imported tools, schemas, security schemes, annotations, and server instructions against this packet. Deploy approved fixes and scan again before submitting. Glossa has no skills or custom UI to upload.
 
-1. In ChatGPT Developer Mode, register the production MCP server at `https://mcp.glossa.sh/mcp` and complete OAuth. Copy the generated technical ID from the connection URL; it must start with `plugin_asdk_app`.
-2. In ChatGPT Work, ask `@plugin-creator` (or `$plugin-creator` in Codex) to create an **MCP-only** ChatGPT-and-Codex plugin using that exact technical ID, name it Glossa, include no skills, and include a personal marketplace entry for local testing.
-3. Review the generated `.app.json` and confirm it maps to the exact registered `plugin_asdk_app...` ID. Review `.codex-plugin/plugin.json` and confirm its compatibility `apps` field points to `./.app.json`.
-4. Use `site/glossa-symbol-badge.svg` as the source asset for both required square branding images unless the publisher deliberately chooses distinct artwork. The source SVG has a 1024×1024 viewBox and is well below the package size limit; copy it into the generated plugin's asset directory rather than referencing the website path.
-5. Set `GLOSSA_PLUGIN_PACKAGE_DIR` to the generated plugin directory and `GLOSSA_PLUGIN_APP_ID` to the exact registered `plugin_asdk_app...` ID, optionally set `GLOSSA_VERIFIED_PUBLISHER_NAME` to enforce the selected publisher text, and run `npm run review:check:plugin`. The validator reads the actual `.codex-plugin/plugin.json` and `.app.json`, rejects missing/placeholder/mismatched connection IDs, and checks the reviewed package metadata, capabilities, URLs, prompts, and branding assets.
-6. Refresh/restart the ChatGPT desktop app as required by the local marketplace flow, install Glossa from the generated personal marketplace source, and test it in a new conversation. Also test through a supported Codex surface.
-7. Rerun the five portal-positive and three portal-negative cases on the installed plugin. Keep the raw MCP connection tests as a separate lower-level regression suite.
+Test the production connection in ChatGPT Developer Mode and supported Codex surfaces. Record the five positive and three negative cases below, the additional permission checks, and real confirmation behavior. The [readiness checklist](submission-readiness.md) owns the final GO decision; creating a draft is not publication.
 
 ## Reviewer account
 
@@ -290,7 +282,7 @@ Complete these at submission time because they cannot be safely or accurately st
 - reviewer username and password;
 - domain-verification challenge token;
 - final square plugin logo and composer icon assets that satisfy the package image limits;
-- demo recording URL showing the main installed-plugin workflows across supported ChatGPT and Codex surfaces;
+- demo recording URL showing the main production-connection workflows across supported ChatGPT and Codex surfaces;
 - supported launch countries and localization information; do not claim countries or translations that have not been intentionally selected and verified;
 - policy attestations;
 - initial release notes.
@@ -301,17 +293,4 @@ Suggested release note:
 
 ## Submission gate
 
-Do not submit until all of the following are true:
-
-- the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
-- the submission is created in an OpenAI project with global data residency and the submitter has Apps Management write access;
-- the production relay serves MCP contract `3.1.0` and the scan matches all 16 tools, schemas, descriptions, output contracts, top-level security schemes, and annotations in this packet;
-- the complete plugin package has been built from the registered `plugin_asdk_app...` connection ID, installed locally, and tested on supported ChatGPT and Codex surfaces;
-- the production website, privacy, terms, security, and support URLs are public and match the implementation;
-- the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;
-- the isolated fixture worker remains online and no other workspace is exposed;
-- exactly five positive and exactly three negative portal cases are configured, and the broader routing, permission-boundary, Restricted Data, and host-confirmation regression suite passes after a fresh fixture reset;
-- the required square `logo` and `composerIcon` assets are present and valid, screenshots are omitted because Glossa has no custom UI, and the demo recording URL shows the main installed-plugin workflows across supported ChatGPT and Codex surfaces;
-- the Restricted Data decision in `docs/restricted-data.md` is resolved through explicit OpenAI acceptance, removal of public `system` tools, or enforceable credential-free managed execution; metadata and the detector alone are not treated as approval;
-- repository, logs, site output, and submission materials contain no reviewer subject, password, token, private key, local absolute path, customer data, or operator credential; the exact reviewer subject exists only in protected deployment configuration;
-- `npm run review:check:submission` passes on the exact submitted commit and deployed release with `GLOSSA_PLUGIN_PACKAGE_DIR` and the real `GLOSSA_PLUGIN_APP_ID` set; this runs the local suite, production-surface checks, actual generated-plugin manifest/package validation, npm package dry-run, and `git diff --check`.
+Use [Submission readiness](submission-readiness.md) as the single release-owner checklist. `npm run review:check:submission` checks the repository, production endpoints, dependency audit, npm package contents, and whitespace. It cannot attest to the portal, reviewer account, host confirmations, or policy decision. Removing `system` alone does not resolve the file and image Restricted Data boundary.
