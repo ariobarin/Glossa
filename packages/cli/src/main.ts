@@ -186,7 +186,7 @@ async function runWorkspaceSession(
 
 async function refreshUpdateInfo(timeoutMs: number): Promise<UpdateInfo> {
   const info = await loadUpdateInfo(timeoutMs);
-  await recordUpdateCheck(VERSION);
+  await recordUpdateCheck(info);
   return info;
 }
 
@@ -237,9 +237,14 @@ interface WorkspaceUpdateResult {
 
 async function updateBeforeWorkspace(): Promise<WorkspaceUpdateResult> {
   const state = await loadUpdateState(VERSION);
-  if (state.policy === "off" || !isUpdateCheckDue(state.lastCheckedAt)) {
-    return { exit: false };
-  }
+  if (state.policy === "off") return { exit: false };
+  const cachedResult: WorkspaceUpdateResult = {
+    exit: false,
+    ...(state.policy === "notify" && state.availableUpdate ? {
+      notice: `Glossa ${state.availableUpdate.availableVersion} is available. Run glossa update after disconnecting.`,
+    } : {}),
+  };
+  if (!isUpdateCheckDue(state.lastCheckedAt)) return cachedResult;
 
   let info: UpdateInfo;
   try {
@@ -251,15 +256,15 @@ async function updateBeforeWorkspace(): Promise<WorkspaceUpdateResult> {
         `Glossa could not check for an automatic update: ${message} Continuing with ${VERSION}.`,
       );
     }
-    return { exit: false };
+    return cachedResult;
   }
   if (!info.updateAvailable) {
-    await recordUpdateCheck(VERSION);
+    await recordUpdateCheck(info);
     return { exit: false };
   }
 
   if (state.policy === "notify") {
-    await recordUpdateCheck(VERSION);
+    await recordUpdateCheck(info);
     return {
       exit: false,
       notice: `Glossa ${info.availableVersion} is available. Run glossa update after disconnecting.`,

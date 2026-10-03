@@ -1,7 +1,9 @@
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import semver from "semver";
 import { withProcessLease } from "./process-lease.js";
 import { configDirectory } from "./secure-store.js";
+import type { UpdateInfo } from "./update-service.js";
 
 export type UpdateChannel = "beta" | "stable";
 export type UpdatePolicy = "notify" | "auto" | "off";
@@ -10,6 +12,7 @@ export interface UpdateState {
   policy: UpdatePolicy;
   channel: UpdateChannel;
   lastCheckedAt?: string;
+  availableUpdate?: Pick<UpdateInfo, "currentVersion" | "availableVersion" | "channel">;
   mcpContractVersion?: string;
 }
 
@@ -36,6 +39,25 @@ function isChannel(value: unknown): value is UpdateChannel {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function validatedAvailableUpdate(
+  value: unknown,
+  currentVersion: string,
+  channel: UpdateChannel,
+): UpdateState["availableUpdate"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const candidate = value as Record<string, unknown>;
+  const current = semver.valid(currentVersion);
+  const available = typeof candidate.availableVersion === "string"
+    ? semver.valid(candidate.availableVersion)
+    : null;
+  if (
+    !current || !available || candidate.currentVersion !== current ||
+    candidate.channel !== channel || !semver.gt(available, current) ||
+    (channel === "stable" && semver.prerelease(available) !== null)
+  ) return undefined;
+  return { currentVersion: current, availableVersion: available, channel };
 }
 
 export async function withUpdateStateLease<T>(
@@ -65,12 +87,16 @@ export async function loadUpdateState(
   };
   try {
     const parsed = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return defaults;
     const lastCheckedAt = optionalString(parsed.lastCheckedAt);
     const mcpContractVersion = optionalString(parsed.mcpContractVersion);
+    const channel = isChannel(parsed.channel) ? parsed.channel : defaults.channel;
+    const availableUpdate = validatedAvailableUpdate(parsed.availableUpdate, currentVersion, channel);
     return {
       policy: isPolicy(parsed.policy) ? parsed.policy : defaults.policy,
-      channel: isChannel(parsed.channel) ? parsed.channel : defaults.channel,
+      channel,
       ...(lastCheckedAt ? { lastCheckedAt } : {}),
+      ...(availableUpdate ? { availableUpdate } : {}),
       ...(mcpContractVersion ? { mcpContractVersion } : {}),
     };
   } catch (error) {
@@ -120,14 +146,21 @@ export async function configureUpdates(
 }
 
 export async function recordUpdateCheck(
-  currentVersion: string,
+  info: UpdateInfo,
   checkedAt = new Date(),
   file = updateStateFile(),
 ): Promise<UpdateState> {
   return await withUpdateStateLease(async () => {
+    const loaded = await loadUpdateState(info.currentVersion, file);
+    if (loaded.channel !== info.channel) return loaded;
+    const { availableUpdate: _previousUpdate, ...previous } = loaded;
+    const availableUpdate = info.updateAvailable
+      ? validatedAvailableUpdate(info, info.currentVersion, previous.channel)
+      : undefined;
     const state = {
-      ...await loadUpdateState(currentVersion, file),
+      ...previous,
       lastCheckedAt: checkedAt.toISOString(),
+      ...(availableUpdate ? { availableUpdate } : {}),
     };
     await saveUpdateState(state, file);
     return state;
@@ -153,5 +186,5 @@ export function isUpdateCheckDue(
 ): boolean {
   if (!lastCheckedAt) return true;
   const checkedAt = Date.parse(lastCheckedAt);
-  return !Number.isFinite(checkedAt) || now - checkedAt >= UPDATE_CHECK_INTERVAL_MS;
+  return !Number.isFinite(checkedAt) || checkedAt > now || now - checkedAt >= UPDATE_CHECK_INTERVAL_MS;
 }
