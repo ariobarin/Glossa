@@ -133,7 +133,7 @@ export const relativePathSchema = z
   .string()
   .max(4096)
   .describe(
-    "Path relative to the exposed workspace root. Absolute paths and parent traversal are rejected.",
+    "Path relative to the workspace root.",
   );
 const boundedTextSchema = z
   .string()
@@ -290,7 +290,7 @@ export const writeFileRequestSchema = z.object({
     .regex(/^[a-f0-9]{64}$/)
     .optional()
     .describe(
-      "Full-file SHA-256 returned by read_file or read_file_range. Omit only when creating a new path; when provided, write_file replaces exactly that existing revision and fails if it is missing or changed.",
+      "Revision to replace, from read_file or read_file_range. Omit to create a new file.",
     ),
 }).strict();
 
@@ -415,14 +415,14 @@ export const runCommandRequestSchema = z
       .max(256)
       .optional()
       .describe(
-        "Preferred for native executables such as git and node. Executes directly without shell startup or parsing. On Windows, use shellCommand with the explicit .cmd or .bat filename, for example npm.cmd test. Provide this or shellCommand, not both.",
+        "Executable and arguments, run without a shell. Windows .cmd/.bat files require shellCommand.",
       ),
     shellCommand: z
       .string()
       .max(64 * 1024)
       .optional()
       .describe(
-        "Use when shell features are required, such as pipes, redirection, variable expansion, or multiple statements. Also use on Windows for command shims, naming the .cmd or .bat file explicitly, for example npm.cmd test. Glossa starts PowerShell on Windows and the user's shell on macOS and Linux. Provide this or argv, not both.",
+        "Shell command text, including pipes and redirection. Uses PowerShell on Windows and the user's shell elsewhere. Supports Windows .cmd/.bat files.",
       ),
     stdin: boundedTextSchema
       .optional()
@@ -443,7 +443,7 @@ export const runCommandRequestSchema = z
       .max(MAX_COMMAND_FAST_WAIT_MS)
       .optional()
       .describe(
-        "How long run_command waits for fast completion before returning a running command handle. Use 0 for commands expected to run longer than a few seconds. Use 1500 to 2000 for short checks expected to finish near one second. Defaults to 750 and cannot exceed 5000.",
+        "Milliseconds to wait for completion before returning a running command handle. Default 750; maximum 5000.",
       ),
   })
   .strict()
@@ -649,8 +649,8 @@ export const commandResultSchema = z.object({
   signal: z.string().nullable().optional().describe("Termination signal when available."),
   stdout: z.string().optional().describe("Captured standard output so far, including while the command is running."),
   stderr: z.string().optional().describe("Captured standard error so far, including while the command is running."),
-  stdoutTruncated: z.boolean().optional().describe("Whether standard output exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use read_command_output to inspect retained omitted bytes without rerunning the command."),
-  stderrTruncated: z.boolean().optional().describe("Whether standard error exceeded its returned share of the bounded command-result budget. Truncated output preserves its beginning and tail; use read_command_output to inspect retained omitted bytes without rerunning the command."),
+  stdoutTruncated: z.boolean().optional().describe("Whether stdout exceeds the snapshot budget. The beginning and tail are included; read_command_output retrieves retained omitted bytes."),
+  stderrTruncated: z.boolean().optional().describe("Whether stderr exceeds the snapshot budget. The beginning and tail are included; read_command_output retrieves retained omitted bytes."),
 }).strip();
 export const commandOutputRangeResultSchema = z.object({
   commandId: z.string().uuid().describe("Command whose retained output was read."),
@@ -686,12 +686,12 @@ const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   path_traversal: "Parent path traversal is not allowed.",
   path_not_found: "The requested path does not exist.",
   parent_not_found: "The destination directory does not exist.",
-  path_exists: "The file already exists. Read it first and pass expectedSha256 to replace that revision.",
+  path_exists: "File exists. expectedSha256 is required to replace it.",
   path_escape: "The requested path escapes the exposed root.",
   linked_path: "Symlink and junction paths are not allowed.",
   not_directory: "The requested path is not a directory.",
   not_file: "The requested path is not a file.",
-  file_too_large: "The file or text request exceeds 1 MiB. Both read_file and read_file_range reject whole files above this limit; ranged reads do not bypass it. Use a smaller file or request.",
+  file_too_large: "Text exceeds the 1 MiB limit.",
   file_changed: "The file changed while it was being read.",
   not_text: "The file is not valid UTF-8 text.",
   image_too_large: "The image exceeds the 4 MiB image limit.",
@@ -699,22 +699,22 @@ const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   scan_limit: "The repository scan limit was reached. Narrow the requested path.",
   search_byte_limit: "The repository search byte limit was reached. Narrow the requested path.",
   line_out_of_range: "The requested line is outside the file.",
-  line_too_large: "A complete line exceeds the 64 KiB ranged-read limit. Reducing lineCount cannot split it; use read_file only if the whole file fits its 1 MiB limit.",
-  scan_timeout: "The structured repository read exceeded its local deadline. Narrow the path, search filters, or requested range before retrying.",
-  stale_revision: "The file revision has changed. Read the current file and check whether the intended change is already present, then recompute any remaining edits with the new SHA-256.",
+  line_too_large: "This line exceeds the 64 KiB range limit.",
+  scan_timeout: "Scan timed out. Narrow the path or simplify the search.",
+  stale_revision: "The file has changed. Read its current revision.",
   edit_not_found: "The edit target was not found.",
   edit_ambiguous: "The edit target occurs more than once.",
   edit_overlap: "The requested edits overlap.",
   unsafe_temporary_file: "The atomic write could not be completed safely.",
   destination_exists: "The destination already exists.",
-  directory_not_empty: "The directory is not empty. Set recursive to true only when the user authorized deleting its contents.",
+  directory_not_empty: "Directory not empty. recursive: true deletes its contents.",
   root_operation_refused: "The exposed workspace root cannot be deleted or moved.",
   unsupported_path_type: "Only regular files and directories are supported by this operation.",
   invalid_destination: "A directory cannot be moved inside itself.",
-  write_access_disabled: "This workspace does not allow file writes. Do not retry; ask the user to restart with workspace access only if their request requires changes.",
-  command_access_disabled: "This workspace does not allow commands. Do not retry; ask the user to restart with system access only if their request requires a local command.",
-  worker_protocol_unsupported: "This workspace is running an older Glossa worker that does not support this operation. Ask the user to update Glossa and restart the workspace, then retry.",
-  command_busy: "The workspace has reached its concurrent command limit. Wait for a command to finish or cancel one before retrying.",
+  write_access_disabled: "This workspace is read-only.",
+  command_access_disabled: "Commands require system access.",
+  worker_protocol_unsupported: "Update Glossa and reconnect this workspace to use this tool.",
+  command_busy: "All command slots are occupied.",
   worker_shutting_down: "The local worker is shutting down.",
   invalid_command: "The command request is invalid.",
   invalid_timeout: "The command timeout is invalid.",
@@ -724,10 +724,10 @@ const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   invalid_output_offset: "The command output offset is invalid.",
   invalid_output_range: "The command output range is invalid.",
   output_offset_out_of_range: "The command output offset exceeds the retained stream length.",
-  command_not_found: "The command record is unavailable or expired. Check the original workspaceId and commandId; retained records are transient. Inspect command effects before considering another run, and never blindly rerun a side-effecting command.",
+  command_not_found: "Command unavailable: unknown ID, expired record, or workspace restarted.",
   command_spawn_failed: "The command could not be started.",
-  command_cleanup_failed: "Command cleanup could not be confirmed. Processes may still be running. New commands are disabled in this worker. Do not retry; ask the user to inspect and stop remaining processes locally and confirm cleanup before restarting Glossa.",
-  windows_command_shim: "Windows .cmd and .bat command shims must be run through shellCommand with the explicit shim filename.",
+  command_cleanup_failed: "Process termination was not confirmed. New commands are disabled. Stop remaining processes locally before restarting Glossa.",
+  windows_command_shim: "Windows .cmd/.bat files require shellCommand.",
   worker_failure: "The local worker operation failed.",
   invalid_limit: "The requested result limit is invalid.",
   invalid_search: "The search text is invalid.",

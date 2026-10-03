@@ -73,7 +73,7 @@ const expectedToolAnnotations: Record<string, {
 const accountId = "00000000-0000-4000-8000-000000000001";
 const product = {
   name: "Glossa",
-  description: "Bridge ChatGPT to a user-controlled local development workspace and its existing toolchain through an outbound worker.",
+  description: "File access and command execution in the user's connected workspaces.",
   contractVersion: MCP_SERVER_VERSION,
 };
 const managedDocumentationUrl = "https://glossa.sh/docs/quickstart";
@@ -165,7 +165,6 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   for (const tool of tools) {
     assert.equal(tool.title, expectedToolTitles[tool.name]);
     assert.ok(tool.description, `${tool.name} must have a description`);
-    assert.match(tool.description, /^Use this /, `${tool.name} must state when to use it`);
     assert.ok(tool.inputSchema, `${tool.name} must have an input schema`);
     assert.ok(tool.outputSchema, `${tool.name} must have an output schema`);
     assertFieldDescriptions(
@@ -352,16 +351,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     documentationUrl: managedDocumentationUrl,
     workspaces: [],
     availability: "offline",
-    message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
+    message: "No Glossa workspaces are online.",
   });
-  assert.match(
-    String(result.structuredContent?.message),
-    /open a terminal.*run `glossa`.*Keep that terminal open.*Retry only after the user confirms/,
-  );
-  assert.match(
-    String(result.structuredContent?.message),
-    /https:\/\/glossa\.sh\/docs\/quickstart/,
-  );
   assert.deepEqual(result.content, [
     {
       type: "text",
@@ -370,7 +361,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         documentationUrl: managedDocumentationUrl,
         workspaces: [],
         availability: "offline",
-        message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
+        message: "No Glossa workspaces are online.",
       }),
     },
   ]);
@@ -399,7 +390,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       },
     }],
     availability: "online",
-    message: "Glossa workspaces are available. Select one whose permissions match the requested operation.",
+    message: "Glossa workspaces are online.",
   });
 
   const selfHostedState = new RouterState();
@@ -432,19 +423,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       .documentationUrl,
     selfHostingDocumentationUrl,
   );
-  assert.match(
-    selfHostedMessage,
-    /https:\/\/github\.com\/ariobarin\/glossa\/blob\/main\/docs\/self-hosting\.md/,
-  );
-  assert.doesNotMatch(
-    selfHostedMessage,
-    /glossa\.sh\/docs\/quickstart/,
-  );
-  assert.equal(
-    selfHostedMessage,
-    `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${selfHostingDocumentationUrl}. Keep that terminal open. Retry only after the user confirms the workspace is running.`,
-  );
-  assert.doesNotMatch(selfHostedMessage, /run `glossa`/);
+  assert.equal(selfHostedMessage, "No Glossa workspaces are online.");
 
   selfHostedState.register(
     accountId,
@@ -498,7 +477,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(logout.isError, undefined);
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
-    instructions: `The Glossa CLI keeps no account session: a computer is either paired or not. To detach a computer, run glossa unpair on it. To switch the account a computer pairs to, end the Auth0 browser session by opening ${logoutUrl}, run glossa unpair on that computer, start glossa there again, and redeem its new pairing code on the control panel while signed in to the intended account. Disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
+    instructions: "Sign out on the Glossa control panel. To change a computer's account, stop Glossa, run `glossa unpair`, then restart and pair with the new account. Reconnect the Glossa app in ChatGPT to change its account.",
   });
   assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
 
@@ -508,7 +487,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   });
   assert.match(
     JSON.stringify(selfHostedLogout.structuredContent),
-    /run glossa unpair/,
+    /glossa unpair/,
   );
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
@@ -599,7 +578,6 @@ test("returns an actionable upgrade error instead of dispatching images to legac
   assert.equal(result.isError, true);
   const content = JSON.stringify(result.content);
   assert.match(content, /worker_protocol_unsupported/);
-  assert.match(content, /older Glossa CLI/);
   assert.match(content, /Update Glossa/);
   assert.equal(
     await state.poll(
@@ -661,7 +639,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
       const result = await client.callTool({ name, arguments: { workspaceId, ...args } });
       assert.equal(result.isError, true);
       assert.match(JSON.stringify(result.content), new RegExp(code));
-      assert.match(JSON.stringify(result.content), /Do not retry/);
+      assert.match(JSON.stringify(result.content), /read-only|system access/);
     }
   }
   for (const [deviceId, workspaceId, session] of [
@@ -810,7 +788,7 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   const serialized = JSON.stringify(result.content);
   assert.equal(result.isError, true);
   assert.match(serialized, /windows_command_shim/);
-  assert.match(serialized, /\.cmd and \.bat.*shellCommand.*explicit shim filename/);
+  assert.match(serialized, /\.cmd\/\.bat.*shellCommand/);
   assert.doesNotMatch(serialized, /private/);
 });
 
@@ -994,11 +972,11 @@ test("returns safe actionable messages for public file-policy errors", async (co
 
   const cases = [
     ["constructor", "The local worker operation failed."],
-    ["stale_revision", "check whether the intended change is already present"],
-    ["file_too_large", "Both read_file and read_file_range reject whole files"],
-    ["line_too_large", "Reducing lineCount cannot split it"],
+    ["stale_revision", "Read its current revision"],
+    ["file_too_large", "Text exceeds the 1 MiB limit"],
+    ["line_too_large", "This line exceeds the 64 KiB range limit"],
     ["scan_timeout", "Narrow the path"],
-    ["command_not_found", "never blindly rerun a side-effecting command"],
+    ["command_not_found", "Command unavailable: unknown ID, expired record, or workspace restarted"],
     ["toString", "The local worker operation failed."],
     ["__proto__", "The local worker operation failed."],
     ["invalid_path", "The requested path is invalid."],
@@ -1372,9 +1350,7 @@ test("reports uncertain dispatched mutations without implying rollback", async (
     assert.equal(result.isError, true);
     const error = JSON.stringify(result.content);
     assert.match(error, new RegExp(disconnect ? "device_offline" : "job_timeout"));
-    assert.match(error, /mutation may have applied/);
-    assert.match(error, /inspect|verify/);
-    assert.match(error, /never blindly rerun/i);
+    assert.match(error, /operation may have completed/);
     assert.equal(state.complete(accountId, workerId, {
       requestId: job.requestId, ok: true, value: { sha256: "1".repeat(64), bytes: 3, replacements: 1, diff: "", diffTruncated: false },
     }), false);

@@ -37,10 +37,10 @@ export function restrictedDataResult(): CallToolResult {
 export function routedError(error: unknown): CallToolResult {
   const code = error instanceof Error ? error.message : "relay_failure";
   if (code === "device_offline") {
-    return errorResult(code, "The workspace is offline. Reconnect before inspecting state. A dispatched mutation may have applied; verify files or command effects before retrying. Never blindly rerun a side-effecting command.");
+    return errorResult(code, "Workspace offline. A pending operation may have completed.");
   }
   if (code === "job_timeout") {
-    return errorResult(code, "The worker did not respond in time. A dispatched mutation may have applied; inspect files or use the returned command handle before retrying. Without a handle, verify command effects; never blindly rerun a side-effecting command.");
+    return errorResult(code, "No response before the deadline. The operation may have completed.");
   }
   if (code === "write_access_disabled" || code === "command_access_disabled") {
     return errorResult(code, workerErrorMessage(code));
@@ -48,7 +48,7 @@ export function routedError(error: unknown): CallToolResult {
   if (code === "worker_protocol_unsupported") {
     return errorResult(
       code,
-      "This workspace is connected with an older Glossa CLI that does not support image viewing. Update Glossa on that computer and reconnect the workspace.",
+      "Update Glossa and reconnect this workspace to use this tool.",
     );
   }
   return errorResult("relay_failure", "The relay operation failed.");

@@ -115,7 +115,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 
 - require explicit OAuth authorization and the `glossa:access` scope;
 - publish accurate MCP tool schemas, output contracts, side-effect annotations, and use/disallow descriptions;
-- tell the model not to use Glossa for general questions, web research, built-in ChatGPT tasks, credential inspection, or work unrelated to the local workspace;
+- describe workspace capabilities and limits while leaving task routing to the client;
 - expose only one narrow root per worker and reject implicit home or filesystem-root exposure;
 - let the user select `read-only`, `workspace`, or explicit `system` authority at startup;
 - enforce the selected authority in both the relay and local worker;
@@ -123,7 +123,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 - show the selected profile and compact write or command activity in interactive sessions;
 - require explicit `--headless` startup for sessions without the local status and activity UI;
 - provide immediate disconnect, logout, and device revocation controls;
-- treat all file and command output as untrusted data rather than instructions;
+- rely on the client to interpret file and command output as data, not authority;
 - reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.
 
 ### Permission downgrade or metadata mismatch

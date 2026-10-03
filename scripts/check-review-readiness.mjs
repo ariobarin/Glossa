@@ -140,7 +140,6 @@ const mcpSource = await readFile(
   join(repositoryRoot, "apps", "relay", "src", "mcp.ts"),
   "utf8",
 );
-const mcpCopy = await readFile(join(repositoryRoot, "apps/relay/src/mcp-copy.ts"), "utf8");
 const mcpResults = await readFile(join(repositoryRoot, "apps/relay/src/mcp-results.ts"), "utf8");
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
 assert.equal(contractVersion, "3.2.0", "MCP public contract must be 3.2.0");
@@ -182,10 +181,6 @@ const expectedToolAnnotations = {
   cancel_command: [false, true, true, false],
 };
 for (const tool of expectedTools) {
-  assert.ok(
-    new RegExp(`\\n  ${tool}: \\{[\\s\\S]*?description: "Use this `).test(mcpCopy),
-    `${tool} must publish a when-to-use description`,
-  );
   const registration = mcpSource.match(
     new RegExp(`server\\.registerTool\\(\\s*"${tool}",[\\s\\S]*?\\n\\s*async`),
   )?.[0];
@@ -212,9 +207,8 @@ assert.ok(
 );
 assert.ok(
   mcpResults.includes("RESTRICTED_DATA_ERROR_CODE") &&
-    mcpCopy.includes("authentication secrets") &&
-    mcpCopy.includes("defense in depth, not a sandbox"),
-  "MCP must expose the restricted-data boundary and its limitation",
+    mcpSource.includes("containsRestrictedAuthenticationData(job)"),
+  "MCP must enforce credential checks and return their error code",
 );
 
 const homepage = await readFile(join(repositoryRoot, "site/index.html"), "utf8");
@@ -240,7 +234,6 @@ await requiredText("site/docs/quickstart.md", [
 ]);
 await requiredText("site/docs/why.md", [
   "a folder on your computer",
-  "General questions, writing, and web research stay in ChatGPT",
 ]);
 await requiredText("site/pages/security.md", [
   "Both the relay and the local worker enforce it",

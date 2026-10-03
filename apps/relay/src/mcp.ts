@@ -92,7 +92,7 @@ function promoteOpenAIToolSecuritySchemes(server: McpServer): void {
 const workspaceIdFieldSchema = z
   .string()
   .uuid()
-  .describe("Online Glossa workspace identifier returned by list_workspaces. Select a workspace whose permissions allow the requested operation.");
+  .describe("Workspace ID from list_workspaces.");
 const workspaceIdSchema = z.object({ workspaceId: workspaceIdFieldSchema }).strict();
 const readFileInputSchema = readFileRequestSchema.extend(workspaceIdSchema.shape);
 const viewImageInputSchema = viewImageRequestSchema.extend(workspaceIdSchema.shape);
@@ -125,7 +125,7 @@ const runCommandSelectionSchema = z
       })
       .strict(),
   ])
-  .describe("Command form. Provide exactly one of argv for direct execution or shellCommand for shell syntax.");
+  .describe("Direct executable or shell command.");
 const runCommandInputSchema = z
   .object({
     workspaceId: workspaceIdFieldSchema,
@@ -146,18 +146,18 @@ const listWorkspacesOutputSchema = z
       .object({
         name: z.literal("Glossa").describe("Product name."),
         description: z
-          .literal("Bridge ChatGPT to a user-controlled local development workspace and its existing toolchain through an outbound worker.")
-          .describe("Concise product identity for agent context."),
+          .literal("File access and command execution in the user's connected workspaces.")
+          .describe("Product description."),
         contractVersion: z
           .literal(MCP_SERVER_VERSION)
-          .describe("Public MCP tool-contract version advertised during initialization."),
+          .describe("Tool contract version."),
       })
       .strict()
-      .describe("Stable Glossa product identity."),
+      .describe("Glossa product information."),
     documentationUrl: z
       .string()
       .url()
-      .describe("Official setup and reconnect documentation for this relay deployment."),
+      .describe("Setup documentation."),
     workspaces: z
       .array(
         z
@@ -165,32 +165,32 @@ const listWorkspacesOutputSchema = z
             workspaceId: z
               .string()
               .uuid()
-              .describe("Ephemeral identifier to pass to workspace tools for this active worker."),
+              .describe("ID of this online workspace."),
             workspaceLabel: z
               .string()
               .optional()
-              .describe("Optional user-chosen label for distinguishing online workspaces."),
+              .describe("User-chosen workspace label."),
             accessProfile: z
               .enum(["read-only", "workspace", "system"])
-              .describe("User-selected authority boundary for this worker."),
+              .describe("Workspace access profile."),
             permissions: z
               .object({
-                readFiles: z.literal(true).describe("Whether structured file reads are allowed."),
-                writeFiles: z.boolean().describe("Whether guarded file writes and structured path lifecycle operations are allowed inside the exposed root."),
-                runCommands: z.boolean().describe("Whether command tools are allowed with the worker account's operating-system authority."),
+                readFiles: z.literal(true).describe("File reads enabled."),
+                writeFiles: z.boolean().describe("Workspace file changes enabled."),
+                runCommands: z.boolean().describe("Local commands enabled."),
               })
               .strict()
-              .describe("Operation permissions enforced by both the relay and local worker."),
+              .describe("Enabled operations."),
           })
           .strict(),
       )
-      .describe("Online workspaces available to the authenticated account."),
+      .describe("Online workspaces."),
     availability: z
       .enum(["online", "offline"])
-      .describe("Whether one or more Glossa workspaces are online."),
+      .describe("Whether any workspaces are online."),
     message: z
       .string()
-      .describe("Agent-facing availability guidance with a safe reconnect next step and no local workspace details."),
+      .describe("Connection status."),
   })
   .strict();
 const logoutOutputSchema = z
@@ -198,23 +198,23 @@ const logoutOutputSchema = z
     logoutUrl: z
       .string()
       .url()
-      .describe("Browser URL the user must open to clear the Glossa login session."),
+      .describe("Sign-out URL for the browser login provider."),
     instructions: z
       .string()
-      .describe("Account-switching instructions to present to the user."),
+      .describe("Sign-out and account-switching steps."),
   })
   .strict();
 const commandOutputSchema = workerCommandOutputSchema.extend({
   workspaceId: z
     .string()
     .uuid()
-    .describe("Online Glossa workspace identifier returned for restart-safe command follow-ups."),
+    .describe("Workspace ID for this command."),
 });
 const commandOutputRangeSchema = workerCommandOutputRangeSchema.extend({
   workspaceId: z
     .string()
     .uuid()
-    .describe("Online Glossa workspace identifier for subsequent command output ranges."),
+    .describe("Workspace ID for this command."),
 });
 
 const MANAGED_RELAY_ORIGIN = "https://mcp.glossa.sh";
@@ -236,7 +236,7 @@ const DESTRUCTIVE_FILE_TOOL_ANNOTATIONS = {
 
 const PRODUCT_CONTEXT = {
   name: "Glossa",
-  description: "Bridge ChatGPT to a user-controlled local development workspace and its existing toolchain through an outbound worker.",
+  description: "File access and command execution in the user's connected workspaces.",
   contractVersion: MCP_SERVER_VERSION,
 } as const;
 
@@ -248,16 +248,6 @@ function officialDocumentationUrl(publicOrigin: string): string {
   return isManagedRelay(publicOrigin)
     ? MANAGED_QUICKSTART_URL
     : SELF_HOSTING_DOCS_URL;
-}
-
-function offlineWorkspaceMessage(config: RelayConfig): string {
-  const documentationUrl = officialDocumentationUrl(
-    config.GLOSSA_PUBLIC_ORIGIN,
-  );
-  if (isManagedRelay(config.GLOSSA_PUBLIC_ORIGIN)) {
-    return `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run \`glossa\`. Keep that terminal open. Retry only after the user confirms the workspace is running. See ${documentationUrl} for setup help.`;
-  }
-  return `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${documentationUrl}. Keep that terminal open. Retry only after the user confirms the workspace is running.`;
 }
 
 function browserLogoutUrl(issuer: string): string {
@@ -356,14 +346,14 @@ function registerTools(
               documentationUrl,
               workspaces,
               availability: "online",
-              message: "Glossa workspaces are available. Select one whose permissions match the requested operation.",
+              message: "Glossa workspaces are online.",
             }
           : {
               product: PRODUCT_CONTEXT,
               documentationUrl,
               workspaces,
               availability: "offline",
-              message: offlineWorkspaceMessage(config),
+              message: "No Glossa workspaces are online.",
             },
       );
     },
@@ -382,7 +372,7 @@ function registerTools(
       const logoutUrl = browserLogoutUrl(config.GLOSSA_AUTH0_ISSUER);
       return structuredResult({
         logoutUrl,
-        instructions: `The Glossa CLI keeps no account session: a computer is either paired or not. To detach a computer, run glossa unpair on it. To switch the account a computer pairs to, end the Auth0 browser session by opening ${logoutUrl}, run glossa unpair on that computer, start glossa there again, and redeem its new pairing code on the control panel while signed in to the intended account. Disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
+        instructions: "Sign out on the Glossa control panel. To change a computer's account, stop Glossa, run `glossa unpair`, then restart and pair with the new account. Reconnect the Glossa app in ChatGPT to change its account.",
       });
     },
   );

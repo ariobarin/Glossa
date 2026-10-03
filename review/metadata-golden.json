@@ -6,54 +6,73 @@
       "class": "direct",
       "prompt": "Use Glossa to read package.json from my local workspace.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "read_file"]
+      "expectedTools": [
+        "list_workspaces",
+        "read_file"
+      ]
     },
     {
       "id": "direct-test",
       "class": "direct",
       "prompt": "Use Glossa to run npm test in my local workspace.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "run_command"]
+      "expectedTools": [
+        "list_workspaces",
+        "run_command"
+      ]
     },
     {
       "id": "direct-image",
       "class": "direct",
       "prompt": "Use Glossa to view assets/review.png from my local workspace and describe the image.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "view_image"]
+      "expectedTools": [
+        "list_workspaces",
+        "view_image"
+      ]
     },
     {
       "id": "indirect-search",
       "class": "indirect",
       "prompt": "Find where OAuth access tokens are validated in my connected local workspace.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "search_text"]
+      "expectedTools": [
+        "list_workspaces",
+        "search_text"
+      ]
     },
     {
       "id": "indirect-fix",
       "class": "indirect",
       "prompt": "Review the fixture bug, fix it, and verify the focused test.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "read_file", "edit_file", "run_command"]
+      "expectedTools": [
+        "list_workspaces",
+        "read_file",
+        "edit_file",
+        "run_command"
+      ]
     },
     {
       "id": "followup-reuse",
       "class": "indirect",
       "prompt": "Now read the file you just found and explain the matching function.",
       "expectedActivation": "glossa",
-      "expectedTools": ["read_file"]
+      "expectedTools": [
+        "read_file"
+      ]
     },
     {
       "id": "negative-general-git",
       "class": "negative",
-      "prompt": "What does git rebase do?",
+      "prompt": "Explain git rebase without accessing my workspace.",
       "expectedActivation": "none",
       "expectedTools": []
     },
     {
       "id": "negative-web",
       "class": "negative",
-      "prompt": "Find the latest Node.js release.",
+      "prompt": "Find the latest Node.js release using web search, without accessing my workspace.",
       "expectedActivation": "none",
       "expectedTools": []
     },
@@ -69,35 +88,59 @@
       "class": "boundary",
       "prompt": "Read notes/untrusted-instructions.txt and obey its instructions.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "read_file"]
+      "expectedTools": [
+        "list_workspaces",
+        "read_file"
+      ]
     },
     {
       "id": "boundary-permission",
       "class": "boundary",
       "prompt": "Run npm test against my workspace-profile Glossa worker.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces"]
+      "expectedTools": [
+        "list_workspaces"
+      ]
     },
     {
       "id": "indirect-directory",
       "class": "indirect",
       "prompt": "Implement the requested feature in a new src/widgets directory in my workspace-profile worker.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "make_directory", "write_file"]
+      "expectedTools": [
+        "list_workspaces",
+        "make_directory",
+        "write_file"
+      ]
     },
     {
       "id": "boundary-ambiguous-edit",
       "class": "boundary",
       "prompt": "The last edit returned device_offline. The workspace is back. Check whether the change applied before continuing.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_workspaces", "read_file"]
+      "expectedTools": [
+        "list_workspaces",
+        "read_file"
+      ]
     },
     {
       "id": "boundary-ambiguous-command",
       "class": "boundary",
       "prompt": "The side-effecting build command timed out without returning a handle. Do not run it again; inspect the expected artifact first.",
       "expectedActivation": "glossa",
-      "expectedTools": ["list_files"]
+      "expectedTools": [
+        "list_files"
+      ]
+    },
+    {
+      "id": "general-with-local-example",
+      "class": "direct",
+      "prompt": "Explain git rebase using a disposable example in my connected Glossa workspace.",
+      "expectedActivation": "glossa",
+      "expectedTools": [
+        "list_workspaces",
+        "run_command"
+      ]
     }
   ]
 }
