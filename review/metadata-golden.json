@@ -77,6 +77,27 @@
       "prompt": "Run npm test against my workspace-profile Glossa worker.",
       "expectedActivation": "glossa",
       "expectedTools": ["list_workspaces"]
+    },
+    {
+      "id": "indirect-directory",
+      "class": "indirect",
+      "prompt": "Implement the requested feature in a new src/widgets directory in my workspace-profile worker.",
+      "expectedActivation": "glossa",
+      "expectedTools": ["list_workspaces", "make_directory", "write_file"]
+    },
+    {
+      "id": "boundary-ambiguous-edit",
+      "class": "boundary",
+      "prompt": "The last edit returned device_offline. The workspace is back. Check whether the change applied before continuing.",
+      "expectedActivation": "glossa",
+      "expectedTools": ["list_workspaces", "read_file"]
+    },
+    {
+      "id": "boundary-ambiguous-command",
+      "class": "boundary",
+      "prompt": "The side-effecting build command timed out without returning a handle. Do not run it again; inspect the expected artifact first.",
+      "expectedActivation": "glossa",
+      "expectedTools": ["list_files"]
     }
   ]
 }

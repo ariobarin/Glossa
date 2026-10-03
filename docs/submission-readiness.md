@@ -40,7 +40,7 @@ glossa --access system --label openai-review .review-workspace
 - [ ] `npm run review:check:submission` passes.
 - [ ] The production relay is deployed from the exact commit being submitted.
 - [ ] `https://mcp.glossa.sh` is intentionally accepted as the long-lived published MCP origin; changing its scheme, hostname, or port after publication would require a new plugin rather than an ordinary version update.
-- [ ] A fresh **Scan Tools** reports MCP contract `3.1.0` and exactly 16 tools.
+- [ ] A fresh **Scan Tools** reports MCP contract `3.2.0` and exactly 16 tools.
 - [ ] The scan matches tool names, titles, descriptions, input/output schemas, top-level OAuth security schemes, compatibility `_meta`, and annotations in `docs/app-submission-packet.md`.
 - [ ] `make_directory` scans as `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`.
 - [ ] `move_path` scans as `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: false`, `openWorldHint: false`.
