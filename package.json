@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "npm run clean && npm run build --workspace @glossa/protocol && npm run build --workspace @ariobarin/glossa && npm run build --workspace @glossa/relay",
-    "check": "npm run docs:build && npm run site:check && npm run review:check && npm run build && npm test && npm run cli:smoke:update",
+    "check": "npm run docs:build && npm run site:check && npm run review:check && npm run build && npm run cli:smoke && npm test && npm run cli:smoke:update",
     "clean": "node scripts/clean.mjs",
     "dev": "npm run build --workspace @glossa/protocol && npm run dev --workspace @glossa/relay",
     "dev:auth": "node --import tsx scripts/dev-auth.ts",
@@ -26,6 +26,7 @@
     "cli:hud-preview": "npm run build --workspace @glossa/protocol && npm run hud:preview --workspace @ariobarin/glossa --",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "cli:smoke:update": "node packages/cli/scripts/smoke-update.mjs",
+    "cli:smoke": "node packages/cli/scripts/smoke-standalone.mjs node packages/cli/dist/main.js",
     "integration:smoke": "node --import tsx scripts/integration-smoke.ts",
     "integration:local": "node scripts/integration-local.mjs",
     "test:soak": "node --expose-gc --max-old-space-size=96 --import tsx scripts/resource-soak.ts",
