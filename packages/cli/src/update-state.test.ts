@@ -37,7 +37,7 @@ test("uses version-aware defaults and persists update settings", async () => {
 
     const checkedAt = new Date("2026-07-31T12:00:00.000Z");
     const recorded = await recordUpdateCheck(
-      "0.1.0-beta.13",
+      { currentVersion: "0.1.0-beta.13", availableVersion: "0.1.0-beta.13", channel: "stable", updateAvailable: false },
       checkedAt,
       file,
     );
@@ -90,7 +90,9 @@ test("serializes update state read-modify-writes", async () => {
     const checkedAt = new Date("2026-08-21T12:00:00.000Z");
     let checkFinished = false;
     let contractFinished = false;
-    const check = recordUpdateCheck("0.1.0", checkedAt, file).then((state) => {
+    const check = recordUpdateCheck({
+      currentVersion: "0.1.0", availableVersion: "0.1.0", channel: "stable", updateAvailable: false,
+    }, checkedAt, file).then((state) => {
       checkFinished = true;
       return state;
     });
@@ -126,6 +128,10 @@ test("ignores malformed update state and calculates the daily interval", async (
       policy: "notify",
       channel: "beta",
     });
+    for (const value of [null, [], 42, "state"]) {
+      await writeFile(file, JSON.stringify(value), "utf8");
+      assert.deepEqual(await loadUpdateState("0.1.0", file), { policy: "notify", channel: "stable" });
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -141,4 +147,63 @@ test("ignores malformed update state and calculates the daily interval", async (
     true,
   );
   assert.equal(isUpdateCheckDue("invalid", checkedAt), true);
+  assert.equal(isUpdateCheckDue(new Date(checkedAt + UPDATE_CHECK_INTERVAL_MS).toISOString(), checkedAt), true);
+});
+
+test("retains an available release between checks and invalidates obsolete notices", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "glossa-update-notice-"));
+  const file = path.join(directory, "updates.json");
+  const info = { currentVersion: "0.2.4", availableVersion: "0.2.5", channel: "stable" as const, updateAvailable: true };
+  const checkedAt = new Date();
+  try {
+    await recordUpdateCheck(info, checkedAt, file);
+    const saved = await loadUpdateState(info.currentVersion, file);
+    assert.deepEqual(saved.availableUpdate, {
+      currentVersion: "0.2.4", availableVersion: "0.2.5", channel: "stable",
+    });
+    assert.equal(isUpdateCheckDue(saved.lastCheckedAt, checkedAt.getTime()), false);
+    await observeMcpContractVersion(info.currentVersion, "3.2.0", file);
+    assert.deepEqual((await loadUpdateState(info.currentVersion, file)).availableUpdate, saved.availableUpdate);
+    for (const version of ["0.2.5", "0.2.6", "0.2.3", "0.2.4-beta.1"]) {
+      assert.equal((await loadUpdateState(version, file)).availableUpdate, undefined, version);
+    }
+    await recordUpdateCheck({ ...info, availableVersion: "0.2.3", updateAvailable: false }, checkedAt, file);
+    assert.equal((await loadUpdateState(info.currentVersion, file)).availableUpdate, undefined);
+    await recordUpdateCheck(info, checkedAt, file);
+    await configureUpdates(info.currentVersion, { channel: "beta" }, file);
+    await recordUpdateCheck(info, checkedAt, file);
+    const switched = await loadUpdateState(info.currentVersion, file);
+    assert.equal(switched.availableUpdate, undefined);
+    assert.equal(switched.lastCheckedAt, undefined, "a response from the old channel must not delay its new check");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("only loads a bounded newer release for the checked version and channel", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "glossa-update-notice-invalid-"));
+  const file = path.join(directory, "updates.json");
+  const availableUpdate = { currentVersion: "0.2.4", availableVersion: "0.2.5", channel: "stable" };
+  try {
+    for (const candidate of [
+      null, [], "0.2.5",
+      { ...availableUpdate, availableVersion: "0.2.4" },
+      { ...availableUpdate, availableVersion: "0.2.3" },
+      { ...availableUpdate, availableVersion: "0.2.5-beta.1" },
+      { ...availableUpdate, availableVersion: "0.2.5\u001b[31m" },
+      { ...availableUpdate, availableVersion: `0.2.5+${"a".repeat(256)}` },
+      { ...availableUpdate, availableVersion: 5 },
+      { ...availableUpdate, currentVersion: "0.2.3" },
+      { ...availableUpdate, channel: "beta" },
+    ]) {
+      await writeFile(file, JSON.stringify({ policy: "notify", channel: "stable", availableUpdate: candidate }), "utf8");
+      assert.equal((await loadUpdateState("0.2.4", file)).availableUpdate, undefined);
+    }
+    await writeFile(file, JSON.stringify({ policy: "notify", channel: "beta", availableUpdate: {
+      ...availableUpdate, availableVersion: "0.3.0-beta.1", channel: "beta",
+    } }), "utf8");
+    assert.equal((await loadUpdateState("0.2.4", file)).availableUpdate?.availableVersion, "0.3.0-beta.1");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
