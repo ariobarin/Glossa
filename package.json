@@ -26,6 +26,8 @@
     "cli:hud-preview": "npm run build --workspace @glossa/protocol && npm run hud:preview --workspace @ariobarin/glossa --",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "integration:smoke": "node --import tsx scripts/integration-smoke.ts",
+    "integration:local": "node scripts/integration-local.mjs",
+    "test:soak": "node --expose-gc --max-old-space-size=96 --import tsx scripts/resource-soak.ts",
     "test": "npm run test --workspace @glossa/relay && npm run test --workspace @ariobarin/glossa",
     "review:metadata:check": "node scripts/check-metadata-golden.mjs",
     "review:check": "npm run review:metadata:check && node scripts/check-review-readiness.mjs && node --import tsx scripts/check-restricted-data-corpus.ts",
