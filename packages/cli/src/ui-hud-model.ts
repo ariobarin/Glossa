@@ -12,7 +12,10 @@ import {
 } from "./worker/managed-session.js";
 import {
   activityCallByteLength,
+  escapeActivityText as escapeInline,
+  formatByteCount,
   formatActivityCall,
+  truncateMiddle,
   type HudActivityCall,
   type HudActivityMode,
 } from "./ui-hud-activity.js";
@@ -134,62 +137,15 @@ export function initialHudState(workspace: string): HudState {
   };
 }
 
-const MAX_STORED_ACTIVITIES = 9_999;
+const MAX_STORED_ACTIVITIES = 256;
 const MAX_STORED_ACTIVITY_TARGET_CHARS = 512;
-const MAX_RETAINED_ACTIVITY_CALL_BYTES = 16 * 1024 * 1024;
+const MAX_RETAINED_ACTIVITY_CALL_BYTES = 1024 * 1024;
 
 function truncate(value: string, width: number): string {
   if (width <= 0) return "";
   if (value.length <= width) return value;
   if (width === 1) return "…";
   return `${value.slice(0, width - 1)}…`;
-}
-
-function truncateMiddle(value: string, width: number): string {
-  if (width <= 0) return "";
-  if (value.length <= width) return value;
-  if (width === 1) return "…";
-  const visible = width - 1;
-  const leading = Math.max(1, Math.floor(visible * 0.45));
-  const trailing = visible - leading;
-  let start = value.slice(0, leading);
-  if (/[\ud800-\udbff]$/.test(start)) start = start.slice(0, -1);
-  let end = trailing > 0 ? value.slice(-trailing) : "";
-  if (/^[\udc00-\udfff]/.test(end)) end = end.slice(1);
-  return `${start}…${end}`;
-}
-
-const INLINE_DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
-
-function escapeCodePoint(codePoint: number): string {
-  const hexadecimal = codePoint.toString(16);
-  return codePoint <= 0xffff
-    ? `\\u${hexadecimal.padStart(4, "0")}`
-    : `\\u{${hexadecimal}}`;
-}
-
-function escapeInline(value: string, quote = false): string {
-  let escaped = "";
-  for (const character of value) {
-    const codePoint = character.codePointAt(0)!;
-    if (character === "\\") escaped += "\\\\";
-    else if (quote && character === '"') escaped += '\\"';
-    else if (character === "\n") escaped += "\\n";
-    else if (character === "\r") escaped += "\\r";
-    else if (character === "\t") escaped += "\\t";
-    else if (character === "\b") escaped += "\\b";
-    else if (character === "\f") escaped += "\\f";
-    else if (
-      codePoint < 0x20 ||
-      (codePoint >= 0x7f && codePoint <= 0x9f) ||
-      INLINE_DEFAULT_IGNORABLE.test(character) ||
-      codePoint === 0x2028 ||
-      codePoint === 0x2029
-    ) {
-      escaped += escapeCodePoint(codePoint);
-    } else escaped += character;
-  }
-  return escaped;
 }
 
 function quoteInline(value: string): string {
@@ -202,15 +158,6 @@ function boundInlineInput(value: string): string {
 
 function quoteActivityInput(value: string): string {
   return quoteInline(boundInlineInput(value));
-}
-
-function formatByteCount(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kibibytes = bytes / 1024;
-  if (kibibytes < 1024) {
-    return `${kibibytes.toFixed(kibibytes < 10 ? 1 : 0)} KiB`;
-  }
-  return `${(kibibytes / 1024).toFixed(1)} MiB`;
 }
 
 function workspacePath(path: string | undefined): string {
@@ -385,34 +332,20 @@ function boundActivitySummary(summary: HudActivitySummary): HudActivitySummary {
     : undefined;
   return {
     ...summary,
-    ...(targetSegments ? { targetSegments } : {}),
-    target: targetSegments
+    ...(targetSegments ? {
+      targetSegments: targetSegments.map(ownText) as typeof targetSegments,
+    } : {}),
+    target: ownText(targetSegments
       ? targetSegments.join("")
       : summary.truncation === "middle"
         ? truncateMiddle(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS)
-        : truncate(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS),
+        : truncate(summary.target, MAX_STORED_ACTIVITY_TARGET_CHARS)),
   };
 }
 
-function pruneActivityCalls(activities: HudActivity[]): HudActivity[] {
-  let retainedBytes = 0;
-  const next = [...activities];
-  for (let index = next.length - 1; index >= 0; index -= 1) {
-    const activity = next[index]!;
-    if (!activity.call || activity.callBytes === undefined) continue;
-    if (activity.callBytes > MAX_RETAINED_ACTIVITY_CALL_BYTES) {
-      const { call: _call, callBytes: _callBytes, ...summaryOnly } = activity;
-      next[index] = { ...summaryOnly, callUnavailable: "oversized" };
-      continue;
-    }
-    if (retainedBytes + activity.callBytes > MAX_RETAINED_ACTIVITY_CALL_BYTES) {
-      const { call: _call, callBytes: _callBytes, ...summaryOnly } = activity;
-      next[index] = { ...summaryOnly, callUnavailable: "expired" };
-      continue;
-    }
-    retainedBytes += activity.callBytes;
-  }
-  return next;
+function ownText(text: string): string {
+  // Own the bounded text; a V8 substring can otherwise retain the full call.
+  return Buffer.from(text, "utf16le").toString("utf16le");
 }
 
 export function applyHudEvent(
@@ -479,10 +412,8 @@ export function applyHudEvent(
 
   const requestId = event.job.requestId;
   const eventCall = activityCallFromEventJob(event.job);
-  const existingIndex = state.activities.findIndex(
-    (activity) => activity.requestId === requestId,
-  );
-  const existing = existingIndex >= 0 ? state.activities[existingIndex] : undefined;
+  const existingIndex = state.activities.findIndex((row) => row.requestId === requestId);
+  const existing = state.activities[existingIndex];
   const activityTimestamp = Date.now();
   const freshCall = existing?.callUnavailable
     ? undefined
@@ -499,11 +430,9 @@ export function applyHudEvent(
   const activity: HudActivity = {
     tool: eventCall.type,
     summary: boundActivitySummary(summarizeCall(eventCall)),
-    // Own the bounded text; a V8 substring can otherwise retain the full call.
-    compactSummary: existing?.compactSummary ?? Buffer.from(
+    compactSummary: existing?.compactSummary ?? ownText(
       formatActivityCall(formatCall, "compact", MAX_STORED_ACTIVITY_TARGET_CHARS),
-      "utf16le",
-    ).toString("utf16le"),
+    ),
     ...(retainFreshCall ? { call: freshCall, callBytes: freshCallBytes } : {}),
     ...(!retainFreshCall && !existing?.callUnavailable
       ? { callUnavailable: "oversized" as const }
@@ -517,22 +446,45 @@ export function applyHudEvent(
       : eventOutput?.kind === "error"
         ? "failed"
         : "returned",
-    startedAt: existing?.startedAt ?? activityTimestamp,
+    ...(existing?.startedAt !== undefined
+      ? { startedAt: existing.startedAt }
+      : event.phase === "started" ? { startedAt: activityTimestamp } : {}),
     updatedAt: activityTimestamp,
   };
   const activities = [...state.activities];
   if (existingIndex >= 0) activities[existingIndex] = activity;
   else activities.push(activity);
-  const boundedActivities = pruneActivityCalls(activities.slice(-MAX_STORED_ACTIVITIES));
+  if (activities.length > MAX_STORED_ACTIVITIES) {
+    // Keep admitted in-flight requests visible as completed rows roll off.
+    const oldest = activities.findIndex((row) =>
+      row.state !== "working" && row.requestId !== requestId);
+    activities.splice(Math.max(oldest, 0), 1);
+  }
+  // One bounded list owns retention; no parallel indexes need synchronizing.
+  let callBytes = activities.reduce((total, row) => total + (row.callBytes ?? 0), 0);
+  for (let index = 0; callBytes > MAX_RETAINED_ACTIVITY_CALL_BYTES; index += 1) {
+    const row = activities[index]!;
+    if (row.callBytes === undefined) continue;
+    const { call: _call, callBytes: bytes, ...summaryOnly } = row;
+    activities[index] = { ...summaryOnly, callUnavailable: "expired" };
+    callBytes -= bytes;
+  }
   const activitySelection = state.activitySelection &&
-      boundedActivities.some((item) => item.requestId === state.activitySelection)
+      activities.some((row) => row.requestId === state.activitySelection)
     ? state.activitySelection
     : undefined;
-
+  const selectionExpired = state.activitySelection !== undefined && activitySelection === undefined;
 
   return {
     ...state,
-    activities: boundedActivities,
+    activities,
     activitySelection,
+    activityBrowseAnchor: state.activityBrowseAnchor &&
+      activities.some((row) => row.requestId === state.activityBrowseAnchor)
+      ? state.activityBrowseAnchor : undefined,
+    ...(selectionExpired ? {
+      view: state.view === "activity-detail" ? "activity" : state.view,
+      activityDetailScroll: 0,
+    } : {}),
   };
 }

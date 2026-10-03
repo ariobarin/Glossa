@@ -156,7 +156,7 @@ test("activity view keeps state and age on the activity row", () => {
   );
 });
 
-test("activity history is bounded to 9,999 entries", () => {
+test("activity history is bounded to 256 entries", () => {
   let state = connectedState();
   for (let index = 1; index <= 10_002; index += 1) {
     state = applyHudEvent(state, {
@@ -170,8 +170,8 @@ test("activity history is bounded to 9,999 entries", () => {
       ok: true,
     });
   }
-  assert.equal(state.activities.length, 9_999);
-  assert.equal(state.activities[0]!.requestId, "request-4");
+  assert.equal(state.activities.length, 256);
+  assert.equal(state.activities[0]!.requestId, "request-9747");
   assert.equal(state.activities.at(-1)!.requestId, "request-10002");
 });
 

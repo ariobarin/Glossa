@@ -53,7 +53,7 @@ function quote(value: string): string {
   return `"${escapeActivityText(value, true)}"`;
 }
 
-function formatByteCount(bytes: number): string {
+export function formatByteCount(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const kibibytes = bytes / 1024;
   if (kibibytes < 1024) {
@@ -62,7 +62,7 @@ function formatByteCount(bytes: number): string {
   return `${(kibibytes / 1024).toFixed(1)} MiB`;
 }
 
-function truncateMiddle(value: string, width: number): string {
+export function truncateMiddle(value: string, width: number): string {
   if (width <= 0) return "";
   if (value.length <= width) return value;
   if (width === 1) return "…";

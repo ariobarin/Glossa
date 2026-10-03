@@ -451,15 +451,19 @@ export class CommandService {
         ([, record]) => record.status !== "running",
       );
       if (!oldestTerminal) return;
+      clearTimeout(oldestTerminal[1].timeout);
       this.#commands.delete(oldestTerminal[0]);
     }
   }
 
   #scheduleDeletion(commandId: string): void {
-    setTimeout(
+    const record = this.#commands.get(commandId);
+    if (!record) return;
+    record.timeout = setTimeout(
       () => this.#commands.delete(commandId),
       COMMAND_RECORD_RETENTION_MS,
-    ).unref();
+    );
+    record.timeout.unref();
   }
 
   async start(options: StartCommandOptions): Promise<CommandSnapshot> {
