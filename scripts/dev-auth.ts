@@ -3,12 +3,13 @@
 // touching production or a real tenant. NOT for deployment: it signs any
 // requested identity and auto-approves device pairing after a short delay.
 import { createServer, type Server } from "node:http";
+import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
   exportJWK,
   generateKeyPair,
   SignJWT,
-  type JSONWebKey,
+  type JWK,
   type KeyObject,
 } from "jose";
 
@@ -43,7 +44,7 @@ export async function startDevAuth(port = DEFAULT_PORT): Promise<DevAuthServer> 
   jwk.kid = "dev-auth-local";
   jwk.alg = "RS256";
   jwk.use = "sig";
-  const jwks: { keys: JSONWebKey[] } = { keys: [jwk] };
+  const jwks: { keys: JWK[] } = { keys: [jwk] };
   const pending = new Map<string, PendingDeviceCode>();
 
   const sign = async (
@@ -216,7 +217,7 @@ if (isStandalone) {
   console.log("Optional relay control panel at /panel:");
   console.log("  GLOSSA_PANEL_CLIENT_ID=dev-panel");
   console.log("  GLOSSA_PANEL_CLIENT_SECRET=dev-changeme");
-  console.log(`  GLOSSA_PANEL_SESSION_SECRET=${crypto.randomBytes(32).toString("hex")}`);
+  console.log(`  GLOSSA_PANEL_SESSION_SECRET=${randomBytes(32).toString("hex")}`);
   console.log("");
   console.log("CLI environment for local integration:");
   console.log(`  GLOSSA_RELAY_ORIGIN=${relayOrigin}`);

@@ -9,6 +9,11 @@ on:
     branches:
       - "dev/**"
   workflow_dispatch:
+    inputs:
+      resource-soak:
+        description: Run the 100000-read worker soak and real command expiry
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,7 +26,7 @@ jobs:
   check-linux:
     name: Full repository check (Linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: ${{ inputs.resource-soak && 60 || 20 }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -30,12 +35,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: docker compose up -d --wait postgres
-      - run: npm run integration:smoke
-        env:
-          GLOSSA_INTEGRATION_DATABASE_URL: postgres://glossa:glossa@127.0.0.1:55432/glossa
-      - if: always()
-        run: docker compose down -v
+      - run: npm run integration:local
+      - if: github.event_name == 'workflow_dispatch' && inputs.resource-soak
+        run: npm run test:soak
 
   relay-container:
     name: Relay container smoke

@@ -6,13 +6,18 @@ import "./fixtures/isolated-cli.mjs";
 import { once } from "node:events";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { startDevAuth, type DevAuthServer } from "./dev-auth.js";
+import { createResourceFiles } from "./fixtures/resource-files.js";
+import {
+  MAX_COMMAND_OUTPUT_BYTES, MAX_COMMAND_RETAINED_STREAM_BYTES, MAX_TEXT_BYTES,
+} from "@glossa/protocol";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const databaseUrl = process.env.GLOSSA_INTEGRATION_DATABASE_URL ??
@@ -21,6 +26,10 @@ const relayOrigin = process.env.GLOSSA_INTEGRATION_RELAY_ORIGIN ??
   "http://127.0.0.1:39100";
 const audience = `${relayOrigin}/`;
 const relayPort = new URL(relayOrigin).port || "80";
+for (const endpoint of [relayOrigin, databaseUrl]) {
+  assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(new URL(endpoint).hostname),
+    "Integration endpoints must be loopback fixtures");
+}
 
 const temporaryPaths: string[] = [];
 let relay: ChildProcess | undefined;
@@ -95,13 +104,13 @@ async function waitForHealthz(timeoutMs = 30_000): Promise<void> {
   }
 }
 
-async function issueToken(scope: string): Promise<string> {
+async function issueToken(scope: string, subject = "dev|local-user"): Promise<string> {
   const response = await fetch(`${devAuth!.issuer}oauth/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      sub: "dev|local-user",
+      sub: subject,
       scope,
       audience,
     }),
@@ -132,12 +141,13 @@ async function main(): Promise<void> {
 
   relay = spawn(
     process.execPath,
-    ["--import", "tsx", "apps/relay/src/index.ts"],
+    ["apps/relay/dist/src/index.js"],
     {
       cwd: repositoryRoot,
       env: {
         ...process.env,
         NODE_ENV: "development",
+        GLOSSA_BIND_HOST: "127.0.0.1",
         PORT: relayPort,
         DATABASE_URL: databaseUrl,
         GLOSSA_PUBLIC_ORIGIN: relayOrigin,
@@ -209,6 +219,10 @@ async function main(): Promise<void> {
   console.log("management: device credential lists account devices");
 
   // 3. MCP session with a locally issued token.
+  assert.equal((await fetch(`${relayOrigin}/mcp`)).status, 401);
+  assert.equal((await fetch(`${relayOrigin}/mcp`, {
+    headers: { authorization: `Bearer ${await issueToken("glossa:device")}` },
+  })).status, 403);
   const mcp = new Client({ name: "glossa-integration-smoke", version: "0.0.0" });
   const transport = new StreamableHTTPClientTransport(new URL(`${relayOrigin}/mcp`), {
     requestInit: { headers: { authorization: `Bearer ${await issueToken("glossa:access")}` } },
@@ -222,7 +236,10 @@ async function main(): Promise<void> {
   console.log("mcp: connected, no workspaces yet");
 
   // 4. Live worker and a read_file roundtrip through the relay.
-  const workspace = await temporaryDirectory("glossa-smoke-workspace-");
+  const fixtureRoot = await temporaryDirectory("glossa-smoke-workspace-");
+  const workspace = path.join(fixtureRoot, "workspace");
+  await mkdir(workspace);
+  await writeFile(path.join(fixtureRoot, "outside.txt"), "outside sentinel");
   await writeFile(path.join(workspace, "hello.txt"), "local integration works\n");
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZfKkAAAAASUVORK5CYII=",
@@ -246,8 +263,59 @@ async function main(): Promise<void> {
     const result = await mcp.callTool({ name, arguments: { ...args, workspaceId } });
     assert.notEqual(result.isError, true, JSON.stringify(result.content));
     assert.ok(result.structuredContent);
-    return result.structuredContent;
+    return result.structuredContent as Record<string, unknown>;
   };
+  const expectError = async (name: string, args: Record<string, unknown>, code: string) => {
+    const result = await mcp.callTool({
+      name, arguments: { workspaceId: workspaces[0]!.workspaceId, ...args },
+    });
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result.content), new RegExp(code));
+  };
+  const stranger = new Client({ name: "glossa-other-account", version: "0.0.0" });
+  try {
+    await stranger.connect(new StreamableHTTPClientTransport(new URL(`${relayOrigin}/mcp`), {
+      requestInit: { headers: {
+        authorization: `Bearer ${await issueToken("glossa:access", "dev|other-user")}`,
+      } },
+    }));
+    const hidden = await stranger.callTool({ name: "list_workspaces", arguments: {} });
+    assert.deepEqual((hidden.structuredContent as { workspaces: unknown[] }).workspaces, []);
+    for (const [name, args] of [
+      ["read_file", { path: "hello.txt" }],
+      ["write_file", { path: "hello.txt", content: "cross-account overwrite" }],
+    ] as const) {
+      const denied = await stranger.callTool({
+        name, arguments: { workspaceId: workspaces[0]!.workspaceId, ...args },
+      });
+      assert.equal(denied.isError, true);
+      assert.match(JSON.stringify(denied.content), /device_offline/);
+      assert.doesNotMatch(JSON.stringify(denied.content), /local integration works/);
+    }
+  } finally {
+    await stranger.close();
+  }
+  assert.equal(await readFile(path.join(workspace, "hello.txt"), "utf8"),
+    "local integration works\n");
+  await expectError("read_file", { path: "../outside.txt" }, "path_traversal");
+  await expectError("read_file", { path: path.join(fixtureRoot, "outside.txt") }, "absolute_path");
+
+  await createResourceFiles(workspace);
+  assert.equal((await callWorkerTool("read_file", { path: "limit.txt" })).bytes,
+    MAX_TEXT_BYTES);
+  const limitedRange = await callWorkerTool("read_file_range", {
+    path: "limit.txt", startLine: 1, lineCount: 64,
+  });
+  assert.equal(limitedRange.contentBytes, 65_535);
+  assert.equal(limitedRange.nextLine, 65);
+  const longRange = await callWorkerTool("read_file_range", {
+    path: "long-limit.txt", startLine: 1, lineCount: 2,
+  });
+  assert.equal(longRange.contentBytes, 65_536);
+  assert.equal(longRange.nextLine, 2);
+  await expectError("read_file", { path: "over.txt" }, "file_too_large");
+  await expectError("read_file_range", { path: "long-over.txt" }, "line_too_large");
+  console.log("mcp: OAuth scope, account ownership and exact/over text and range limits passed");
   assert.equal((await callWorkerTool("make_directory", { path: "roundtrip" })).created, true);
   const revision = await callWorkerTool("write_file", { path: "roundtrip/note.txt", content: "first\nsecond\n" });
   assert.match(revision.sha256 as string, /^[a-f0-9]{64}$/);
@@ -264,6 +332,15 @@ async function main(): Promise<void> {
     edits: [{ oldText: "second", newText: "updated" }],
   });
   assert.equal(edited.replacements, 1);
+  await expectError("edit_file", {
+    path: "roundtrip/note.txt", expectedSha256: revision.sha256,
+    edits: [{ oldText: "updated", newText: "must not write" }],
+  }, "stale_revision");
+  await expectError("write_file", {
+    path: "roundtrip/note.txt", expectedSha256: revision.sha256, content: "must not write",
+  }, "stale_revision");
+  assert.equal(await readFile(path.join(workspace, "roundtrip/note.txt"), "utf8"),
+    "first\nupdated\n");
   assert.equal((await callWorkerTool("move_path", { source: "roundtrip/note.txt", destination: "moved.txt" })).movedType, "file");
   assert.equal(await readFile(path.join(workspace, "moved.txt"), "utf8"), "first\nupdated\n");
   assert.equal((await callWorkerTool("delete_path", { path: "moved.txt" })).deletedType, "file");
@@ -278,10 +355,10 @@ async function main(): Promise<void> {
   assert.doesNotMatch(JSON.stringify(missing.content), /ENOENT/);
   console.log("mcp: filesystem mutations, traversal, revision guard and safe missing-file error passed");
 
-  const image = await mcp.callTool({
+  const image = CallToolResultSchema.parse(await mcp.callTool({
     name: "view_image",
     arguments: { workspaceId: workspaces[0]!.workspaceId, path: "pixel.png" },
-  });
+  }));
   assert.equal(image.isError, undefined);
   assert.equal(image.content.length, 1);
   const imageContent = image.content[0];
@@ -362,6 +439,47 @@ async function main(): Promise<void> {
   assert.match(output.content as string, /headless-command-ok/);
   assert.equal((await callWorkerTool("cancel_command", { commandId }, systemId)).status, "succeeded");
   console.log("mcp: command status, output ranges and completed-command cancel idempotence passed");
+
+  const outputBytes = MAX_COMMAND_RETAINED_STREAM_BYTES + 65_536;
+  const noisy = await callWorkerTool("run_command", {
+    command: { argv: [process.execPath, "-e",
+      `process.stdout.write('x'.repeat(${outputBytes})); process.stderr.write('y'.repeat(${outputBytes}))`] },
+    waitMs: 5_000,
+  }, systemId);
+  const noisyDone = await callWorkerTool("get_command", {
+    commandId: noisy.commandId, waitMs: 15_000,
+  }, systemId);
+  assert.equal(noisyDone.status, "succeeded");
+  assert.equal(noisyDone.stdoutTruncated, true);
+  assert.equal(noisyDone.stderrTruncated, true);
+  assert.ok(Buffer.byteLength(String(noisyDone.stdout) + String(noisyDone.stderr))
+    <= MAX_COMMAND_OUTPUT_BYTES);
+  for (const stream of ["stdout", "stderr"]) {
+    const retained = await callWorkerTool("read_command_output", {
+      commandId: noisy.commandId, stream, offset: 0, maxBytes: 65_536,
+    }, systemId);
+    assert.equal(retained.retainedBytes, MAX_COMMAND_RETAINED_STREAM_BYTES);
+    assert.equal(retained.totalBytes, outputBytes);
+    assert.equal(retained.retentionTruncated, true);
+    assert.equal(Buffer.byteLength(retained.content as string), 65_536);
+    assert.equal(retained.nextOffset, 65_536);
+  }
+  console.log("mcp: dual-stream truncation and retained-output byte caps passed");
+
+  const expiring = await callWorkerTool("run_command", {
+    command: { argv: [process.execPath, "-e",
+      "console.log(JSON.stringify({pid:process.pid})); setTimeout(() => {}, 30000)"] },
+    timeoutMs: 500, waitMs: 0,
+  }, systemId);
+  const timeoutStarted = performance.now();
+  const timedOut = await callWorkerTool("get_command", {
+    commandId: expiring.commandId, waitMs: 15_000,
+  }, systemId);
+  assert.equal(timedOut.status, "timed_out");
+  assert.ok(performance.now() - timeoutStarted < 5_000, "command timeout did not release its process");
+  const expiredPid = (JSON.parse(timedOut.stdout as string) as { pid: number }).pid;
+  assert.throws(() => process.kill(expiredPid, 0), { code: "ESRCH" });
+  console.log("mcp: command timeout terminated its child process promptly");
 
   const concurrent = await Promise.all(Array.from({ length: 4 }, (_, index) => callWorkerTool(
     "run_command", {
