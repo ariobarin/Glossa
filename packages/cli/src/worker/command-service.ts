@@ -17,6 +17,7 @@ import {
   RESTRICTED_DATA_ERROR_MESSAGE,
 } from "@glossa/protocol";
 import { BoundedBuffer } from "./bounded-buffer.js";
+import { ignoreProcessError, terminateProcessTree } from "./command-termination.js";
 import { WorkerError } from "./errors.js";
 import type { PathPolicy } from "./path-policy.js";
 
@@ -83,6 +84,7 @@ const RESTRICTED_SCAN_TAIL_BYTES = 1024;
 const COMMAND_RECORD_RETENTION_MS = 5 * 60 * 1000;
 const MAX_RETAINED_COMMAND_RECORDS = 8;
 const MAX_CONCURRENT_COMMANDS = 4;
+const COMMAND_CLEANUP_TIMEOUT_MS = 4000;
 
 interface CommandRecord {
   id: string;
@@ -101,7 +103,12 @@ interface CommandRecord {
   restrictedDataDetected: boolean;
   completion: Promise<void>;
   complete: () => void;
-  requestedTerminal?: "canceled" | "timed_out";
+  closed: Promise<void>;
+  observeClose: () => void;
+  cleanup?: Promise<void>;
+  cleanupFailed: boolean;
+  stop: () => void;
+  disposeObservers: () => void;
   timeout?: NodeJS.Timeout;
 }
 
@@ -138,8 +145,7 @@ function markRestrictedData(record: CommandRecord): void {
   record.stdoutScanTail = Buffer.alloc(0);
   record.stderrScanTail = Buffer.alloc(0);
   if (record.status === "running") {
-    record.requestedTerminal = "canceled";
-    void terminateProcessTree(record.child).catch(() => undefined);
+    record.stop();
   }
   markChanged(record);
 }
@@ -410,40 +416,59 @@ function shellInvocation(command: string): { file: string; args: string[] } {
   return { file: process.env.SHELL ?? "/bin/sh", args: ["-lc", command] };
 }
 
-async function terminateProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (!child.pid || child.exitCode !== null) return;
-  if (process.platform === "win32") {
-    await new Promise<void>((resolve) => {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      killer.once("error", () => resolve());
-      killer.once("close", () => resolve());
-    });
-    return;
-  }
-
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch {
-    child.kill("SIGTERM");
-  }
-  await delay(2_000);
-  if (child.exitCode === null) {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      child.kill("SIGKILL");
-    }
-  }
-}
-
 export class CommandService {
   readonly #commands = new Map<string, CommandRecord>();
   #shuttingDown = false;
+  #cleanupFailed = false;
 
-  constructor(readonly policy: PathPolicy) {}
+  constructor(
+    readonly policy: PathPolicy,
+    private readonly terminate = terminateProcessTree,
+  ) {}
+
+  #finish(record: CommandRecord, status: CommandStatus): void {
+    if (record.status !== "running") return;
+    if (record.timeout) clearTimeout(record.timeout);
+    record.status = status;
+    record.finishedAt = Date.now();
+    record.stdoutScanTail = Buffer.alloc(0);
+    record.stderrScanTail = Buffer.alloc(0);
+    record.disposeObservers();
+    markChanged(record);
+    record.complete();
+    this.#scheduleDeletion(record.id);
+  }
+
+  #cleanup(
+    record: CommandRecord,
+    status: "canceled" | "timed_out" | "failed",
+  ): Promise<void> {
+    if (record.cleanup) return record.cleanup;
+    if (record.status !== "running") return Promise.resolve();
+    if (record.timeout) clearTimeout(record.timeout);
+    record.cleanup = Promise.resolve().then(async () => {
+      if (record.status !== "running") return;
+      let timer!: NodeJS.Timeout;
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Command cleanup timed out.")),
+          COMMAND_CLEANUP_TIMEOUT_MS,
+        );
+      });
+      try {
+        await Promise.race([this.terminate(record.child), deadline]);
+        await Promise.race([record.closed, deadline]);
+        this.#finish(record, status);
+      } catch {
+        record.cleanupFailed = true;
+        this.#cleanupFailed = true;
+        this.#finish(record, "failed");
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+    return record.cleanup;
+  }
 
   #pruneRetainedCommands(): void {
     while (this.#commands.size >= MAX_RETAINED_COMMAND_RECORDS) {
@@ -467,6 +492,7 @@ export class CommandService {
   }
 
   async start(options: StartCommandOptions): Promise<CommandSnapshot> {
+    if (this.#cleanupFailed) throw new WorkerError("command_cleanup_failed");
     if (this.#shuttingDown) {
       throw new WorkerError("worker_shutting_down", "The worker is shutting down.");
     }
@@ -537,6 +563,10 @@ export class CommandService {
     const completion = new Promise<void>((resolve) => {
       complete = resolve;
     });
+    let observeClose!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      observeClose = resolve;
+    });
     const id = randomUUID();
     const record: CommandRecord = {
       id,
@@ -552,49 +582,82 @@ export class CommandService {
       restrictedDataDetected: false,
       completion,
       complete,
+      closed,
+      observeClose,
+      cleanupFailed: false,
+      stop: () => {
+        void this.#cleanup(record, "canceled");
+      },
+      disposeObservers: () => {
+        child.stdout.removeListener("data", onStdout);
+        child.stderr.removeListener("data", onStderr);
+        child.stdout.removeListener("error", onError);
+        child.stderr.removeListener("error", onError);
+        child.removeListener("error", onError);
+        child.removeListener("close", onClose);
+        child.on("error", ignoreProcessError);
+        child.stdin.removeListener("error", ignoreProcessError);
+        for (const stream of [child.stdin, child.stdout, child.stderr]) {
+          stream.on("error", ignoreProcessError);
+          stream.destroy();
+        }
+        child.unref();
+      },
     };
     record.timeout = setTimeout(() => {
       if (record.status !== "running") return;
-      record.requestedTerminal = "timed_out";
-      void terminateProcessTree(child);
+      void this.#cleanup(record, "timed_out");
     }, timeoutMs);
     record.timeout.unref();
     this.#pruneRetainedCommands();
     this.#commands.set(id, record);
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    const onStdout = (chunk: Buffer) => {
       recordCommandOutput(record, "stdout", chunk);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
+    };
+    const onStderr = (chunk: Buffer) => {
       recordCommandOutput(record, "stderr", chunk);
-    });
-    child.once("error", (error) => {
+    };
+    const onError = (error: Error) => {
       if (record.status !== "running") return;
-      if (record.timeout) clearTimeout(record.timeout);
-      record.status = "failed";
-      record.finishedAt = Date.now();
-      recordCommandOutput(record, "stderr", Buffer.from(error.message, "utf8"));
-      markChanged(record);
-      record.complete();
-      this.#scheduleDeletion(id);
-    });
-    child.once("close", (exitCode, signal) => {
+      if (child.pid) {
+        void this.#cleanup(record, "failed");
+      } else {
+        record.observeClose();
+        recordCommandOutput(record, "stderr", Buffer.from(error.message, "utf8"));
+        this.#finish(record, "failed");
+      }
+    };
+    const onClose = (exitCode: number | null, signal: NodeJS.Signals | null) => {
       if (record.status !== "running") return;
-      if (record.timeout) clearTimeout(record.timeout);
-      record.finishedAt = Date.now();
       record.exitCode = exitCode;
       record.signal = signal;
-      record.status = record.requestedTerminal ?? (exitCode === 0 ? "succeeded" : "failed");
-      markChanged(record);
-      record.complete();
-      this.#scheduleDeletion(id);
-    });
+      record.observeClose();
+      if (!record.cleanup) {
+        this.#finish(record, exitCode === 0 ? "succeeded" : "failed");
+      }
+    };
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.stdout.on("error", onError);
+    child.stderr.on("error", onError);
+    child.stdin.on("error", ignoreProcessError);
+    child.on("error", onError);
+    child.once("close", onClose);
     if (options.stdin !== undefined) child.stdin.end(options.stdin);
     else child.stdin.end();
 
     await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
+      const onSpawn = () => {
+        child.removeListener("error", onSpawnError);
+        resolve();
+      };
+      const onSpawnError = (error: Error) => {
+        child.removeListener("spawn", onSpawn);
+        reject(error);
+      };
+      child.once("spawn", onSpawn);
+      child.once("error", onSpawnError);
     }).catch(async () => {
       await record.completion;
       if (record.restrictedDataDetected) throw restrictedDataError();
@@ -662,6 +725,7 @@ export class CommandService {
         "Command output range must be between 4 and 65536 source bytes.",
       );
     }
+    if (record.cleanupFailed) throw new WorkerError("command_cleanup_failed");
     if (record.restrictedDataDetected) throw restrictedDataError();
     const stream = record[streamName];
     if (offset > stream.retained.byteLength) {
@@ -693,23 +757,19 @@ export class CommandService {
     const record = this.#commands.get(commandId);
     if (!record) throw new WorkerError("command_not_found", "The command was not found.");
     if (record.status !== "running") return this.snapshot(record);
-    record.requestedTerminal = "canceled";
-    await terminateProcessTree(record.child);
-    await record.completion;
+    await this.#cleanup(record, "canceled");
     return this.snapshot(record);
   }
 
   async shutdown(): Promise<void> {
     this.#shuttingDown = true;
     const running = [...this.#commands.values()].filter((record) => record.status === "running");
-    for (const record of running) record.requestedTerminal = "canceled";
-    await Promise.all(running.map(async (record) => {
-      await terminateProcessTree(record.child);
-      await record.completion;
-    }));
+    await Promise.all(running.map((record) => this.#cleanup(record, "canceled")));
+    if (this.#cleanupFailed) throw new WorkerError("command_cleanup_failed");
   }
 
   private snapshot(record: CommandRecord): CommandSnapshot {
+    if (record.cleanupFailed) throw new WorkerError("command_cleanup_failed");
     if (record.restrictedDataDetected) throw restrictedDataError();
     const output = renderOutput(
       record.stdout,
