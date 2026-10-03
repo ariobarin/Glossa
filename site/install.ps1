@@ -2,6 +2,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function Invoke-GlossaInstaller {
+    # Binary downloads need neither HTML parsing nor per-chunk progress rendering.
+    $ProgressPreference = "SilentlyContinue"
     if ($env:OS -ne "Windows_NT") {
         throw "This installer supports Windows. Use https://glossa.sh/install.sh on macOS or Linux."
     }
@@ -22,7 +24,7 @@ function Invoke-GlossaInstaller {
         "Accept" = "application/vnd.github+json"
         "User-Agent" = "glossa-installer"
     }
-    $releases = Invoke-RestMethod -Uri $api -Headers $headers
+    $releases = Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 30
     $selected = $null
     foreach ($release in $releases) {
         if ($release.draft -or -not $release.tag_name.StartsWith("cli-v")) {
@@ -56,8 +58,8 @@ function Invoke-GlossaInstaller {
 
     try {
         Write-Host "Installing Glossa $($selected.Version)..."
-        Invoke-WebRequest -Uri $selected.BinaryUrl -OutFile $download -Headers $headers
-        Invoke-WebRequest -Uri $selected.ChecksumUrl -OutFile $checksumFile -Headers $headers
+        Invoke-WebRequest -Uri $selected.BinaryUrl -OutFile $download -Headers $headers -UseBasicParsing -TimeoutSec 120
+        Invoke-WebRequest -Uri $selected.ChecksumUrl -OutFile $checksumFile -Headers $headers -UseBasicParsing -TimeoutSec 30
         $checksumLine = (Get-Content -LiteralPath $checksumFile -Raw).Trim()
         if ($checksumLine -notmatch '^([a-fA-F0-9]{64})\s+\*?(.+)$' -or $Matches[2] -ne $asset) {
             throw "The Glossa checksum file was invalid."

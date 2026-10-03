@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "npm run clean && npm run build --workspace @glossa/protocol && npm run build --workspace @ariobarin/glossa && npm run build --workspace @glossa/relay",
-    "check": "npm run docs:build && npm run site:check && npm run review:check && npm run build && npm test && npm run cli:smoke:update",
+    "check": "npm run docs:build && npm run site:check && npm run review:check && npm run build && npm run cli:smoke && npm test && npm run cli:smoke:update",
     "clean": "node scripts/clean.mjs",
     "dev": "npm run build --workspace @glossa/protocol && npm run dev --workspace @glossa/relay",
     "dev:auth": "node --import tsx scripts/dev-auth.ts",
@@ -35,7 +35,8 @@
     "review:check:production": "node scripts/check-production-review-surface.mjs",
     "review:check:plugin": "node scripts/check-plugin-package.mjs",
     "review:check:submission": "npm run check && npm run review:check:production && npm audit --audit-level=high && npm run review:check:plugin && npm pack --workspace @ariobarin/glossa --dry-run && git diff --check",
-    "review:fixture:prepare": "node scripts/prepare-app-review-workspace.mjs --reset"
+    "review:fixture:prepare": "node scripts/prepare-app-review-workspace.mjs --reset",
+    "cli:smoke": "node packages/cli/scripts/smoke-standalone.mjs node packages/cli/dist/main.js"
   },
   "license": "MIT",
   "devDependencies": {
