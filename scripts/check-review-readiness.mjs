@@ -140,8 +140,10 @@ const mcpSource = await readFile(
   join(repositoryRoot, "apps", "relay", "src", "mcp.ts"),
   "utf8",
 );
+const mcpCopy = await readFile(join(repositoryRoot, "apps/relay/src/mcp-copy.ts"), "utf8");
+const mcpResults = await readFile(join(repositoryRoot, "apps/relay/src/mcp-results.ts"), "utf8");
 const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "3.1.0", "MCP public contract must be 3.1.0");
+assert.equal(contractVersion, "3.2.0", "MCP public contract must be 3.2.0");
 
 const expectedTools = [
   "list_workspaces",
@@ -181,7 +183,7 @@ const expectedToolAnnotations = {
 };
 for (const tool of expectedTools) {
   assert.ok(
-    new RegExp(`\\n  ${tool}: \\{[\\s\\S]*?description: "Use this `).test(mcpSource),
+    new RegExp(`\\n  ${tool}: \\{[\\s\\S]*?description: "Use this `).test(mcpCopy),
     `${tool} must publish a when-to-use description`,
   );
   const registration = mcpSource.match(
@@ -204,14 +206,14 @@ assert.ok(
   "list_workspaces must expose access profiles and permissions",
 );
 assert.ok(
-  mcpSource.includes("command_access_disabled") &&
-    mcpSource.includes("write_access_disabled"),
+  mcpResults.includes("command_access_disabled") &&
+    mcpResults.includes("write_access_disabled"),
   "MCP must expose actionable permission errors",
 );
 assert.ok(
-  mcpSource.includes("RESTRICTED_DATA_ERROR_CODE") &&
-    mcpSource.includes("authentication secrets") &&
-    mcpSource.includes("defense in depth, not a sandbox"),
+  mcpResults.includes("RESTRICTED_DATA_ERROR_CODE") &&
+    mcpCopy.includes("authentication secrets") &&
+    mcpCopy.includes("defense in depth, not a sandbox"),
   "MCP must expose the restricted-data boundary and its limitation",
 );
 
@@ -283,7 +285,7 @@ await requiredText("docs/restricted-data.md", [
   "npm run restricted-output",
 ]);
 const submissionPacket = await requiredText("docs/app-submission-packet.md", [
-  "MCP tool contract: `3.1.0`",
+  "MCP tool contract: `3.2.0`",
   "Portal-ready MCP values",
   "MCP Server URL type: Universal",
   "global data residency",
