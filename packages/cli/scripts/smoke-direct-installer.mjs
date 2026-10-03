@@ -70,6 +70,7 @@ function run(command, args, environment) {
     const child = spawn(command, args, {
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: 60_000,
     });
     let stdout = "";
     let stderr = "";
@@ -95,7 +96,7 @@ try {
   const installer = process.platform === "win32"
     ? await run(
         "powershell.exe",
-        ["-NoLogo", "-NoProfile", "-File", "site/install.ps1"],
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", "site/install.ps1"],
         environment,
       )
     : await run("sh", ["site/install.sh"], environment);
