@@ -88,7 +88,7 @@ Headless mode omits the HUD and activity history; all workspace options still ap
 
 ## Updates
 
-Glossa checks the stable release channel at most once per day before connecting and prints a notice by default.
+Glossa checks at most daily before connecting. Update notices persist until installed or a check finds no newer release. Version or channel changes clear them; `off` hides them.
 
 ```shell
 glossa update --check
