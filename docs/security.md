@@ -115,7 +115,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 
 - require explicit OAuth authorization and the `glossa:access` scope;
 - publish accurate MCP tool schemas, output contracts, side-effect annotations, and use/disallow descriptions;
-- tell the model not to use Glossa for general questions, web research, built-in ChatGPT tasks, credential inspection, or work unrelated to the local workspace;
+- describe workspace capabilities and limits while leaving task routing to the client;
 - expose only one narrow root per worker and reject implicit home or filesystem-root exposure;
 - let the user select `read-only`, `workspace`, or explicit `system` authority at startup;
 - enforce the selected authority in both the relay and local worker;
@@ -123,7 +123,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 - show the selected profile and compact write or command activity in interactive sessions;
 - require explicit `--headless` startup for sessions without the local status and activity UI;
 - provide immediate disconnect, logout, and device revocation controls;
-- treat all file and command output as untrusted data rather than instructions;
+- rely on the client to interpret file and command output as data, not authority;
 - reject recognizable authentication secrets in mutation and command inputs before relay dispatch, and suppress recognizable credential material before file or command results leave the worker.
 
 ### Permission downgrade or metadata mismatch
@@ -137,7 +137,7 @@ Device management authority is scoped to the token's own account, and enrolling 
 - expose the profile and derived booleans through `list_workspaces`;
 - reject writes and commands before relay dispatch when permission is absent;
 - reject the same operations again inside `LocalWorker`;
-- return stable, actionable `write_access_disabled` and `command_access_disabled` errors that tell the model not to retry or bypass the boundary;
+- return stable `write_access_disabled` and `command_access_disabled` errors identifying the access requirement;
 - cover all profiles at the CLI, relay, MCP, and local-worker test layers.
 
 ### Path escape
@@ -166,8 +166,8 @@ Device management authority is scoped to the token's own account, and enrolling 
 
 - make `workspace`, not `system`, the default;
 - require the user to start `glossa --access system` explicitly;
-- disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
-- tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
+- describe local account authority in MCP context, with detailed disclosures in CLI help, HUD, quickstart, terms, security pages, and reviewer material;
+
 - reject recognizable authentication-secret inputs at the relay and worker;
 - scan textual file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, request bounded process-tree cleanup, and return `restricted_data_blocked` or `command_cleanup_failed` without matched data;
 - never enumerate, persist, or log environment variables automatically;

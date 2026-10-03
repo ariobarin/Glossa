@@ -8,6 +8,4 @@ Glossa connects ChatGPT to a folder on your computer. It can read and edit files
 
 Use a ChatGPT model that supports custom apps with [full MCP access](https://developers.openai.com/api/docs/guides/developer-mode) for Glossa's read and write tools. Available usage depends on your plan and model. [ChatGPT Work shares Codex usage](https://learn.chatgpt.com/docs/pricing), so use regular ChatGPT chat.
 
-General questions, writing, and web research stay in ChatGPT.
-
 <p class="docs-action-row"><a class="primary-action" href="/docs/quickstart">Quickstart</a></p>

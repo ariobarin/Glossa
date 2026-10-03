@@ -28,7 +28,7 @@ Do not submit by treating metadata, a user checkbox, or the detector below as a 
 
 The authentication-secret guard below is not a detector for payment-card data, protected health information, or government identifiers. Adding a few card-number or identifier regular expressions would not solve the policy boundary and could create false confidence. Glossa does not attempt to infer whether arbitrary source text is PHI.
 
-Public product language, server instructions, terms, and reviewer tests prohibit using Glossa with these categories. That reduces intentional misuse but does not prevent accidental presence in a selected workspace. A reviewer-facing decision must therefore address the architecture, not merely add more patterns.
+The public terms and reviewer tests address these categories; MCP descriptions cover capabilities rather than repeating policy. That reduces intentional misuse but does not prevent accidental presence in a selected workspace. A reviewer-facing decision must therefore address the architecture, not merely add more patterns.
 
 ## Tool-surface policy analysis
 

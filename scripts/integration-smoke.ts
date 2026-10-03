@@ -501,7 +501,7 @@ async function main(): Promise<void> {
   });
   assert.equal(overCapacity.isError, true);
   assert.match(JSON.stringify(overCapacity.content), /command_busy/);
-  assert.match(JSON.stringify(overCapacity.content), /concurrent command limit/);
+
 
   const observing = callWorkerTool("get_command", { commandId: concurrent[0]!.commandId, waitMs: 15_000 }, systemId);
   const cancelStarted = performance.now();

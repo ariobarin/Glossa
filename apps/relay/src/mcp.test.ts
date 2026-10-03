@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
@@ -73,7 +73,7 @@ const expectedToolAnnotations: Record<string, {
 const accountId = "00000000-0000-4000-8000-000000000001";
 const product = {
   name: "Glossa",
-  description: "Bridge ChatGPT to a user-controlled local development workspace and its existing toolchain through an outbound worker.",
+  description: "File access and command execution in the user's connected workspaces.",
   contractVersion: MCP_SERVER_VERSION,
 };
 const managedDocumentationUrl = "https://glossa.sh/docs/quickstart";
@@ -112,50 +112,29 @@ function testConfig(publicOrigin = "https://mcp.glossa.sh") {
   });
 }
 
-test("publishes reviewable MCP tool contracts", async (context) => {
-  const state = new RouterState();
-  const server = createMcpServer(
-    testConfig(),
-    state,
-    accountId,
-  );
-  const client = new Client({ name: "glossa-contract-test", version: "1.0.0" });
+async function connectMcp(
+  context: TestContext,
+  state: RouterState,
+  config = testConfig(),
+) {
+  const server = createMcpServer(config, state, accountId);
+  const client = new Client({ name: "glossa-mcp-test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-
   context.after(async () => {
     await Promise.allSettled([client.close(), server.close()]);
   });
-
   await server.connect(serverTransport);
   await client.connect(clientTransport);
+  return client;
+}
 
-  assert.equal(MCP_SERVER_VERSION, "3.1.0");
+test("publishes reviewable MCP tool contracts", async (context) => {
+  const state = new RouterState();
+  const client = await connectMcp(context, state);
+
+  assert.equal(MCP_SERVER_VERSION, "3.2.0");
   assert.equal(client.getServerVersion()?.version, MCP_SERVER_VERSION);
   assert.equal(client.getInstructions(), MCP_SERVER_INSTRUCTIONS);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Use Glossa only for a local development workspace/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use Glossa for general questions, web research, built-in ChatGPT tasks/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /The Glossa CLI shows a short pairing code that the user redeems on the Glossa control panel; pairing never happens through an MCP tool/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /inspect accessProfile and permissions/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /never write when writeFiles is false or run commands when runCommands is false/);
-  const instructionPrefix = MCP_SERVER_INSTRUCTIONS.slice(0, 512);
-  assert.match(instructionPrefix, /list_workspaces/);
-  assert.match(instructionPrefix, /accessProfile and permissions/);
-  assert.match(instructionPrefix, /never write when writeFiles is false or run commands when runCommands is false/);
-  assert.match(instructionPrefix, /untrusted data/);
-  assert.match(instructionPrefix, /Restricted Data/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /inherited environment and credentials, and network access/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Do not use commands to inspect secrets, bypass file-tool boundaries/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /planning alone are read-only/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /Change and fix requests authorize only scoped edits/);
-  assert.match(MCP_SERVER_INSTRUCTIONS, /A build request authorizes the requested build command only when system access is already enabled/);
-  assert.match(
-    MCP_SERVER_INSTRUCTIONS,
-    /Never request, pass, or return Restricted Data.*access credentials,? or authentication secrets/,
-  );
-  assert.match(
-    MCP_SERVER_INSTRUCTIONS,
-    /local worker suppresses recognizable credential material.*view_image.*opaque.*Restricted Data.*defense in depth, not a sandbox/,
-  );
 
   const openAIToolListSchema = z.object({
     tools: z.array(z.object({
@@ -186,7 +165,6 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   for (const tool of tools) {
     assert.equal(tool.title, expectedToolTitles[tool.name]);
     assert.ok(tool.description, `${tool.name} must have a description`);
-    assert.match(tool.description, /^Use this /, `${tool.name} must state when to use it`);
     assert.ok(tool.inputSchema, `${tool.name} must have an input schema`);
     assert.ok(tool.outputSchema, `${tool.name} must have an output schema`);
     assertFieldDescriptions(
@@ -251,48 +229,16 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("run_command")?.annotations?.readOnlyHint, false);
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
-  assert.match(
-    byName.get("run_command")?.description ?? "",
-    /accessProfile system.*permissions\.runCommands true.*full permissions.*inherited environment and credentials.*network access.*not confined to the exposed root.*may affect local or external systems/,
-  );
-  assert.match(
-    byName.get("run_command")?.description ?? "",
-    /Do not use it for general web research, credential or environment inspection, bypassing file-tool boundaries/,
-  );
-  assert.match(
-    byName.get("run_command")?.description ?? "",
-    /Inputs that appear to contain access credentials are rejected.*output appears to contain them.*suppresses the output and stops the command/,
-  );
-  assert.match(
-    byName.get("run_command")?.description ?? "",
-    /waitMs 0.*1500 to 2000.*default is 750/i,
-  );
   const argvCommandSchema = commandSchema?.anyOf?.find((branch) =>
     branch.properties?.argv
   );
   const shellCommandSchema = commandSchema?.anyOf?.find((branch) =>
     branch.properties?.shellCommand
   );
-  assert.match(
-    String(argvCommandSchema?.properties?.argv?.description),
-    /Preferred for native executables.*without shell startup.*Windows.*npm/,
-  );
-  assert.match(
-    String(shellCommandSchema?.properties?.shellCommand?.description),
-    /Use when shell features are required.*Windows.*npm.*PowerShell/,
-  );
-  assert.match(
-    String(runCommandInput.properties?.waitMs?.description),
-    /Use 0.*1500 to 2000.*Defaults to 750/,
-  );
   const readCommandOutputTool = byName.get("read_command_output");
   assert.equal(readCommandOutputTool?.annotations?.readOnlyHint, true);
   assert.equal(readCommandOutputTool?.annotations?.destructiveHint, false);
   assert.equal(readCommandOutputTool?.annotations?.openWorldHint, false);
-  assert.match(
-    readCommandOutputTool?.description ?? "",
-    /workspaceId and commandId.*one bounded retained byte range.*without rerunning.*Follow nextOffset.*transient.*capped per stream.*deleted with the command record/,
-  );
   const readCommandOutputInputSchema = readCommandOutputTool?.inputSchema as {
     required?: string[];
     properties?: Record<string, { description?: unknown }>;
@@ -300,18 +246,6 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(readCommandOutputInputSchema.required?.includes("workspaceId"), true);
   assert.equal(readCommandOutputInputSchema.required?.includes("commandId"), true);
   assert.equal(readCommandOutputInputSchema.required?.includes("stream"), true);
-  assert.match(
-    String(readCommandOutputInputSchema.properties?.maxBytes?.description),
-    /4 through 65536.*Defaults to 32768/,
-  );
-  assert.match(
-    MCP_SERVER_INSTRUCTIONS,
-    /output is truncated.*read_command_output.*workspaceId and commandId.*rather than rerunning/,
-  );
-  assert.match(
-    byName.get("list_workspaces")?.description ?? "",
-    /no earlier Glossa result identifies.*required permission is unknown.*only the routing identifier, optional user-chosen label, access profile, and permissions.*Do not call it repeatedly.*ambiguous.*unique --label.*empty result includes setup guidance/,
-  );
   assert.doesNotMatch(
     JSON.stringify(byName.get("list_workspaces")?.outputSchema),
     /\bWindows\b/,
@@ -383,37 +317,29 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("edit_file")?.annotations?.readOnlyHint, false);
   assert.equal(byName.get("edit_file")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("edit_file")?.annotations?.openWorldHint, false);
-  assert.match(byName.get("edit_file")?.description ?? "", /exactly once/);
-  assert.match(byName.get("read_file")?.description ?? "", /access credentials or authentication secrets.*use read_file_range/);
-  assert.match(
-    byName.get("view_image")?.description ?? "",
-    /PNG, JPEG, or WebP.*native MCP image content.*does not OCR or transform.*opaque to Glossa's text secret detector.*Restricted Data/,
-  );
   const viewImageOutput = byName.get("view_image")?.outputSchema as JsonSchemaNode;
   assert.ok(viewImageOutput.properties?.mimeType);
   assert.ok(viewImageOutput.properties?.bytes);
   assert.ok(viewImageOutput.properties?.sha256);
   assert.equal(viewImageOutput.properties?.data, undefined);
-  assert.match(byName.get("read_file_range")?.description ?? "", /use read_file/i);
-  assert.match(byName.get("write_file")?.description ?? "", /without expectedSha256.*fails if the path already exists.*with expectedSha256.*exact existing revision.*use edit_file/i);
-  assert.match(byName.get("edit_file")?.description ?? "", /use write_file/i);
-  assert.match(byName.get("search_text")?.description ?? "", /literal or regex.*include\/exclude glob.*structured controls.*run_command\/ripgrep/);
-  assert.match(byName.get("get_command")?.description ?? "", /afterSequence with waitMs/);
-  assert.match(byName.get("cancel_command")?.description ?? "", /does not undo.*effects/);
   const writeFileSchema = byName.get("write_file")?.inputSchema as {
     properties?: Record<string, { description?: unknown }>;
   };
   const editFileSchema = byName.get("edit_file")?.inputSchema as {
     properties?: Record<string, { description?: unknown }>;
   };
-  assert.match(
-    String(writeFileSchema.properties?.expectedSha256?.description),
-    /read_file or read_file_range.*omit only when creating.*replaces exactly.*missing or changed/i,
-  );
-  assert.match(
-    String(editFileSchema.properties?.expectedSha256?.description),
-    /read_file or read_file_range.*edit fails if the file changed/,
-  );
+
+  for (const [name, args] of [
+    ["read_file", { workspaceId: accountId, path: "README.md", extra: true }],
+    ["run_command", { workspaceId: accountId, command: {} }],
+    ["run_command", { workspaceId: accountId, command: { argv: ["node"], shellCommand: "node" } }],
+    ["edit_file", { workspaceId: accountId, path: "README.md", edits: [
+      { oldText: "x".repeat(1024 * 1024), newText: "y".repeat(1024 * 1024) },
+      { oldText: "extra", newText: "extra" },
+    ] }],
+  ] as const) {
+    assert.equal((await client.callTool({ name, arguments: args })).isError, true);
+  }
 
   const result = await client.callTool({
     name: "list_workspaces",
@@ -425,16 +351,8 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     documentationUrl: managedDocumentationUrl,
     workspaces: [],
     availability: "offline",
-    message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
+    message: "No Glossa workspaces are online.",
   });
-  assert.match(
-    String(result.structuredContent?.message),
-    /open a terminal.*run `glossa`.*Keep that terminal open.*Retry only after the user confirms/,
-  );
-  assert.match(
-    String(result.structuredContent?.message),
-    /https:\/\/glossa\.sh\/docs\/quickstart/,
-  );
   assert.deepEqual(result.content, [
     {
       type: "text",
@@ -443,7 +361,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
         documentationUrl: managedDocumentationUrl,
         workspaces: [],
         availability: "offline",
-        message: "No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and run `glossa`. Keep that terminal open. Retry only after the user confirms the workspace is running. See https://glossa.sh/docs/quickstart for setup help.",
+        message: "No Glossa workspaces are online.",
       }),
     },
   ]);
@@ -472,7 +390,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       },
     }],
     availability: "online",
-    message: "Glossa workspaces are available. Select one whose permissions match the requested operation.",
+    message: "Glossa workspaces are online.",
   });
 
   const selfHostedState = new RouterState();
@@ -505,19 +423,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
       .documentationUrl,
     selfHostingDocumentationUrl,
   );
-  assert.match(
-    selfHostedMessage,
-    /https:\/\/github\.com\/ariobarin\/glossa\/blob\/main\/docs\/self-hosting\.md/,
-  );
-  assert.doesNotMatch(
-    selfHostedMessage,
-    /glossa\.sh\/docs\/quickstart/,
-  );
-  assert.equal(
-    selfHostedMessage,
-    `No Glossa workspaces are online. Ask the user to open a terminal in the workspace they want to expose and start Glossa using the platform-specific worker command at ${selfHostingDocumentationUrl}. Keep that terminal open. Retry only after the user confirms the workspace is running.`,
-  );
-  assert.doesNotMatch(selfHostedMessage, /run `glossa`/);
+  assert.equal(selfHostedMessage, "No Glossa workspaces are online.");
 
   selfHostedState.register(
     accountId,
@@ -571,7 +477,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(logout.isError, undefined);
   assert.deepEqual(logout.structuredContent, {
     logoutUrl,
-    instructions: `The Glossa CLI keeps no account session: a computer is either paired or not. To detach a computer, run glossa unpair on it. To switch the account a computer pairs to, end the Auth0 browser session by opening ${logoutUrl}, run glossa unpair on that computer, start glossa there again, and redeem its new pairing code on the control panel while signed in to the intended account. Disconnect and reconnect Glossa in ChatGPT if you are switching the ChatGPT authorization too.`,
+    instructions: "Sign out on the Glossa control panel. To change a computer's account, stop Glossa, run `glossa unpair`, then restart and pair with the new account. Reconnect the Glossa app in ChatGPT to change its account.",
   });
   assert.doesNotMatch(JSON.stringify(logout.structuredContent), /Google/);
 
@@ -581,7 +487,7 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   });
   assert.match(
     JSON.stringify(selfHostedLogout.structuredContent),
-    /run glossa unpair/,
+    /glossa unpair/,
   );
   assert.doesNotMatch(JSON.stringify(selfHostedLogout.structuredContent), /Google/);
 });
@@ -594,14 +500,7 @@ test("returns workspace images as native MCP image content without duplicating b
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
     accessProfile: "read-only",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-image-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const data = "iVBORw0KGgo=";
   const call = client.callTool({
@@ -642,6 +541,17 @@ test("returns workspace images as native MCP image content without duplicating b
     mimeType: "image/png",
   }]);
   assert.doesNotMatch(JSON.stringify(result.structuredContent), new RegExp(data));
+  const invalid = client.callTool({ name: "view_image", arguments: { workspaceId: workerId, path: "invalid.png" } });
+  const invalidJob = await state.poll(accountId, deviceId, workerId, session.generation, 100);
+  assert.ok(invalidJob);
+  state.complete(accountId, workerId, { requestId: invalidJob.requestId, ok: true, value: {
+    data, mimeType: "image/png", sha256: "0".repeat(64), bytes: 123,
+  } });
+  const invalidResult = await invalid;
+  assert.equal(invalidResult.isError, true);
+  assert.match(JSON.stringify(invalidResult.content), /invalid_worker_result/);
+  assert.doesNotMatch(JSON.stringify(invalidResult), new RegExp(data));
+
 });
 
 test("returns an actionable upgrade error instead of dispatching images to legacy workers", async (context) => {
@@ -659,14 +569,7 @@ test("returns an actionable upgrade error instead of dispatching images to legac
       commandOutputRanges: true,
     },
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-image-legacy-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const result = await client.callTool({
     name: "view_image",
@@ -675,7 +578,6 @@ test("returns an actionable upgrade error instead of dispatching images to legac
   assert.equal(result.isError, true);
   const content = JSON.stringify(result.content);
   assert.match(content, /worker_protocol_unsupported/);
-  assert.match(content, /older Glossa CLI/);
   assert.match(content, /Update Glossa/);
   assert.equal(
     await state.poll(
@@ -694,7 +596,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
   const state = new RouterState();
   const readOnlyWorkerId = "00000000-0000-4000-8000-000000000030";
   const workspaceWorkerId = "00000000-0000-4000-8000-000000000031";
-  state.register(
+  const readOnlySession = state.register(
     accountId,
     "00000000-0000-4000-8000-000000000032",
     "Review PC",
@@ -703,7 +605,7 @@ test("returns actionable permission errors without dispatching forbidden work", 
       accessProfile: "read-only",
     },
   );
-  state.register(
+  const workspaceSession = state.register(
     accountId,
     "00000000-0000-4000-8000-000000000033",
     "Review PC",
@@ -712,60 +614,40 @@ test("returns actionable permission errors without dispatching forbidden work", 
       accessProfile: "workspace",
     },
   );
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-permission-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
-  const writeResult = await client.callTool({
-    name: "write_file",
-    arguments: {
-      workspaceId: readOnlyWorkerId,
-      path: "README.md",
-      content: "not dispatched",
-    },
-  });
-  assert.equal(writeResult.isError, true);
-  assert.match(JSON.stringify(writeResult.content), /write_access_disabled/);
-  assert.match(JSON.stringify(writeResult.content), /Do not retry/);
-  assert.match(JSON.stringify(writeResult.content), /workspace access/);
-
-  const deleteResult = await client.callTool({
-    name: "delete_path",
-    arguments: {
-      workspaceId: readOnlyWorkerId,
-      path: "README.md",
-    },
-  });
-  assert.equal(deleteResult.isError, true);
-  assert.match(JSON.stringify(deleteResult.content), /write_access_disabled/);
-
-  const commandResult = await client.callTool({
-    name: "run_command",
-    arguments: {
-      workspaceId: workspaceWorkerId,
-      command: { argv: ["node", "--version"] },
-    },
-  });
-  assert.equal(commandResult.isError, true);
-  assert.match(JSON.stringify(commandResult.content), /command_access_disabled/);
-  assert.match(JSON.stringify(commandResult.content), /Do not retry/);
-  assert.match(JSON.stringify(commandResult.content), /system access/);
-
-  const outputResult = await client.callTool({
-    name: "read_command_output",
-    arguments: {
-      workspaceId: workspaceWorkerId,
-      commandId: "00000000-0000-4000-8000-000000000039",
-      stream: "stdout",
-    },
-  });
-  assert.equal(outputResult.isError, true);
-  assert.match(JSON.stringify(outputResult.content), /command_access_disabled/);
+  const fileCalls = [
+    ["write_file", { path: "README.md", content: "not dispatched" }],
+    ["edit_file", { path: "README.md", edits: [{ oldText: "old", newText: "new" }] }],
+    ["make_directory", { path: "build" }],
+    ["delete_path", { path: "README.md", recursive: true }],
+    ["move_path", { source: "README.md", destination: "archive.md" }],
+  ] as const;
+  const commandId = "00000000-0000-4000-8000-000000000039";
+  const commandCalls = [
+    ["run_command", { command: { argv: ["node", "--version"] } }],
+    ["get_command", { commandId }],
+    ["read_command_output", { commandId, stream: "stdout" }],
+    ["cancel_command", { commandId }],
+  ] as const;
+  for (const [workspaceId, calls, code] of [
+    [readOnlyWorkerId, fileCalls, "write_access_disabled"],
+    [readOnlyWorkerId, commandCalls, "command_access_disabled"],
+    [workspaceWorkerId, commandCalls, "command_access_disabled"],
+  ] as const) {
+    for (const [name, args] of calls) {
+      const result = await client.callTool({ name, arguments: { workspaceId, ...args } });
+      assert.equal(result.isError, true);
+      assert.match(JSON.stringify(result.content), new RegExp(code));
+      assert.match(JSON.stringify(result.content), /read-only|system access/);
+    }
+  }
+  for (const [deviceId, workspaceId, session] of [
+    ["00000000-0000-4000-8000-000000000032", readOnlyWorkerId, readOnlySession],
+    ["00000000-0000-4000-8000-000000000033", workspaceWorkerId, workspaceSession],
+  ] as const) {
+    assert.equal(await state.poll(accountId, deviceId, workspaceId, session.generation, 5), null);
+  }
 });
 
 test("routes retained command output ranges", async (context) => {
@@ -776,14 +658,7 @@ test("routes retained command output ranges", async (context) => {
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
     accessProfile: "system",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-output-range-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const call = client.callTool({
     name: "read_command_output",
@@ -879,14 +754,7 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
     accessProfile: "system",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-shim-error-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const call = client.callTool({
     name: "run_command",
@@ -920,7 +788,7 @@ test("returns actionable guidance for Windows command shims", async (context) =>
   const serialized = JSON.stringify(result.content);
   assert.equal(result.isError, true);
   assert.match(serialized, /windows_command_shim/);
-  assert.match(serialized, /\.cmd and \.bat.*shellCommand.*explicit shim filename/);
+  assert.match(serialized, /\.cmd\/\.bat.*shellCommand/);
   assert.doesNotMatch(serialized, /private/);
 });
 
@@ -931,14 +799,7 @@ test("routes structured path lifecycle jobs", async (context) => {
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
     accessProfile: "workspace",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-lifecycle-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const makeCall = client.callTool({
     name: "make_directory",
@@ -1022,14 +883,7 @@ test("blocks recognizable authentication data without dispatch or disclosure", a
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
     accessProfile: "system",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-restricted-data-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const key = "sk-proj-" + "A".repeat(32);
   for (const call of [
@@ -1114,17 +968,15 @@ test("returns safe actionable messages for public file-policy errors", async (co
   const session = state.register(accountId, deviceId, "Review PC", workerId, {
     accessProfile: "workspace",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-file-error-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const cases = [
     ["constructor", "The local worker operation failed."],
+    ["stale_revision", "Read its current revision"],
+    ["file_too_large", "Text exceeds the 1 MiB limit"],
+    ["line_too_large", "This line exceeds the 64 KiB range limit"],
+    ["scan_timeout", "Narrow the path"],
+    ["command_not_found", "Command unavailable: unknown ID, expired record, or workspace restarted"],
     ["toString", "The local worker operation failed."],
     ["__proto__", "The local worker operation failed."],
     ["invalid_path", "The requested path is invalid."],
@@ -1170,25 +1022,15 @@ test("returns safe actionable messages for public file-policy errors", async (co
     assert.doesNotMatch(serialized, /private|workspace\\details/);
   }
 
-  const unknownCall = client.callTool({
-    name: "read_file",
-    arguments: { workspaceId: workerId, path: "fixture.txt" },
-  });
-  const unknownJob = await state.poll(
-    accountId,
-    deviceId,
-    workerId,
-    session.generation,
-    100,
-  );
-  assert.ok(unknownJob);
-  state.complete(accountId, workerId, {
-    requestId: unknownJob.requestId,
-    ok: false,
-    error: { code: "unclassified_worker_error", message: "local details" },
-  });
-  const unknownResult = await unknownCall;
-  assert.match(JSON.stringify(unknownResult.content), /The local worker operation failed/);
+  for (const code of ["unclassified_worker_error", "private/worker/details"]) {
+    const call = client.callTool({ name: "read_file", arguments: { workspaceId: workerId, path: "fixture.txt" } });
+    const job = await state.poll(accountId, deviceId, workerId, session.generation, 100);
+    assert.ok(job);
+    state.complete(accountId, workerId, { requestId: job.requestId, ok: false, error: { code, message: "private worker details" } });
+    const result = await call;
+    assert.match(JSON.stringify(result.content), /The local worker operation failed/);
+    assert.doesNotMatch(JSON.stringify(result), /private/);
+  }
 });
 
 test("minimizes list_workspaces metadata and drops restricted labels", async (context) => {
@@ -1205,14 +1047,7 @@ test("minimizes list_workspaces metadata and drops restricted labels", async (co
       workspaceLabel: key,
     },
   );
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-restricted-metadata-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const result = await client.callTool({ name: "list_workspaces", arguments: {} });
   assert.equal(result.isError, undefined);
@@ -1231,53 +1066,45 @@ test("minimizes list_workspaces metadata and drops restricted labels", async (co
   assert.doesNotMatch(serialized, /workspaceLabel/);
 });
 
-test("does not mirror large structured results into text content", async (context) => {
+test("delivers complete bounded results to text-only and structured clients", async (context) => {
   const state = new RouterState();
   const deviceId = "00000000-0000-4000-8000-000000000020";
   const workerId = "00000000-0000-4000-8000-000000000021";
+  const commandId = "00000000-0000-4000-8000-000000000022";
   const session = state.register(accountId, deviceId, "Test PC", workerId);
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-large-result-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-
-  const content = "x".repeat(64 * 1024);
-  const readCall = client.callTool({
-    name: "read_file",
-    arguments: { workspaceId: workerId, path: "large.txt" },
-  });
-  const readJob = await state.poll(
-    accountId,
-    deviceId,
-    workerId,
-    session.generation,
-    100,
-  );
-  assert.equal(readJob?.type, "read_file");
-  assert.ok(readJob);
-  assert.equal(
-    state.complete(accountId, workerId, {
-      requestId: readJob.requestId,
-      ok: true,
-      value: { content, sha256: "0".repeat(64), bytes: Buffer.byteLength(content) },
-    }),
-    true,
-  );
-
-  const result = await readCall;
-  const structured = result.structuredContent as { content?: unknown } | undefined;
-  const resultContent = result.content as Array<{ type?: unknown; text?: unknown }>;
-  assert.equal(structured?.content, content);
-  const text = String(
-    resultContent[0]?.type === "text" ? resultContent[0].text ?? "" : "",
-  );
-  assert.match(text, /Full result is available in structuredContent/);
-  assert.doesNotMatch(text, /x{100}/);
-  assert.ok(Buffer.byteLength(text, "utf8") < 256);
+  const client = await connectMcp(context, state);
+  const sha256 = "0".repeat(64);
+  const content = "é".repeat(512 * 1024);
+  const range = content.slice(0, 32 * 1024);
+  const cases = [
+    ["read_file", { path: "large.txt" }, { content, sha256, bytes: 1024 * 1024 }],
+    ["read_file_range", { path: "large.txt" }, {
+      content: range, sha256, bytes: 1024 * 1024, contentBytes: 64 * 1024,
+      startLine: 1, endLine: 1, totalLines: 16, nextLine: 2,
+    }],
+    ["edit_file", { path: "large.txt", edits: [{ oldText: "old", newText: "new" }] }, {
+      sha256, bytes: 1024 * 1024, replacements: 1, diff: "d".repeat(128 * 1024), diffTruncated: true,
+    }],
+    ["get_command", { commandId }, {
+      commandId, status: "running", sequence: 7, stdout: "x".repeat(12 * 1024), stdoutTruncated: true,
+    }],
+    ["read_command_output", { commandId, stream: "stdout" }, {
+      commandId, stream: "stdout", status: "running", offset: 0, content: range, nextOffset: 64 * 1024,
+      retainedBytes: 1024 * 1024, totalBytes: 2 * 1024 * 1024, retentionTruncated: true, complete: false,
+    }],
+  ] as const;
+  for (const [name, args, value] of cases) {
+    const call = client.callTool({ name, arguments: { workspaceId: workerId, ...args } });
+    const job = await state.poll(accountId, deviceId, workerId, session.generation, 100);
+    assert.equal(job?.type, name);
+    assert.ok(job);
+    assert.equal(state.complete(accountId, workerId, { requestId: job.requestId, ok: true, value }), true);
+    const result = await call;
+    assert.equal(result.isError, undefined);
+    const expected = name.includes("command") ? { workspaceId: workerId, ...value } : value;
+    assert.deepEqual(result.structuredContent, expected);
+    assert.deepEqual(result.content, [{ type: "text", text: JSON.stringify(result.structuredContent) }]);
+  }
 });
 
 test("reserves relay headroom for maximum command status waits", async (context) => {
@@ -1288,14 +1115,7 @@ test("reserves relay headroom for maximum command status waits", async (context)
   const session = state.register(accountId, deviceId, "Test PC", workerId, {
     accessProfile: "system",
   });
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-command-wait-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   for (const [requestedWaitMs, expectedWaitMs] of [
     [15_000, 13_000],
@@ -1352,14 +1172,7 @@ test("routes command follow-ups only by explicit workspaceId", async (context) =
     "Other PC",
     otherWorkerId,
   );
-  const server = createMcpServer(testConfig(), state, accountId);
-  const client = new Client({ name: "glossa-explicit-command-route-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  context.after(async () => {
-    await Promise.allSettled([client.close(), server.close()]);
-  });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
+  const client = await connectMcp(context, state);
 
   const runCall = client.callTool({
     name: "run_command",
@@ -1515,4 +1328,31 @@ test("routes command follow-ups only by explicit workspaceId", async (context) =
     status: "canceled",
     sequence: 2,
   });
+});
+
+test("reports uncertain dispatched mutations without implying rollback", async (context) => {
+  for (const disconnect of [false, true]) {
+    const state = new RouterState();
+    const deviceId = "00000000-0000-4000-8000-000000000100";
+    const workerId = "00000000-0000-4000-8000-000000000101";
+    const session = state.register(accountId, deviceId, "Test PC", workerId, { accessProfile: "workspace" });
+    const config = { ...testConfig(), GLOSSA_RELAY_REQUEST_TIMEOUT_MS: 100 };
+    const client = await connectMcp(context, state, config);
+    const call = client.callTool({ name: "edit_file", arguments: {
+      workspaceId: workerId, path: "fixture.txt", expectedSha256: "0".repeat(64),
+      edits: [{ oldText: "old", newText: "new" }],
+    } });
+    const job = await state.poll(accountId, deviceId, workerId, session.generation, 100);
+    assert.ok(job && job.type === "edit_file");
+    assert.equal(job.expectedSha256, "0".repeat(64));
+    if (disconnect) state.unregisterWorker(accountId, deviceId, workerId, session.generation);
+    const result = await call;
+    assert.equal(result.isError, true);
+    const error = JSON.stringify(result.content);
+    assert.match(error, new RegExp(disconnect ? "device_offline" : "job_timeout"));
+    assert.match(error, /operation may have completed/);
+    assert.equal(state.complete(accountId, workerId, {
+      requestId: job.requestId, ok: true, value: { sha256: "1".repeat(64), bytes: 3, replacements: 1, diff: "", diffTruncated: false },
+    }), false);
+  }
 });
