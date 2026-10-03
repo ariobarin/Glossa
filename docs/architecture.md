@@ -112,7 +112,7 @@ The hosting layer imposes a bounded request window. Therefore:
 - relay database connections remain reusable across worker poll intervals, and new connection attempts fail within 5 seconds;
 - durable device authentication occurs at registration, while repeated worker requests use process-local credentials and coalesced metadata writes;
 - `run_command` is available only to a worker registered with `system` access and returns after that worker accepts the command and supplies the worker ID and command ID;
-- command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers process-tree termination;
+- command execution continues locally beyond the initiating request unless cancellation, timeout, disconnect, or recognizable authentication-secret output triggers bounded local process-tree cleanup; unconfirmed cleanup releases local observers and waiters, reports `command_cleanup_failed`, and disables further command starts in that service;
 - command status waits release their subscriptions on timeout or completion; waits without a sequence observe completion, while sequence-based waits also observe new output;
 - command follow-ups always carry both the worker ID and command ID, so routing is explicit and remains valid across relay restarts;
 - `get_command` accepts waits up to 15 seconds and can wake as soon as command output or status changes; the relay reserves five seconds of its configured request deadline for queueing, delivery, result handling, and the hosted HTTP response, shortening the worker-side wait when necessary;

@@ -726,6 +726,7 @@ const WORKER_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   output_offset_out_of_range: "The command output offset exceeds the retained stream length.",
   command_not_found: "The command was not found.",
   command_spawn_failed: "The command could not be started.",
+  command_cleanup_failed: "Command cleanup could not be confirmed. Processes may still be running. New commands are disabled in this worker. Do not retry; ask the user to inspect and stop remaining processes locally and confirm cleanup before restarting Glossa.",
   windows_command_shim: "Windows .cmd and .bat command shims must be run through shellCommand with the explicit shim filename.",
   worker_failure: "The local worker operation failed.",
   invalid_limit: "The requested result limit is invalid.",

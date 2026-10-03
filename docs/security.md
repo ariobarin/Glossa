@@ -169,14 +169,18 @@ Device management authority is scoped to the token's own account, and enrolling 
 - disclose inherited environment, credentials, filesystem permissions, and network access in CLI help, HUD, quickstart, terms, security pages, MCP instructions, tool descriptions, and reviewer material;
 - tell the model not to use commands for general web research, credential or environment inspection, or bypassing structured file-tool boundaries;
 - reject recognizable authentication-secret inputs at the relay and worker;
-- scan textual file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, terminate the process tree, and return only `restricted_data_blocked` when a match is detected;
+- scan textual file results, edit diffs, command-output chunks, and every retained output range locally; retain bounded overlap across chunks, clear captured and retained output, request bounded process-tree cleanup, and return `restricted_data_blocked` or `command_cleanup_failed` without matched data;
 - never enumerate, persist, or log environment variables automatically;
 - keep default command snapshots bounded; cap each retained range at 64 KiB, each retained stream at 1 MiB, terminal records at five minutes, and recent command records at eight; also bound command duration, concurrency, and status waits;
-- terminate the process tree on cancellation, timeout, worker shutdown, or disconnect;
+- attempt bounded process-tree cleanup on cancellation, timeout, worker shutdown, disconnect, or secret detection;
 - make cancellation disclosure accurate: stopping a process does not undo prior local or external effects;
 - recommend a dedicated OS account, container, or VM for unattended or sensitive use.
 
 The authentication-secret detector is deliberately high-confidence. It does not recognize every custom, encoded, encrypted, compressed, fragmented, or transformed value, and it cannot prevent a command from sending data directly to the network. Detection can occur only after earlier command effects. The detector is defense in depth, not a sandbox, complete data-loss-prevention system, or substitute for a credential-free runtime. Public submission remains gated by the decision in [Restricted authentication data review](restricted-data.md).
+
+Command cleanup has a four-second local deadline, subject to event-loop scheduling. POSIX cleanup signals the detached process group even after its leader exits and escalates from SIGTERM to SIGKILL after two seconds. Processes that leave that group are outside this mechanism. On Windows, Glossa attempts `taskkill /T /F` with a two-second deadline only while its owned root has no observed exit or terminating signal. That observation and taskkill's PID lookup are not atomic. Glossa does not reconstruct ancestry from process-table snapshots or target an already-exited root PID: PID reuse and missing intermediate ancestors make those approaches unsafe. Windows descendants that retain output pipes after the root exits cannot be safely reclaimed by this implementation. A native ownership mechanism such as a Job Object would require a separate launch design.
+
+Failed, denied, or timed-out termination, or pipes that remain open after the cleanup deadline, returns `command_cleanup_failed`. Glossa closes only its own streams and observers, releases command waiters and timers, retains the failed record under the existing caps, and permanently disables new command starts in that service. Other already-running commands keep their own lifecycles; shutdown still attempts cleanup of each active command and reports any failure. If stopping a timed-out taskkill helper is also denied, that helper may remain running. The user must inspect and stop remaining processes locally and confirm cleanup before restarting Glossa. Secret-bearing output remains suppressed, including when cleanup fails. Neither a terminal command observation nor successful taskkill is proof that every operating-system process was killed.
 
 ### Restricted Data in tool traffic
 
@@ -192,7 +196,7 @@ The authentication-secret detector is deliberately high-confidence. It does not 
 - inspect textual content-bearing file results, command snapshots, and every retained command-output range before they leave the worker;
 - treat `view_image` as an explicit opaque-media exception: validate the root-confined regular-file path, a 4 MiB compressed-byte ceiling, and PNG/JPEG/WebP signatures locally, but do not claim to inspect pixels or embedded metadata for Restricted Data;
 - inspect command output incrementally with overlap across chunks so a token split across writes is still detected;
-- clear captured and retained output, stop the command process tree, and return a fixed safe error without the matched value;
+- clear captured and retained output, request bounded command cleanup, and return a fixed safe error without the matched value;
 - redact restricted command inputs from local activity events;
 - permit explicit placeholders such as `<redacted>` and `replace-me` so documentation and fixtures remain usable;
 - test the detector against the repository corpus to prevent ordinary source code from becoming unreadable.
