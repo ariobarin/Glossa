@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { setImmediate, setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { CommandService } from "./command-service.js";
 import { terminateProcessTree } from "./command-termination.js";
@@ -137,6 +137,53 @@ test("close during failed cleanup cannot become canceled success", async (contex
   await assert.rejects(commands.cancel(started.commandId), { code: "command_cleanup_failed" });
   await assert.rejects(commands.get(started.commandId), { code: "command_cleanup_failed" });
 });
+
+for (const otherFailure of [false, true]) {
+  test(`late confirmed tree cleanup ${otherFailure ? "preserves another failure" : "restores command starts"}`, async (context) => {
+    let release!: () => void;
+    let confirmed!: () => void;
+    let failNext = false;
+    const proceed = new Promise<void>((resolve) => { release = resolve; });
+    const stopped = new Promise<void>((resolve) => { confirmed = resolve; });
+    const { commands } = await fixture(context, async (child) => {
+      if (failNext) {
+        failNext = false;
+        await terminateProcessTree(child);
+        throw new Error("independent cleanup failure");
+      }
+      await proceed;
+      const closed = new Promise<void>((resolve) => child.once("close", resolve));
+      await terminateProcessTree(child);
+      await closed;
+      confirmed();
+    });
+    const started = await commands.start({
+      argv: [process.execPath, "-e", "setTimeout(() => {}, 10000)"],
+      waitMs: 0,
+    });
+    const neighbor = otherFailure ? await commands.start({
+      argv: [process.execPath, "-e", "setTimeout(() => {}, 10000)"], waitMs: 0,
+    }) : undefined;
+    try {
+      await assert.rejects(commands.cancel(started.commandId), { code: "command_cleanup_failed" });
+      await assert.rejects(commands.start({ argv: [process.execPath, "--version"] }), {
+        code: "command_cleanup_failed",
+      });
+      if (neighbor) {
+        failNext = true;
+        await assert.rejects(commands.cancel(neighbor.commandId), { code: "command_cleanup_failed" });
+      }
+    } finally {
+      release();
+      await stopped;
+    }
+    await setImmediate();
+    assert.equal((await commands.get(started.commandId)).status, "canceled");
+    const replacement = commands.start({ argv: [process.execPath, "--version"], waitMs: 1000 });
+    if (otherFailure) await assert.rejects(replacement, { code: "command_cleanup_failed" });
+    else assert.equal((await replacement).status, "succeeded");
+  });
+}
 
 test("a stalled termination boundary has a deadline and disables further starts", async (context) => {
   const { commands } = await fixture(context, () => new Promise<void>(() => {}));
