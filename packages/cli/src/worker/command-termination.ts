@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
 const TERMINATION_GRACE_MS = 2000;
+const WINDOWS_TERMINATION_TIMEOUT_MS = 10_000;
 
 export async function terminateProcessTree(
   child: ChildProcessWithoutNullStreams,
@@ -26,7 +27,7 @@ export async function terminateProcessTree(
           // Cleanup still fails if stopping the termination helper is denied.
         }
         finish(new Error("Tree termination timed out."));
-      }, TERMINATION_GRACE_MS);
+      }, WINDOWS_TERMINATION_TIMEOUT_MS);
       const onError = () => finish(new Error("Tree termination could not start."));
       const onClose = (code: number | null) => {
         // A short command may exit normally while taskkill is starting.

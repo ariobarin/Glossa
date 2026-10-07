@@ -85,6 +85,7 @@ const COMMAND_RECORD_RETENTION_MS = 5 * 60 * 1000;
 const MAX_RETAINED_COMMAND_RECORDS = 8;
 const MAX_CONCURRENT_COMMANDS = 4;
 const COMMAND_CLEANUP_TIMEOUT_MS = 4000;
+const COMMAND_CLEANUP_CONFIRMATION_MS = 8000;
 
 interface CommandRecord {
   id: string;
@@ -203,7 +204,7 @@ async function waitForChange(
   afterSequence: number | undefined,
   waitMs: number,
 ): Promise<void> {
-  const ready = (): boolean => record.status !== "running" ||
+  const ready = (): boolean => record.status !== "running" || record.cleanupFailed ||
     (afterSequence !== undefined && record.sequence > afterSequence);
   if (ready() || waitMs === 0) {
     return;
@@ -419,7 +420,7 @@ function shellInvocation(command: string): { file: string; args: string[] } {
 export class CommandService {
   readonly #commands = new Map<string, CommandRecord>();
   #shuttingDown = false;
-  #cleanupFailed = false;
+  readonly #cleanupFailures = new Set<string>();
 
   constructor(
     readonly policy: PathPolicy,
@@ -449,20 +450,45 @@ export class CommandService {
     record.cleanup = Promise.resolve().then(async () => {
       if (record.status !== "running") return;
       let timer!: NodeJS.Timeout;
+      let expired = false;
+      let terminationPending = true;
+      const terminated = Promise.resolve().then(() => this.terminate(record.child))
+        .then(() => {
+          terminationPending = false;
+          return record.closed;
+        });
       const deadline = new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error("Command cleanup timed out.")),
+          () => {
+            expired = true;
+            reject(new Error("Command cleanup timed out."));
+          },
           COMMAND_CLEANUP_TIMEOUT_MS,
         );
       });
       try {
-        await Promise.race([this.terminate(record.child), deadline]);
-        await Promise.race([record.closed, deadline]);
+        await Promise.race([terminated, deadline]);
         this.#finish(record, status);
       } catch {
         record.cleanupFailed = true;
-        this.#cleanupFailed = true;
-        this.#finish(record, "failed");
+        this.#cleanupFailures.add(record.id);
+        if (!expired || !terminationPending) {
+          this.#finish(record, "failed");
+          return;
+        }
+        markChanged(record);
+        let confirmationTimer!: NodeJS.Timeout;
+        const confirmationDeadline = new Promise<never>((_, reject) => {
+          confirmationTimer = setTimeout(() => reject(new Error("Cleanup remained unconfirmed.")),
+            COMMAND_CLEANUP_CONFIRMATION_MS);
+        });
+        void Promise.race([terminated, confirmationDeadline]).then(() => {
+          record.cleanupFailed = false;
+          this.#cleanupFailures.delete(record.id);
+          this.#finish(record, status);
+        }, () => {
+          this.#finish(record, "failed");
+        }).finally(() => clearTimeout(confirmationTimer));
       } finally {
         clearTimeout(timer);
       }
@@ -492,7 +518,7 @@ export class CommandService {
   }
 
   async start(options: StartCommandOptions): Promise<CommandSnapshot> {
-    if (this.#cleanupFailed) throw new WorkerError("command_cleanup_failed");
+    if (this.#cleanupFailures.size) throw new WorkerError("command_cleanup_failed");
     if (this.#shuttingDown) {
       throw new WorkerError("worker_shutting_down", "The worker is shutting down.");
     }
@@ -765,7 +791,7 @@ export class CommandService {
     this.#shuttingDown = true;
     const running = [...this.#commands.values()].filter((record) => record.status === "running");
     await Promise.all(running.map((record) => this.#cleanup(record, "canceled")));
-    if (this.#cleanupFailed) throw new WorkerError("command_cleanup_failed");
+    if (this.#cleanupFailures.size) throw new WorkerError("command_cleanup_failed");
   }
 
   private snapshot(record: CommandRecord): CommandSnapshot {
