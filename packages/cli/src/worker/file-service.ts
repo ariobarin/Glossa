@@ -192,6 +192,13 @@ type DiscoveredPathResolution =
   | { status: "linked" }
   | { status: "unavailable" };
 
+type SearchFileRead =
+  | { status: "read"; target: string; relative: string; result: ReadTextResult }
+  | { status: "linked" }
+  | { status: "unavailable" }
+  | { status: "skipped" }
+  | { status: "byte_limit" };
+
 type LateValueCleanup<T> = (value: T) => Promise<void> | void;
 type DeadlineRunner = <T>(
   operation: Promise<T>,
@@ -223,6 +230,7 @@ const DEFAULT_READ_RANGE_LINES = 200;
 const MAX_REPOSITORY_SCAN_ENTRIES = 20_000;
 const MAX_SEARCH_FILES = 5_000;
 const MAX_SEARCH_BYTES = 32 * 1024 * 1024;
+const SEARCH_TEXT_READ_CONCURRENCY = 16;
 const SKIPPED_RECURSIVE_DIRECTORIES = new Set([
   ".git",
   ".hg",
@@ -1025,7 +1033,11 @@ export class FileService {
     let skippedLinks = 0;
     let scanTruncated = false;
 
-    const searchFile = async (target: string): Promise<boolean> => {
+    const pendingFiles: Array<{ target: string; relative: string }> = [];
+
+    const searchCandidate = async (
+      target: string,
+    ): Promise<{ target: string; relative: string } | undefined> => {
       const relative = displayPath(this.policy.root, target);
       if (
         extensions &&
@@ -1033,7 +1045,7 @@ export class FileService {
           path.basename(target).toLowerCase().endsWith(extension)
         )
       ) {
-        return false;
+        return undefined;
       }
       if (includeGlobs || excludeGlobs) {
         this.#assertBeforeDeadline(deadlineAt);
@@ -1041,36 +1053,35 @@ export class FileService {
           relative.replaceAll("\\", "/"), deadlineAt - this.#now(),
         );
         this.#assertBeforeDeadline(deadlineAt);
-        if (!included) return false;
+        if (!included) return undefined;
       }
-      if (scannedFiles >= MAX_SEARCH_FILES) {
-        scanTruncated = true;
-        return true;
-      }
-      const remainingBytes = this.#maxSearchBytes - scannedBytes;
-      if (remainingBytes <= 0) {
-        scanTruncated = true;
-        return true;
-      }
-      const resolved = await this.#resolveDiscoveredPath(target, deadlineAt);
-      if (resolved.status === "linked") {
-        skippedLinks += 1;
-        return false;
-      }
-      if (resolved.status === "unavailable") {
-        skippedFiles += 1;
-        return false;
-      }
-      let result: ReadTextResult;
+      return { target, relative };
+    };
+
+    const readSearchFile = async (
+      candidate: { target: string; relative: string },
+      maximumBytes: number,
+    ): Promise<SearchFileRead> => {
+      const resolved = await this.#resolveDiscoveredPath(
+        candidate.target,
+        deadlineAt,
+      );
+      if (resolved.status === "linked") return { status: "linked" };
+      if (resolved.status === "unavailable") return { status: "unavailable" };
       try {
-        result = await this.#withinDeadline(
-          this.#readResolvedText(resolved.target, remainingBytes),
+        const result = await this.#withinDeadline(
+          this.#readResolvedText(resolved.target, maximumBytes),
           deadlineAt,
         );
+        return {
+          status: "read",
+          target: candidate.target,
+          relative: candidate.relative,
+          result,
+        };
       } catch (error) {
         if (error instanceof WorkerError && error.code === "search_byte_limit") {
-          scanTruncated = true;
-          return true;
+          return { status: "byte_limit" };
         }
         if (
           isUnavailableFileError(error) ||
@@ -1081,26 +1092,42 @@ export class FileService {
               "file_too_large",
               "file_changed",
               "path_not_found",
-            ].includes(
-              error.code,
-            ))
+            ].includes(error.code))
         ) {
-          skippedFiles += 1;
-          return false;
+          return { status: "skipped" };
         }
         throw error;
       }
-      if (scannedBytes + result.bytes > this.#maxSearchBytes) {
+    };
+
+    const consumeSearchFile = async (read: SearchFileRead): Promise<boolean> => {
+      if (read.status === "linked") {
+        skippedLinks += 1;
+        return false;
+      }
+      if (read.status === "unavailable" || read.status === "skipped") {
+        skippedFiles += 1;
+        return false;
+      }
+      if (read.status === "byte_limit") {
+        scanTruncated = true;
+        return true;
+      }
+      if (scannedBytes + read.result.bytes > this.#maxSearchBytes) {
         scanTruncated = true;
         return true;
       }
       scannedFiles += 1;
-      scannedBytes += result.bytes;
-      const lines = result.content.replace(/\r\n?/g, "\n").split("\n");
-      const addMatch = (index: number, matchIndex: number, matchLength: number): void => {
+      scannedBytes += read.result.bytes;
+      const lines = read.result.content.replace(/\r\n?/g, "\n").split("\n");
+      const addMatch = (
+        index: number,
+        matchIndex: number,
+        matchLength: number,
+      ): void => {
         const snippet = searchSnippet(lines[index]!, matchIndex, matchLength);
         matches.push({
-          path: relative,
+          path: read.relative,
           line: index + 1,
           column: matchIndex + 1,
           text: snippet.text,
@@ -1109,7 +1136,11 @@ export class FileService {
       };
       if (options.matchMode === "regex") {
         this.#assertBeforeDeadline(deadlineAt);
-        const found = await isolatedMatcher!.match(lines, matchLimit - matches.length, deadlineAt - this.#now());
+        const found = await isolatedMatcher!.match(
+          lines,
+          matchLimit - matches.length,
+          deadlineAt - this.#now(),
+        );
         this.#assertBeforeDeadline(deadlineAt);
         for (const [line, index, length] of found) addMatch(line, index, length);
         return matches.length >= matchLimit;
@@ -1122,6 +1153,81 @@ export class FileService {
         if (matches.length >= matchLimit) return true;
       }
       return false;
+    };
+
+    const searchFile = async (target: string): Promise<boolean> => {
+      const candidate = await searchCandidate(target);
+      if (!candidate) return false;
+      if (scannedFiles >= MAX_SEARCH_FILES) {
+        scanTruncated = true;
+        return true;
+      }
+      const remainingBytes = this.#maxSearchBytes - scannedBytes;
+      if (remainingBytes <= 0) {
+        scanTruncated = true;
+        return true;
+      }
+      return await consumeSearchFile(
+        await readSearchFile(candidate, remainingBytes),
+      );
+    };
+
+    const flushPendingFiles = async (): Promise<boolean> => {
+      if (pendingFiles.length === 0) return false;
+      const batch = pendingFiles.splice(0, pendingFiles.length);
+      const remainingBytes = this.#maxSearchBytes - scannedBytes;
+      const canReadConcurrently =
+        batch.length > 1 &&
+        scannedFiles + batch.length <= MAX_SEARCH_FILES &&
+        remainingBytes >= batch.length * MAX_TEXT_BYTES;
+
+      if (canReadConcurrently) {
+        const reads = await Promise.all(
+          batch.map(async (candidate) =>
+            await readSearchFile(candidate, MAX_TEXT_BYTES)
+          ),
+        );
+        for (const read of reads) {
+          if (await consumeSearchFile(read)) return true;
+        }
+        return false;
+      }
+
+      for (const candidate of batch) {
+        if (scannedFiles >= MAX_SEARCH_FILES) {
+          scanTruncated = true;
+          return true;
+        }
+        const remaining = this.#maxSearchBytes - scannedBytes;
+        if (remaining <= 0) {
+          scanTruncated = true;
+          return true;
+        }
+        if (
+          await consumeSearchFile(
+            await readSearchFile(candidate, remaining),
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const pendingFlushLimit = (): number => {
+      const remainingMatchCapacity = Math.max(1, matchLimit - matches.length);
+      const remainingFileCapacity = MAX_SEARCH_FILES - scannedFiles;
+      const remainingBytes = this.#maxSearchBytes - scannedBytes;
+      if (
+        remainingFileCapacity < SEARCH_TEXT_READ_CONCURRENCY ||
+        remainingBytes < SEARCH_TEXT_READ_CONCURRENCY * MAX_TEXT_BYTES
+      ) {
+        return 1;
+      }
+      return Math.min(
+        SEARCH_TEXT_READ_CONCURRENCY,
+        remainingMatchCapacity,
+      );
     };
 
     const visit = async (directory: string): Promise<boolean> => {
@@ -1154,15 +1260,18 @@ export class FileService {
           child,
         );
         if (inspection.status === "unavailable") {
+          if (await flushPendingFiles()) return true;
           skippedFiles += 1;
           continue;
         }
         if (inspection.status === "linked") {
+          if (await flushPendingFiles()) return true;
           skippedLinks += 1;
           continue;
         }
         if (inspection.status !== "entry") continue;
         if (inspection.type === "directory") {
+          if (await flushPendingFiles()) return true;
           if (SKIPPED_RECURSIVE_DIRECTORIES.has(child.name.toLowerCase())) continue;
           const resolved = await this.#resolveDiscoveredPath(target, deadlineAt);
           if (resolved.status === "linked") {
@@ -1174,11 +1283,19 @@ export class FileService {
             continue;
           }
           if (await visit(target)) return true;
-        } else if (inspection.type === "file" && await searchFile(target)) {
-          return true;
+        } else if (inspection.type === "file") {
+          const candidate = await searchCandidate(target);
+          if (!candidate) continue;
+          pendingFiles.push(candidate);
+          if (
+            pendingFiles.length >= pendingFlushLimit() &&
+            await flushPendingFiles()
+          ) {
+            return true;
+          }
         }
       }
-      return false;
+      return await flushPendingFiles();
     };
 
     try {
