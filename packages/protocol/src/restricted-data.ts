@@ -13,6 +13,9 @@ const knownAuthenticationSecretPatterns = [
 const labeledAuthenticationSecretPattern =
   /\b[A-Za-z0-9_-]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|password|passwd|private[_-]?key|mfa[_-]?(?:code|token)|otp)[A-Za-z0-9_-]*\b\s*(?:=|:)\s*(?:"([^"]{8,})"|'([^']{8,})'|([^"'\s,;]{8,}))/gi;
 
+const pythonEnvironmentReferencePattern =
+  /^(?:os\.)?(?:getenv\(|environ(?:\.get\(|\[))/;
+
 const placeholderFragments = [
   "example",
   "placeholder",
@@ -54,7 +57,8 @@ function placeholderCredential(value: string): boolean {
   if (
     (normalized.startsWith("<") && normalized.endsWith(">")) ||
     normalized.includes("${") ||
-    normalized.includes("process.env")
+    normalized.includes("process.env") ||
+    pythonEnvironmentReferencePattern.test(normalized)
   ) {
     return true;
   }
