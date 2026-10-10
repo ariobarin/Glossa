@@ -97,7 +97,7 @@ glossa update --policy auto
 glossa update --policy off
 ```
 
-Disconnect every running workspace before installing an update.
+Disconnect workspaces before updating. Glossa reclaims verified stale leases.
 
 ## Device controls
 
