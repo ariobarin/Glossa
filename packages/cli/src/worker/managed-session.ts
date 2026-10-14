@@ -25,6 +25,7 @@ import {
   type RelayEndpoints,
 } from "../relay-client.js";
 import { LocalWorker } from "./local-worker.js";
+import type { LocalCommandDiagnostic } from "./command-service.js";
 import {
   DeviceRejectedError,
   RemoteWorker,
@@ -54,7 +55,8 @@ export type ManagedSessionEvent =
       ok: boolean;
       output?: ManagedActivityOutput;
     }
-  | { type: "notice"; message: string; persistAfterExit?: boolean };
+  | { type: "notice"; message: string; persistAfterExit?: boolean }
+  | { type: "commands"; commands: LocalCommandDiagnostic[]; failedId?: string };
 
 export interface ManagedSessionOptions {
   signal?: AbortSignal;
@@ -556,7 +558,19 @@ export async function runManagedSession(
       controller.signal,
     );
     controller.signal.throwIfAborted();
-    worker = await LocalWorker.create(root, accessProfile);
+    worker = await LocalWorker.create(root, accessProfile, (commands, failedId) => {
+      options.onEvent?.({
+        type: "commands",
+        commands,
+        ...(failedId ? { failedId } : {}),
+      });
+      if (failedId && !options.onEvent) {
+        const failing = commands.find((command) => command.commandId === failedId);
+        console.error(
+          `Glossa local command cleanup unconfirmed: ${failedId}; original PID ${failing?.rootPid ?? "unknown"}. Inspect local processes before restarting.`,
+        );
+      }
+    });
     controller.signal.throwIfAborted();
 
     report(

@@ -63,6 +63,7 @@ Keys:
   a  activity
   w  workspace
   d  devices
+  c  commands (while commands are tracked)
   ↑↓ browse or select the current list
   ←→ change workspace access
   Enter  select, inspect, or revoke

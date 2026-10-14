@@ -27,6 +27,7 @@ const SCREENS = [
   "workspace-switching",
   "access-confirm",
   "devices",
+  "commands",
   "devices-loading",
   "devices-empty",
   "device-revoke",
@@ -368,6 +369,29 @@ async function previewState(screen: PreviewScreen): Promise<HudState> {
       view: "workspace",
       accessProfile: "workspace",
       prompt: { type: "access-confirm", accessProfile: "system" },
+    };
+  }
+  if (screen === "commands") {
+    return {
+      ...state,
+      view: "commands",
+      commands: [{
+        commandId: "a1092840-5e28-451c-8c82-c62a2e0833a1",
+        rootPid: 14880,
+        program: "PowerShell",
+        status: "failed",
+        rootExited: true,
+        cleanupFailed: true,
+      }, {
+        commandId: "af9b22e5-21b3-43d4-a14b-ea72e12d9001",
+        rootPid: 17200,
+        program: "node.exe",
+        status: "running",
+        rootExited: false,
+        cleanupFailed: false,
+      }],
+      notice: "Command cleanup unconfirmed. Inspect local processes before restarting.",
+      noticeTone: "error",
     };
   }
   if (screen === "devices-loading") {

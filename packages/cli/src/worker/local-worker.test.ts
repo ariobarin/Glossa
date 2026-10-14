@@ -333,3 +333,28 @@ test("allows explicit placeholders through the restricted-data guard", async (co
     "OPENAI_API_KEY=<redacted>\n",
   );
 });
+
+test("local worker correlates command diagnostics without extending public results", async (context) => {
+  const root = await temporaryDirectory(context);
+  const observed: Array<{ commandId: string; requestId?: string; rootPid: number | null }> = [];
+  const worker = await LocalWorker.create(root, "system", (commands) => {
+    observed.push(...commands);
+  });
+  context.after(async () => await worker.shutdown());
+  const requestId = "00000000-0000-4000-8000-000000000091";
+  const result = await worker.handle({
+    type: "run_command",
+    requestId,
+    argv: [process.execPath, "--version"],
+    timeoutMs: 5000,
+    waitMs: 2000,
+  });
+  assert.equal(result.ok, true);
+  const value = result.value as { commandId: string; status: string };
+  assert.equal(value.status, "succeeded");
+  const diagnostic = observed.find((command) => command.commandId === value.commandId);
+  assert.equal(diagnostic?.requestId, requestId);
+  assert.ok(diagnostic && typeof diagnostic.rootPid === "number");
+  assert.equal(result.requestId, requestId);
+  assert.doesNotMatch(JSON.stringify(result), /rootPid|program|cleanupFailed/);
+});

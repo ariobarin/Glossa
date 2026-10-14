@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -31,9 +32,20 @@ export type CommandStatus =
 export interface StartCommandOptions {
   argv?: string[];
   shellCommand?: string;
+  requestId?: string;
   stdin?: string;
   timeoutMs?: number;
   waitMs?: number;
+}
+
+export interface LocalCommandDiagnostic {
+  commandId: string;
+  requestId?: string;
+  rootPid: number | null;
+  program: string;
+  status: CommandStatus;
+  rootExited: boolean;
+  cleanupFailed: boolean;
 }
 
 export type CommandOutputStream = "stdout" | "stderr";
@@ -89,6 +101,8 @@ const COMMAND_CLEANUP_CONFIRMATION_MS = 8000;
 
 interface CommandRecord {
   id: string;
+  requestId?: string;
+  program: string;
   child: ChildProcessWithoutNullStreams;
   status: CommandStatus;
   sequence: number;
@@ -425,7 +439,26 @@ export class CommandService {
   constructor(
     readonly policy: PathPolicy,
     private readonly terminate = terminateProcessTree,
+    private readonly onDiagnostics?: (commands: LocalCommandDiagnostic[], failedId?: string) => void,
   ) {}
+
+  #notifyDiagnostics(failedId?: string): void {
+    if (!this.onDiagnostics) return;
+    const commands = [...this.#commands.values()].map((record): LocalCommandDiagnostic => ({
+      commandId: record.id,
+      ...(record.requestId ? { requestId: record.requestId } : {}),
+      rootPid: record.child.pid ?? null,
+      program: record.program,
+      status: record.status,
+      rootExited: record.child.exitCode !== null || record.child.signalCode !== null,
+      cleanupFailed: record.cleanupFailed,
+    }));
+    try {
+      this.onDiagnostics(commands, failedId);
+    } catch {
+      // Local diagnostic rendering cannot interfere with process cleanup.
+    }
+  }
 
   #finish(record: CommandRecord, status: CommandStatus): void {
     if (record.status !== "running") return;
@@ -438,6 +471,7 @@ export class CommandService {
     markChanged(record);
     record.complete();
     this.#scheduleDeletion(record.id);
+    this.#notifyDiagnostics();
   }
 
   #cleanup(
@@ -472,6 +506,7 @@ export class CommandService {
       } catch {
         record.cleanupFailed = true;
         this.#cleanupFailures.add(record.id);
+        this.#notifyDiagnostics(record.id);
         if (!expired || !terminationPending) {
           this.#finish(record, "failed");
           return;
@@ -594,8 +629,13 @@ export class CommandService {
       observeClose = resolve;
     });
     const id = randomUUID();
+    const program = options.argv
+      ? basename(options.argv[0]!).replace(/[^a-zA-Z0-9._+-]/g, "?").slice(0, 48)
+      : process.platform === "win32" ? "PowerShell" : "shell";
     const record: CommandRecord = {
       id,
+      ...(options.requestId ? { requestId: options.requestId } : {}),
+      program,
       child,
       status: "running",
       sequence: 0,
@@ -692,6 +732,7 @@ export class CommandService {
         "The command could not be started.",
       );
     });
+    this.#notifyDiagnostics();
     await waitForChange(record, undefined, waitMs);
     return this.snapshot(record);
   }
