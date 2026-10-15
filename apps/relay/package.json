@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test src/*.test.ts",
     "start": "node --env-file-if-exists=../../.env dist/src/index.js",
-    "migrate": "node --env-file-if-exists=../../.env dist/src/migrate.js"
+    "migrate": "node --env-file-if-exists=../../.env dist/src/migrate.js",
+    "stats": "node --env-file-if-exists=../../.env dist/src/stats.js"
   },
   "dependencies": {
     "@glossa/protocol": "*",

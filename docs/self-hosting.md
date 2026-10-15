@@ -64,6 +64,10 @@ npm run start --workspace @glossa/relay
 
 Terminate TLS in front of the relay. The example binds HTTP to loopback for a proxy on the Docker host; use a private network instead when the proxy runs elsewhere. Do not expose the HTTP listener directly to the Internet. Confirm `https://mcp.example.com/healthz` returns an object with `ok` set to `true`.
 
+### Usage counts
+
+`npm run stats --workspace @glossa/relay` prints aggregate counts from the database: accounts signed up and admitted, new accounts, devices, and how many accounts had a paired device connect today, this week and this month. It reads counts only, never names, tokens or identifiers. Pass `--exclude-subject <auth0-subject>` (repeatable) or set `GLOSSA_STATS_EXCLUDE_SUBJECTS` to a comma-separated list to leave your own accounts out, and `--json` for machine-readable output.
+
 ## Control panel
 
 The relay can serve a small control panel at `/panel` for redeeming pairing codes in a browser and for listing and revoking the devices on your account, which is the recovery path when a computer is lost. The panel is disabled unless all three panel variables are set.
