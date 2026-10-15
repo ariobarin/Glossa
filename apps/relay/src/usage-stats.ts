@@ -4,6 +4,7 @@ export interface Queryable {
 
 export interface UsageStats {
   excludedSubjects: number;
+  excludedAccounts: number;
   accounts: number;
   admittedAccounts: number;
   newAccounts7d: number;
@@ -29,6 +30,8 @@ device_rows AS (
   JOIN included a ON a.id = d.account_id
 )
 SELECT
+  (SELECT count(*) FROM accounts
+    WHERE auth0_subject = ANY($1::text[]))::int AS excluded_accounts,
   (SELECT count(*) FROM included)::int AS accounts,
   (SELECT count(*) FROM included
     WHERE admitted_at IS NOT NULL AND disabled_at IS NULL)::int AS admitted_accounts,
@@ -58,6 +61,7 @@ ORDER BY 2 DESC, 1
 `;
 
 interface CountsRow {
+  excluded_accounts: number;
   accounts: number;
   admitted_accounts: number;
   new_accounts_7d: number;
@@ -83,6 +87,7 @@ export async function usageStats(
   ).rows;
   return {
     excludedSubjects: subjects.length,
+    excludedAccounts: counts.excluded_accounts,
     accounts: counts.accounts,
     admittedAccounts: counts.admitted_accounts,
     newAccounts7d: counts.new_accounts_7d,
@@ -101,16 +106,17 @@ export function formatUsageStats(stats: UsageStats): string {
   const platforms = stats.platforms.length
     ? stats.platforms.map((p) => `${p.platform} ${p.devices}`).join(", ")
     : "none";
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const excluded =
     stats.excludedSubjects === 0
       ? "all accounts"
-      : `excluding ${stats.excludedSubjects} account${stats.excludedSubjects === 1 ? "" : "s"}`;
+      : `excluding ${plural(stats.excludedAccounts, "account")} matched by ${plural(stats.excludedSubjects, "subject")}`;
   return [
     `Glossa usage (${excluded})`,
     `Accounts         ${stats.accounts} signed up, ${stats.admittedAccounts} admitted`,
     `New accounts     ${stats.newAccounts7d} in the last 7 days, ${stats.newAccounts30d} in the last 30`,
-    `Active accounts  ${stats.accountsSeen1d} today, ${stats.accountsSeen7d} this week, ${stats.accountsSeen30d} this month`,
-    `Devices          ${stats.devicesEnrolled} enrolled, ${stats.devicesActive} not revoked, ${stats.devicesSeen7d} seen this week`,
+    `Active accounts  ${stats.accountsSeen1d} in the last 24 hours, ${stats.accountsSeen7d} in 7 days, ${stats.accountsSeen30d} in 30 days`,
+    `Devices          ${stats.devicesEnrolled} enrolled, ${stats.devicesActive} not revoked, ${stats.devicesSeen7d} seen in 7 days`,
     `Platforms        ${platforms}`,
     "An account is active when one of its paired devices connected in that window.",
   ].join("\n");

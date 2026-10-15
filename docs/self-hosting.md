@@ -66,7 +66,7 @@ Terminate TLS in front of the relay. The example binds HTTP to loopback for a pr
 
 ### Usage counts
 
-`npm run stats --workspace @glossa/relay` prints aggregate counts from the database: accounts signed up and admitted, new accounts, devices, and how many accounts had a paired device connect today, this week and this month. It reads counts only, never names, tokens or identifiers. Pass `--exclude-subject <auth0-subject>` (repeatable) or set `GLOSSA_STATS_EXCLUDE_SUBJECTS` to a comma-separated list to leave your own accounts out, and `--json` for machine-readable output.
+`npm run stats --workspace @glossa/relay` prints aggregate counts from the database: accounts signed up and admitted, new accounts, devices, and how many accounts had a paired device connect in the last 24 hours, 7 days and 30 days. It reads counts only, never names, tokens or identifiers. Pass `--exclude-subject <auth0-subject>` (repeatable) or set `GLOSSA_STATS_EXCLUDE_SUBJECTS` to a comma-separated list to leave your own accounts out (the heading shows how many accounts the subjects matched), and `--json` for machine-readable output.
 
 ## Control panel
 

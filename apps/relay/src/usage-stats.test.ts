@@ -7,6 +7,7 @@ function fixture(): { db: Queryable; calls: { sql: string; values: unknown[] }[]
   const results: unknown[][] = [
     [
       {
+        excluded_accounts: 1,
         accounts: 12,
         admitted_accounts: 9,
         new_accounts_7d: 2,
@@ -44,6 +45,7 @@ test("excludes subjects by parameter and reports only counts", async () => {
     assert.doesNotMatch(call.sql, /token_|\bname\b|auth0_subject\s*,/);
   }
   assert.equal(stats.excludedSubjects, 1);
+  assert.equal(stats.excludedAccounts, 1);
   assert.equal(stats.accountsSeen7d, 6);
   assert.deepEqual(stats.platforms, [
     { platform: "win32", devices: 6 },
@@ -56,6 +58,13 @@ test("formats a readable summary", async () => {
   const text = formatUsageStats(await usageStats(db));
   assert.match(text, /^Glossa usage \(all accounts\)/);
   assert.match(text, /Accounts\s+12 signed up, 9 admitted/);
-  assert.match(text, /Active accounts\s+3 today, 6 this week, 8 this month/);
+  assert.match(text, /Active accounts\s+3 in the last 24 hours, 6 in 7 days, 8 in 30 days/);
   assert.match(text, /Platforms\s+win32 6, darwin 5/);
+});
+
+test("shows when an excluded subject matched no account", async () => {
+  const { db } = fixture();
+  const stats = await usageStats(db, ["google-oauth2|typo"]);
+  const text = formatUsageStats({ ...stats, excludedAccounts: 0 });
+  assert.match(text, /^Glossa usage \(excluding 0 accounts matched by 1 subject\)/);
 });

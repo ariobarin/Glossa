@@ -11,7 +11,9 @@ const excludeSubjects = (process.env.GLOSSA_STATS_EXCLUDE_SUBJECTS ?? "").split(
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--exclude-subject") {
     const subject = args[i + 1];
-    if (!subject) throw new Error("--exclude-subject needs an Auth0 subject.");
+    if (!subject || subject.startsWith("-")) {
+      throw new Error("--exclude-subject needs an Auth0 subject.");
+    }
     excludeSubjects.push(subject);
     i++;
   }
