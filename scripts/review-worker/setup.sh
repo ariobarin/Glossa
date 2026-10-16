@@ -71,6 +71,10 @@ install -m 755 "$HERE/reset.sh" "$HERE/pair.sh" /opt/glossa-review/
 install -m 644 "$HERE/glossa-review.service" "$HERE/glossa-review-reset.service" "$HERE/glossa-review-reset.timer" /etc/systemd/system/
 # Reviewer commands can only reach public addresses, plus the DNS resolvers.
 resolvers="$(awk '/^nameserver/ {print $2}' /etc/resolv.conf | tr '\n' ' ')"
+if [ -z "${resolvers// /}" ]; then
+  echo "No nameserver in /etc/resolv.conf; reviewer commands would have no DNS." >&2
+  exit 1
+fi
 install -d -m 755 /etc/systemd/system/glossa-review.service.d
 printf '[Service]\nIPAddressAllow=%s\n' "$resolvers" > /etc/systemd/system/glossa-review.service.d/dns.conf
 systemctl daemon-reload

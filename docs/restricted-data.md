@@ -16,13 +16,13 @@ Glossa now has a meaningful local egress boundary for recognizable authenticatio
 
 The broader rule is not limited to shell. A `read-only` or `workspace` worker can encounter payment-card data, protected health information, or government identifiers in a user-selected file before Glossa can know what the file contains. PHI in particular is contextual and cannot be reliably excluded by a general-purpose pattern scanner. The implemented detector therefore addresses only the authentication-secret subcategory and does not establish compliance with the full Restricted Data rule.
 
-Therefore public submission remains gated on one explicit product decision in addition to deployment readiness, and that gate applies to all three access profiles:
+Therefore publication remains gated on one explicit product decision in addition to deployment readiness, and that gate applies to all three access profiles. The release owner submits the full product and asks OpenAI for the first outcome in the reviewer notes; an approved plugin is published only once one of these holds:
 
 1. obtain an OpenAI determination that a user-selected local development workspace bridge, with the documented exclusions and controls, is compatible with the full Restricted Data rule; or
 2. narrow the public product to an enforceable data source or workspace class that cannot contain the prohibited categories, while retaining broader local access for private/self-hosted use; or
 3. omit public `system` command tools and place any managed command execution inside an enforceable credential-free runtime, while separately resolving how public file tools avoid PCI data, PHI, and government identifiers.
 
-Do not submit by treating metadata, a user checkbox, or the detector below as a substitute for that decision.
+Do not publish by treating metadata, a user checkbox, or the detector below as a substitute for that decision.
 
 ## Broader Restricted Data categories
 
