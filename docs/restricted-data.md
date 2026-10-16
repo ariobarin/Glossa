@@ -16,13 +16,13 @@ Glossa now has a meaningful local egress boundary for recognizable authenticatio
 
 The broader rule is not limited to shell. A `read-only` or `workspace` worker can encounter payment-card data, protected health information, or government identifiers in a user-selected file before Glossa can know what the file contains. PHI in particular is contextual and cannot be reliably excluded by a general-purpose pattern scanner. The implemented detector therefore addresses only the authentication-secret subcategory and does not establish compliance with the full Restricted Data rule.
 
-Therefore public submission remains gated on one explicit product decision in addition to deployment readiness, and that gate applies to all three access profiles:
+Therefore publication remains gated on one explicit product decision in addition to deployment readiness, and that gate applies to all three access profiles. The release owner submits the full product and asks OpenAI for the first outcome in the reviewer notes; an approved plugin is published only once one of these holds:
 
 1. obtain an OpenAI determination that a user-selected local development workspace bridge, with the documented exclusions and controls, is compatible with the full Restricted Data rule; or
 2. narrow the public product to an enforceable data source or workspace class that cannot contain the prohibited categories, while retaining broader local access for private/self-hosted use; or
 3. omit public `system` command tools and place any managed command execution inside an enforceable credential-free runtime, while separately resolving how public file tools avoid PCI data, PHI, and government identifiers.
 
-Do not submit by treating metadata, a user checkbox, or the detector below as a substitute for that decision.
+Do not publish by treating metadata, a user checkbox, or the detector below as a substitute for that decision.
 
 ## Broader Restricted Data categories
 
@@ -48,11 +48,11 @@ A source-extension allowlist, repository allowlist, user attestation, or larger 
 
 ## OpenAI policy determination request
 
-If the public product remains a general user-selected local-workspace bridge, send the following question to OpenAI before final submission. Include the draft plugin portal ID once one exists and link the public security model rather than attaching credentials or private logs.
+If the public product remains a general user-selected local-workspace bridge, send the following question to OpenAI. The release owner chose to submit the full product, including `system` command tools, and ask this question in the submission's reviewer notes; the exact notes text is in the [app submission packet](app-submission-packet.md#reviewer-notes). Include the draft plugin portal ID once one exists and link the public security model rather than attaching credentials or private logs.
 
 > We are preparing Glossa, an MCP-only plugin that bridges ChatGPT to a user-selected local development workspace through an authenticated outbound worker. The public product uses least-privilege read-only, workspace, and explicit system profiles; never persists file contents or command output in the hosted relay; blocks recognizable authentication-secret material before it leaves the local worker; and documents that this detector is defense in depth rather than a complete DLP system. However, a general local file tool can encounter PCI-regulated payment data, PHI, or government identifiers before the application can know what the file contains; `view_image` can return selected image pixels or embedded metadata containing any Restricted Data category without OCR or metadata scrubbing; and arbitrary system commands cannot provide a categorical no-secret guarantee even when the review worker is isolated and credential-free. Does OpenAI consider this user-selected local-workspace architecture compatible with the published Restricted Data rule when these categories are explicitly unsupported and the listed controls are enforced, or must a marketplace version enforce a data source/runtime that categorically excludes those categories? We can provide the draft plugin ID, complete 16-tool contract, reviewer fixture, privacy/terms, and security model for review.
 
-An affirmative answer should be retained with the release decision record. An ambiguous or negative answer means the public architecture must be narrowed before submission; it should not be interpreted as approval based only on disclosures or reviewer confirmation.
+An affirmative answer should be retained with the release decision record. An ambiguous or negative answer means the public architecture must be narrowed before publication; listing approval that doesn't address the question should not be interpreted as approval based only on disclosures or reviewer confirmation.
 
 ## Implemented credential egress guard
 

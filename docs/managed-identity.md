@@ -14,6 +14,7 @@ Maintain these settings for every Auth0 client that can request the managed Glos
 - Disable every unapproved social, enterprise, passwordless, and database connection.
 - Configure the relay's identity allowlist explicitly. A valid token is accepted only when its subject matches an approved provider prefix or exact subject.
 - Enable **Client ID Metadata Document Registration** so Auth0 advertises CIMD support to MCP clients.
+- Enable **Dynamic Client Registration** for the OpenAI plugin portal, which registers its OAuth client through DCR. Dynamically registered clients are third-party apps, so they only see domain-level connections, and the relay still admits only allowlisted identities.
 - Enable Auth0's **Resource Parameter Compatibility Profile** so the OAuth `resource` value is reflected into the token audience for third-party MCP clients.
 - Keep the Auth0 API/resource-server identifier exactly aligned with the protected-resource `resource` value, currently `https://mcp.glossa.sh/`.
 - Keep authorization-server discovery public and verify it advertises HTTPS authorization/token endpoints, PKCE `S256`, CIMD or DCR, and a supported token endpoint authentication method.
@@ -37,7 +38,7 @@ Never commit a Google client secret, Auth0 Management API token, reviewer passwo
 
 ## Dedicated OpenAI reviewer account
 
-Before submission, create one isolated database account solely for OpenAI review and enable that database connection only for the managed MCP and Native CLI clients that the reviewer must exercise.
+Before submission, create one isolated database account solely for OpenAI review in a dedicated database connection (`glossa-openai-review`) with sign-ups disabled. ChatGPT and the plugin portal register as third-party clients through CIMD or DCR, and Auth0 lets third-party clients use only domain-level connections without per-client assignment, so promote the connection to the domain level and also enable it for the Glossa Panel. Every third-party client then sees the email and password form on the Auth0 login page, but only manually created accounts exist in the connection and the relay admits only the reviewer's exact subject.
 
 Required reviewer properties:
 
