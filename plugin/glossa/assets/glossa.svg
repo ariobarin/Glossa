@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Glossa symbol on a white circular badge">
+  <defs>
+    <linearGradient id="purpleTop" x1="0" y1="169" x2="310" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6D43F0"/>
+      <stop offset="1" stop-color="#8054FF"/>
+    </linearGradient>
+    <linearGradient id="purpleLeft" x1="0" y1="230" x2="61" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6840EB"/>
+      <stop offset="1" stop-color="#784DFA"/>
+    </linearGradient>
+    <linearGradient id="red" x1="167" y1="169" x2="344.5" y2="332" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF665F"/>
+      <stop offset="1" stop-color="#FB5F59"/>
+    </linearGradient>
+  </defs>
+  <circle cx="512" cy="512" r="460" fill="#FFFFFF" stroke="#D0D7DE" stroke-width="6"/>
+  <g transform="translate(187 198.5) scale(1.8867924528)">
+    <path fill="url(#purpleTop)" d="M86 0H310V22C310 68 277 108 242 108H78C48 108 20 127 3 155L20 64C25 28 60 0 86 0Z"/>
+    <path fill="url(#purpleLeft)" d="M61 124V237C28 237 0 217 0 184C0 171 1 162 4 155C15 140 35 127 61 124Z"/>
+    <path fill="url(#red)" d="M31.5 239.5L54 248H245L167 169H248C257 169 266 172 273 179L344.5 248.5V288C344.5 313 328 332 303 332H145C132 332 118 329 107 319Z"/>
+  </g>
+</svg>

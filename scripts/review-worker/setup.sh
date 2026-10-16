@@ -22,8 +22,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q ca-certificates curl git xz-utils e2fsprogs
 
-# A 512 MiB machine needs swap for npm.
-if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+# A small machine needs swap for npm.
+if [ "$(awk '/MemTotal/ {print $2}' /proc/meminfo)" -lt 1500000 ] && ! grep -q '^/swapfile ' /etc/fstab; then
   fallocate -l 1G /swapfile
   chmod 600 /swapfile
   mkswap /swapfile
@@ -69,6 +69,10 @@ as_service glossa update --policy off
 install -d -m 755 /opt/glossa-review
 install -m 755 "$HERE/reset.sh" "$HERE/pair.sh" /opt/glossa-review/
 install -m 644 "$HERE/glossa-review.service" "$HERE/glossa-review-reset.service" "$HERE/glossa-review-reset.timer" /etc/systemd/system/
+# Reviewer commands can only reach public addresses, plus the DNS resolvers.
+resolvers="$(awk '/^nameserver/ {print $2}' /etc/resolv.conf | tr '\n' ' ')"
+install -d -m 755 /etc/systemd/system/glossa-review.service.d
+printf '[Service]\nIPAddressAllow=%s\n' "$resolvers" > /etc/systemd/system/glossa-review.service.d/dns.conf
 systemctl daemon-reload
 systemctl enable glossa-review.service glossa-review-reset.timer
 systemctl start glossa-review-reset.timer

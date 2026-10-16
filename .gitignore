@@ -22,3 +22,4 @@ dist/
 /site/privacy.html
 /site/support.html
 /site/terms.html
+.plugin-build/
