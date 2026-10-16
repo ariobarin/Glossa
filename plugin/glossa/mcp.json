@@ -9,9 +9,11 @@
           "auth": {
             "type": "oauth",
             "client": {
-              "mode": "cimd"
+              "mode": "dcr"
             },
-            "baseScopes": ["glossa:access"]
+            "baseScopes": [
+              "glossa:access"
+            ]
           }
         }
       }

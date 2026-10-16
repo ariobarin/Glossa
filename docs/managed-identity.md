@@ -14,6 +14,7 @@ Maintain these settings for every Auth0 client that can request the managed Glos
 - Disable every unapproved social, enterprise, passwordless, and database connection.
 - Configure the relay's identity allowlist explicitly. A valid token is accepted only when its subject matches an approved provider prefix or exact subject.
 - Enable **Client ID Metadata Document Registration** so Auth0 advertises CIMD support to MCP clients.
+- Enable **Dynamic Client Registration** for the OpenAI plugin portal, which registers its OAuth client through DCR. Dynamically registered clients are third-party apps, so they only see domain-level connections, and the relay still admits only allowlisted identities.
 - Enable Auth0's **Resource Parameter Compatibility Profile** so the OAuth `resource` value is reflected into the token audience for third-party MCP clients.
 - Keep the Auth0 API/resource-server identifier exactly aligned with the protected-resource `resource` value, currently `https://mcp.glossa.sh/`.
 - Keep authorization-server discovery public and verify it advertises HTTPS authorization/token endpoints, PKCE `S256`, CIMD or DCR, and a supported token endpoint authentication method.

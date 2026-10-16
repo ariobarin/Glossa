@@ -35,7 +35,7 @@ This packet records tool explanations, reviewer setup, regression cases, securit
 - Capabilities: declared in `plugin/glossa/plugin.json`
 - MCP Server URL type: Universal
 - Production MCP Server URL: `https://mcp.glossa.sh/mcp`
-- Authentication: OAuth; production authorization must satisfy the current MCP OAuth 2.1 requirements, including authorization-code flow with PKCE S256. `mcp.json` declares `client.mode: "cimd"` because Auth0 advertises Client ID Metadata Document support and no dynamic registration endpoint, plus `baseScopes: ["glossa:access"]`. The portal reads these settings from the package; it has no OAuth editor.
+- Authentication: OAuth; production authorization must satisfy the current MCP OAuth 2.1 requirements, including authorization-code flow with PKCE S256. `mcp.json` declares `client.mode: "dcr"`, with Auth0 Dynamic Client Registration enabled, plus `baseScopes: ["glossa:access"]`. The portal reads these settings from the package; it has no OAuth editor. In October 2026 it treated `"cimd"` or a missing `client` as a pre-registered client and failed with "OAuth client ID is required". The first upload fixes the draft's client registration, so after changing modes, delete the draft and upload again.
 - Required scope: `glossa:access`
 - UI: none; do not upload screenshots and no UI CSP is required
 - Skills: none

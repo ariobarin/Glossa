@@ -222,8 +222,10 @@ assert.equal(server.url, MCP_URL, `MCP server URL must be ${MCP_URL}`);
 assert.equal(server.headers, undefined, "public submission rejects server headers");
 const auth = server.extensions?.["com.openai"]?.auth;
 assert.equal(auth?.type, "oauth", "the MCP server uses OAuth");
-assert.equal(auth.client?.mode, "cimd", "Auth0 advertises Client ID Metadata Document registration");
-assert.equal(auth.client.clientId, undefined, "CIMD clients must not declare clientId");
+// The portal treats "cimd" or a missing client as a pre-registered client and
+// asks for a client ID, so the package uses Auth0 dynamic registration.
+assert.equal(auth.client?.mode, "dcr", "use Auth0 dynamic client registration");
+assert.equal(auth.client.clientId, undefined, "DCR clients must not declare clientId");
 assert.deepEqual(auth.baseScopes, ["glossa:access"]);
 
 if (checkingBuild) {
