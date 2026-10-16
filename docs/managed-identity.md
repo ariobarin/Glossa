@@ -38,7 +38,7 @@ Never commit a Google client secret, Auth0 Management API token, reviewer passwo
 
 ## Dedicated OpenAI reviewer account
 
-Before submission, create one isolated database account solely for OpenAI review and enable that database connection only for the managed MCP and Native CLI clients that the reviewer must exercise.
+Before submission, create one isolated database account solely for OpenAI review in a dedicated database connection (`glossa-openai-review`) with sign-ups disabled. ChatGPT and the plugin portal register as third-party clients through CIMD or DCR, and Auth0 lets third-party clients use only domain-level connections without per-client assignment, so promote the connection to the domain level and also enable it for the Glossa Panel. Every third-party client then sees the email and password form on the Auth0 login page, but only manually created accounts exist in the connection and the relay admits only the reviewer's exact subject.
 
 Required reviewer properties:
 
