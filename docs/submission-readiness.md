@@ -79,7 +79,7 @@ glossa --access system --label openai-review .review-workspace
 ## Metadata quality gates
 
 - [ ] `npm run review:metadata:check` passes and `review/metadata-golden.json` still contains direct, indirect, negative, follow-up, and boundary coverage.
-- [ ] The complete golden corpus is replayed after the final metadata deploy/Refresh or Scan Tools, with selected tools, material arguments, confirmation behavior, and pass/fail results recorded.
+- [ ] The complete golden corpus is replayed after the final metadata deploy and a fresh ChatGPT Refresh or portal Rescan, with selected tools, material arguments, confirmation behavior, and pass/fail results recorded.
 - [ ] Negative prompts have no unexpected Glossa activation before optimizing for marginal positive recall.
 - [ ] The managed production relay has `GLOSSA_TIMING_LOGS=1` or equivalent privacy-safe tool-call metrics enabled so operation counts/error rates can be reviewed without logging user content or identifiers.
 - [ ] A weekly post-launch review owner is assigned for tool-call analytics, user feedback, and periodic golden-prompt replay after metadata or schema changes.

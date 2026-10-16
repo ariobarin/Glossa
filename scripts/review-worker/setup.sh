@@ -41,6 +41,10 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 curl -fsSL "https://nodejs.org/dist/$NODE_LINE/SHASUMS256.txt" -o "$work/SHASUMS256.txt"
 node_file="$(grep -oE "node-v[0-9.]+-linux-${node_arch}\.tar\.xz" "$work/SHASUMS256.txt" | head -n 1)"
+if [ -z "$node_file" ]; then
+  echo "No Node.js build for linux-${node_arch} in $NODE_LINE." >&2
+  exit 1
+fi
 curl -fsSL "https://nodejs.org/dist/$NODE_LINE/$node_file" -o "$work/$node_file"
 (cd "$work" && grep " $node_file\$" SHASUMS256.txt | sha256sum -c -)
 tar -xJf "$work/$node_file" -C /usr/local --strip-components=1 --no-same-owner
