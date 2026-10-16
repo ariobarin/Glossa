@@ -46,7 +46,7 @@ This packet records tool explanations, reviewer setup, regression cases, securit
 - Plugin manifest URLs: `websiteURL=https://glossa.sh`, `privacyPolicyURL=https://glossa.sh/privacy`, `termsOfServiceURL=https://glossa.sh/terms`, `supportURL=https://glossa.sh/support`
 - Required branding assets: both `interface.logo` and `interface.composerIcon`; each must be a square PNG/JPEG/WebP/SVG, at least 48×48 and at most 4096×4096 pixels, and no larger than 5 MiB. Both point at `assets/glossa.svg`, a copy of `site/glossa-symbol-badge.svg` that the validator keeps identical.
 - Screenshots: omit them because Glossa has no custom MCP UI
-- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows across the supported ChatGPT and Codex surfaces. The ZIP omits `review.demo_recording_url` so the field stays editable in **Review details**; set `GLOSSA_PLUGIN_DEMO_URL` when building to import it instead.
+- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows across the supported ChatGPT and Codex surfaces. The portal has no dashboard field for it: rebuild with `GLOSSA_PLUGIN_DEMO_URL` set so `review.demo_recording_url` is in `plugin.json`, then upload the ZIP again.
 - Country availability: `publication.countries` is omitted so availability is chosen in the portal
 - Commerce: `review.commerce` is `false`
 
@@ -280,7 +280,7 @@ Keep the larger regression set that follows for release-owner testing.
 
 ## Reviewer notes
 
-Paste this into **Review details** next to the reviewer credentials. Fill in nothing secret here; the username and password go only in the protected credential fields.
+The portal has no separate notes field. Paste this into **Review details → Reviewer credentials → Sign-in steps**, the only free-text field reviewers read. Put nothing secret here; the password goes only in the protected password field.
 
 > Sign-in: when ChatGPT opens the Glossa sign-in page, enter the reviewer email and password from the credential fields. Don't use Continue with Google. The account has no MFA, email, or SMS step.
 >

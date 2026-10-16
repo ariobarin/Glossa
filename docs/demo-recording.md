@@ -33,7 +33,7 @@ If ChatGPT asks for confirmation before a write or command, approve it on camera
 - Upload it so anyone with the link can watch without signing in or requesting access, for example as an unlisted YouTube video or a public Loom link.
 - Watch it once at full screen and confirm that no password, pairing code, token, email address, local absolute path, machine name, or unrelated window appears anywhere in the recording.
 - Confirm the tool names shown match the current scan; no stale tool names from an earlier MCP contract should appear.
-- Enter the URL in the portal under **Review information → Review details → Demo recording URL**, or rebuild the ZIP with `GLOSSA_PLUGIN_DEMO_URL` set.
+- Rebuild the ZIP with `GLOSSA_PLUGIN_DEMO_URL` set to the link and upload it again; the portal reads the URL only from `plugin.json`.
 
 The `notes/review.txt` change and the scratch folder are safe to leave; the hosted worker resets its files daily. To record a second take right away, the same prompts work again unchanged.
 
