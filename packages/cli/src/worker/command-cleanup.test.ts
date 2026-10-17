@@ -4,16 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import { setImmediate, setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { CommandService } from "./command-service.js";
+import { CommandService, type LocalCommandDiagnostic } from "./command-service.js";
 import { terminateProcessTree } from "./command-termination.js";
 import { PathPolicy } from "./path-policy.js";
 
 async function fixture(
   context: test.TestContext,
   terminate = terminateProcessTree,
+  onDiagnostics?: (commands: LocalCommandDiagnostic[], failedId?: string) => void,
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "glossa-cleanup-"));
-  const commands = new CommandService(await PathPolicy.create(root), terminate);
+  const commands = new CommandService(await PathPolicy.create(root), terminate, onDiagnostics);
   context.after(async () => {
     await commands.shutdown().catch(() => undefined);
     await rm(root, { recursive: true, force: true, maxRetries: 25, retryDelay: 100 });
@@ -241,4 +242,30 @@ test("completed cleanup preserves cancellation and the four-command limit", asyn
   }
   const next = await commands.start({ argv: [process.execPath, "--version"], waitMs: 5000 });
   assert.equal(next.status, "succeeded");
+});
+
+test("local command diagnostics identify a failed root without exposing arguments", async (context) => {
+  const observations: { commands: LocalCommandDiagnostic[]; failedId?: string }[] = [];
+  const { commands } = await fixture(context, async (child) => {
+    await terminateProcessTree(child);
+    throw new Error("test cleanup failure");
+  }, (snapshot, failedId) => {
+    observations.push({ commands: snapshot, ...(failedId ? { failedId } : {}) });
+  });
+  const started = await commands.start({
+    argv: [process.execPath, "-e", "setTimeout(() => {}, 10_000)", "private-argument"],
+    waitMs: 0,
+  });
+  assert.ok(observations.some((observation) => observation.commands.some(
+    (command) => command.commandId === started.commandId && command.status === "running",
+  )));
+  await assert.rejects(commands.cancel(started.commandId), { code: "command_cleanup_failed" });
+  const failed = observations.find((observation) => observation.failedId === started.commandId);
+  assert.ok(failed);
+  const entry = failed.commands.find((command) => command.commandId === started.commandId);
+  assert.ok(entry);
+  assert.ok(typeof entry.rootPid === "number" && entry.rootPid > 0);
+  assert.equal(entry.program, process.platform === "win32" ? "node.exe" : "node");
+  assert.equal(entry.cleanupFailed, true);
+  assert.doesNotMatch(JSON.stringify(observations), /private-argument|test cleanup failure/);
 });

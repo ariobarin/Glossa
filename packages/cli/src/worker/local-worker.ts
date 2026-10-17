@@ -10,7 +10,7 @@ import {
   type WorkerJob,
   type WorkerResult,
 } from "@glossa/protocol";
-import { CommandService } from "./command-service.js";
+import { CommandService, type LocalCommandDiagnostic } from "./command-service.js";
 import { WorkerError } from "./errors.js";
 import { FileService } from "./file-service.js";
 import { PathPolicy } from "./path-policy.js";
@@ -84,13 +84,14 @@ export class LocalWorker {
   static async create(
     root: string,
     accessProfile: WorkerAccessProfile = DEFAULT_WORKER_ACCESS_PROFILE,
+    onCommands?: (commands: LocalCommandDiagnostic[], failedId?: string) => void,
   ): Promise<LocalWorker> {
     const policy = await PathPolicy.create(root);
     return new LocalWorker(
       accessProfile,
       policy,
       new FileService(policy),
-      new CommandService(policy),
+      new CommandService(policy, undefined, onCommands),
     );
   }
 
@@ -183,6 +184,7 @@ export class LocalWorker {
           break;
         case "run_command":
           value = await this.commands.start({
+            requestId: job.requestId,
             ...(job.argv ? { argv: job.argv } : {}),
             ...(job.shellCommand ? { shellCommand: job.shellCommand } : {}),
             ...(job.stdin !== undefined ? { stdin: job.stdin } : {}),

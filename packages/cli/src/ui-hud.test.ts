@@ -799,3 +799,58 @@ test("runtime owns the TTY lifecycle and survives resize", async () => {
   assert.match(rendered, /\u001b\[\?1049h/);
   assert.match(rendered, /\u001b\[\?1049l/);
 });
+
+test("Commands view identifies tracked roots locally without claiming descendants", () => {
+  const commandId = "a1092840-5e28-451c-8c82-c62a2e0833a1";
+  const state = applyHudEvent(connectedState(), {
+    type: "commands",
+    failedId: commandId,
+    commands: [{
+      commandId,
+      rootPid: 14880,
+      program: "PowerShell",
+      status: "failed",
+      rootExited: true,
+      cleanupFailed: true,
+    }],
+  });
+  assert.equal(state.view, "commands");
+  assert.equal(state.noticeTone, "error");
+  const rendered = renderHud({ ...state, notice: undefined }, 90, false, 20);
+  assert.match(rendered, /Glossa \/ Commands/);
+  assert.match(rendered, new RegExp(commandId));
+  assert.match(rendered, /PID 14880.*cleanup unconfirmed.*PowerShell/);
+  assert.match(rendered, /root exited/);
+  assert.match(rendered, /Descendants are not tracked or verified/);
+  assert.match(rendered, /C Commands/);
+  assert.doesNotMatch(rendered, /private-argument/);
+});
+
+test("Commands view matches tracked command IDs to local Activity descriptions", () => {
+  const commandId = "a1092840-5e28-451c-8c82-c62a2e0833a1";
+  const requestId = "29b58240-cc10-441e-878c-620a7b1ae2cd";
+  const withActivity = applyHudEvent(connectedState(), {
+    type: "activity",
+    phase: "started",
+    job: {
+      type: "run_command",
+      requestId,
+      shellCommand: "npm run dev -- --port 4322",
+      timeoutMs: 900000,
+    },
+  });
+  const state = applyHudEvent(withActivity, {
+    type: "commands",
+    commands: [{
+      commandId,
+      requestId,
+      rootPid: 14880,
+      program: "PowerShell",
+      status: "running",
+      rootExited: false,
+      cleanupFailed: false,
+    }],
+  });
+  const output = renderHud({ ...state, view: "commands" }, 90, false, 20);
+  assert.match(output, /PID 14880.*running.*npm run dev/);
+});
