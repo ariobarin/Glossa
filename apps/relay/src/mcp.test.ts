@@ -209,7 +209,10 @@ test("publishes reviewable MCP tool contracts", async (context) => {
     assert.ok(inputSchema.properties?.workspaceId, `${toolName} must route by workspaceId`);
     assert.equal(inputSchema.properties?.deviceId, undefined, `${toolName} must not expose deviceId`);
   }
-  const runCommandInput = byName.get("run_command")?.inputSchema as JsonSchemaNode;
+  const runCommandTool = byName.get("run_command");
+  assert.match(runCommandTool?.description ?? "", /foreground.*get_command.*cancel_command/);
+  assert.match(runCommandTool?.description ?? "", /Detached children.*cleanup unconfirmed/);
+  const runCommandInput = runCommandTool?.inputSchema as JsonSchemaNode;
   assert.deepEqual(
     new Set(runCommandInput.required ?? []),
     new Set(["workspaceId", "command"]),
