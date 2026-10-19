@@ -46,7 +46,7 @@ This packet records tool explanations, reviewer setup, regression cases, securit
 - Plugin manifest URLs: `websiteURL=https://glossa.sh`, `privacyPolicyURL=https://glossa.sh/privacy`, `termsOfServiceURL=https://glossa.sh/terms`, `supportURL=https://glossa.sh/support`
 - Required branding assets: both `interface.logo` and `interface.composerIcon`; each must be a square PNG/JPEG/WebP/SVG, at least 48×48 and at most 4096×4096 pixels, and no larger than 5 MiB. Both point at `assets/glossa.svg`, a copy of `site/glossa-symbol-badge.svg` that the validator keeps identical.
 - Screenshots: omit them because Glossa has no custom MCP UI
-- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows across the supported ChatGPT and Codex surfaces. The portal has no dashboard field for it: rebuild with `GLOSSA_PLUGIN_DEMO_URL` set so `review.demo_recording_url` is in `plugin.json`, then upload the ZIP again.
+- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows in ChatGPT, the surface Glossa is built for, side by side with the Glossa activity screen. The plugin also installs in Codex, but the recording doesn't need a Codex segment. The portal has no dashboard field for it: rebuild with `GLOSSA_PLUGIN_DEMO_URL` set so `review.demo_recording_url` is in `plugin.json`, then upload the ZIP again.
 - Country availability: `publication.countries` is omitted so availability is chosen in the portal
 - Commerce: `review.commerce` is `false`
 
@@ -339,7 +339,7 @@ Complete these at submission time because they cannot be safely or accurately st
 - an OpenAI project with global data residency rather than EU data residency;
 - reviewer username and password, plus the [reviewer notes](#reviewer-notes);
 - domain-verification challenge token, set only as `GLOSSA_OPENAI_APPS_CHALLENGE` in deployment configuration;
-- demo recording URL showing the main installed-plugin workflows across supported ChatGPT and Codex surfaces;
+- demo recording URL showing the main installed-plugin workflows in ChatGPT;
 - supported launch countries; do not claim countries or translations that have not been intentionally selected and verified;
 - policy attestations.
 
@@ -357,7 +357,7 @@ Do not submit until all of the following are true:
 - the dedicated reviewer credentials work from an unrelated network in both ChatGPT and the CLI without MFA, email, SMS, CAPTCHA, private-network access, or operator intervention;
 - the isolated fixture worker remains online and no other workspace is exposed;
 - exactly five positive and exactly three negative portal cases are configured, and the broader routing, permission-boundary, Restricted Data, and host-confirmation regression suite passes after a fresh fixture reset;
-- the required square `logo` and `composerIcon` assets are present and valid, screenshots are omitted because Glossa has no custom UI, and the demo recording URL shows the main installed-plugin workflows across supported ChatGPT and Codex surfaces;
+- the required square `logo` and `composerIcon` assets are present and valid, screenshots are omitted because Glossa has no custom UI, and the demo recording URL shows the main installed-plugin workflows in ChatGPT;
 - the Restricted Data question from `docs/restricted-data.md` is in the reviewer notes; approval of the listing is not treated as an answer unless OpenAI addresses the question, and metadata or the detector alone are not treated as approval;
 - repository, logs, site output, and submission materials contain no reviewer subject, password, token, private key, local absolute path, customer data, or operator credential; the exact reviewer subject exists only in protected deployment configuration;
 - `npm run review:check:submission` passes on the exact submitted commit and deployed release with `GLOSSA_VERIFIED_PUBLISHER_NAME` and the real `GLOSSA_PLUGIN_APP_ID` set; this runs the local suite, production-surface checks, the plugin build plus ZIP and local-package validation, npm package dry-run, and `git diff --check`.

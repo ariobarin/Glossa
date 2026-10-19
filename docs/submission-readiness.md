@@ -73,7 +73,7 @@ glossa --access system --label openai-review .review-workspace
 - [ ] Listing name, full description, verified developer name, all four listing URLs, `Developer Tools` category, declared capabilities, intentionally selected launch countries, attestations, and release notes are complete.
 - [ ] Exactly five positive and exactly three negative portal test cases are configured.
 - [ ] Both required square branding assets (`interface.logo` and `interface.composerIcon`) satisfy the supported format, 48–4096 px dimension, and 5 MiB limits; no screenshots are configured because Glossa has no custom UI.
-- [ ] The required demo recording URL is populated and demonstrates the main installed-plugin workflows across supported ChatGPT and Codex surfaces.
+- [ ] The required demo recording URL is populated and demonstrates the main installed-plugin workflows in ChatGPT, side by side with the Glossa activity screen.
 - [ ] The five-positive/three-negative portal cases imported from `plugin/glossa/plugin.json` appear in **Review details**.
 
 ## Metadata quality gates
