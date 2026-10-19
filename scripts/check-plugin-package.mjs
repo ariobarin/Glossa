@@ -199,8 +199,8 @@ for (const [kind, list] of Object.entries(cases)) {
     }
   });
 }
-if (review.demo_recording_url !== undefined) httpsUrl(review.demo_recording_url, "review.demo_recording_url", 2048);
-else console.warn("review.demo_recording_url is not set; enter the walkthrough URL in Review details before submitting.");
+// The portal has no dashboard field for the walkthrough; it imports only from the ZIP.
+httpsUrl(review.demo_recording_url, "review.demo_recording_url", 2048);
 assert.equal(review.commerce, false, "Glossa does not support commerce");
 
 const publication = openai.publication;

@@ -46,7 +46,7 @@ This packet records tool explanations, reviewer setup, regression cases, securit
 - Plugin manifest URLs: `websiteURL=https://glossa.sh`, `privacyPolicyURL=https://glossa.sh/privacy`, `termsOfServiceURL=https://glossa.sh/terms`, `supportURL=https://glossa.sh/support`
 - Required branding assets: both `interface.logo` and `interface.composerIcon`; each must be a square PNG/JPEG/WebP/SVG, at least 48×48 and at most 4096×4096 pixels, and no larger than 5 MiB. Both point at `assets/glossa.svg`, a copy of `site/glossa-symbol-badge.svg` that the validator keeps identical.
 - Screenshots: omit them because Glossa has no custom MCP UI
-- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows in ChatGPT, the surface Glossa is built for, side by side with the Glossa activity screen. The plugin also installs in Codex, but the recording doesn't need a Codex segment. The portal has no dashboard field for it: rebuild with `GLOSSA_PLUGIN_DEMO_URL` set so `review.demo_recording_url` is in `plugin.json`, then upload the ZIP again.
+- Demo recording URL: required for an MCP-backed public submission; record the installed plugin's main workflows in ChatGPT, the surface Glossa is built for, side by side with the Glossa activity screen. The plugin also installs in Codex, but the recording doesn't need a Codex segment. The portal has no dashboard field for it, so `review.demo_recording_url` lives in `plugin/glossa/plugin.json` (currently `https://youtu.be/0kropWvJVSY`) and the validator requires it. `GLOSSA_PLUGIN_DEMO_URL` overrides it for a one-off build.
 - Country availability: `publication.countries` is omitted so availability is chosen in the portal
 - Commerce: `review.commerce` is `false`
 
