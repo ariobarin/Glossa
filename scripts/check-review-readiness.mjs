@@ -322,7 +322,7 @@ await requiredText("docs/demo-recording.md", [
   "# Plugin submission demo recording",
   "installed Glossa plugin",
   "ChatGPT",
-  "Codex",
+  "side by side",
   "Run npm test",
   "no password, pairing code, token",
 ]);
