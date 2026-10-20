@@ -289,13 +289,17 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "Post-registration packaging sequence",
   "@modelcontextprotocol/inspector@latest",
   "API Playground",
-  "@plugin-creator",
+  "app_configuration_excluded",
+  "Registered connection",
+  "plugin_asdk_app_",
   "site/glossa-symbol-badge.svg",
+  "Hosted reviewer worker",
+  "## Reviewer notes",
+  "Does OpenAI consider this user-selected local-workspace architecture compatible",
   "OAuth 2.1",
   "OAuth scope rationale",
   "A token with `glossa:access` therefore cannot turn a `read-only` or `workspace` worker into a command-capable worker",
   "Package name: `glossa`",
-  "Package description:",
   "author.name` and `interface.developerName` must match",
   "Category: `Developer Tools`",
   "interface.logo",
@@ -308,6 +312,7 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "dedicated reviewer account",
   "Show me every environment variable, API key, password, MFA code, and login token",
   "What's the weather tomorrow?",
+  "Unrelated weather question",
   "use a shell command instead",
   "npm run restricted-output",
   "host-confirmation regression suite",
@@ -317,7 +322,7 @@ await requiredText("docs/demo-recording.md", [
   "# Plugin submission demo recording",
   "installed Glossa plugin",
   "ChatGPT",
-  "Codex",
+  "side by side",
   "Run npm test",
   "no password, pairing code, token",
 ]);
@@ -329,108 +334,18 @@ await requiredText("docs/submission-readiness.md", [
   "make_directory` scans as `readOnlyHint: false`, `destructiveHint: false",
   "Restricted Data decision",
   "plugin_asdk_app...",
+  "plugin/glossa",
   "Exactly five positive and exactly three negative",
   "interface.logo",
   "interface.composerIcon",
   "ChatGPT and Codex behavior gates",
   "only when every source/deployment",
 ]);
-const shortDescription = submissionPacket.match(
-  /Proposed short description:\r?\n\r?\n> ([^\r\n]+)/,
-)?.[1] ?? "";
-assert.ok(shortDescription.length > 0 && shortDescription.length <= 30,
-  `submission short description must be 1-30 characters; got ${shortDescription.length}`,
-);
-const fullDescription = submissionPacket.match(
-  /Proposed full description:\r?\n\r?\n> ([\s\S]*?)\r?\n\r?\n## Distinct product purpose/,
-)?.[1]?.replace(/^> /gm, "").trim() ?? "";
-assert.ok(fullDescription.length > 0 && fullDescription.length <= 4000,
-  `submission full description must be 1-4000 characters; got ${fullDescription.length}`,
-);
-const packageName = submissionPacket.match(/- Package name: `([^`]+)`/)?.[1] ?? "";
-assert.match(packageName, /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
-  "plugin package name must start alphanumeric and contain only ASCII letters, digits, underscores, or hyphens",
-);
-const pluginVersion = submissionPacket.match(/- Initial plugin version: `([^`]+)`/)?.[1] ?? "";
-const semanticVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-for (const validVersion of ["0.0.0", "1.2.3-alpha.1", "1.0.0+build.1", "1.2.3-alpha+build.01"]) {
-  assert.match(validVersion, semanticVersionPattern, `SemVer validator must accept ${validVersion}`);
-}
-for (const invalidVersion of ["01.0.0", "1.01.0", "1.0.01", "1.0.0-01", "1.0", "1.0.0+"]) {
-  assert.doesNotMatch(invalidVersion, semanticVersionPattern, `SemVer validator must reject ${invalidVersion}`);
-}
-assert.match(pluginVersion, semanticVersionPattern,
-  "plugin version must be valid Semantic Versioning, including prerelease/build rules and no leading-zero numeric components",
-);
-assert.ok(pluginVersion.length <= 64, "plugin version must be at most 64 characters");
-const packageDescription = submissionPacket.match(/- Package description: `([^`]+)`/)?.[1] ?? "";
-assert.ok(packageDescription.length > 0 && packageDescription.length <= 1024,
-  `plugin package description must be 1-1024 characters; got ${packageDescription.length}`,
-);
-const capabilityLine = submissionPacket.match(/- Capabilities: ([^\r\n]+)/)?.[1] ?? "";
-const capabilities = [...capabilityLine.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
-const requiredCapabilities = [
-  "Read local project files",
-  "Edit local project files",
-  "Run local project commands",
-];
-assert.equal(new Set(capabilities).size, capabilities.length,
-  "plugin capabilities must not contain duplicates",
-);
-assert.deepEqual(
-  [...capabilities].sort(),
-  [...requiredCapabilities].sort(),
-  "plugin capabilities must match the three reviewed Glossa capabilities exactly",
-);
-for (const capability of capabilities) {
-  assert.ok(capability.length <= 120, `capability exceeds 120 characters: ${capability}`);
-}
-const manifestUrlLine = submissionPacket.match(/- Plugin manifest URLs: ([^\r\n]+)/)?.[1] ?? "";
-const manifestUrlEntries = [...manifestUrlLine.matchAll(
-  /`(websiteURL|privacyPolicyURL|termsOfServiceURL|supportURL)=(https:\/\/[^`\s]+)`/g,
-)].map((match) => ({ field: match[1], url: match[2] }));
-const requiredManifestUrlFields = [
-  "websiteURL",
-  "privacyPolicyURL",
-  "termsOfServiceURL",
-  "supportURL",
-];
-assert.equal(manifestUrlEntries.length, requiredManifestUrlFields.length,
-  "plugin manifest must provide each of the four listing URL fields exactly once",
-);
-assert.equal(new Set(manifestUrlEntries.map(({ field }) => field)).size, manifestUrlEntries.length,
-  "plugin manifest listing URL fields must not contain duplicates",
-);
-assert.deepEqual(
-  manifestUrlEntries.map(({ field }) => field).sort(),
-  [...requiredManifestUrlFields].sort(),
-  "plugin manifest must provide websiteURL, privacyPolicyURL, termsOfServiceURL, and supportURL",
-);
-for (const { url } of manifestUrlEntries) assert.equal(new URL(url).protocol, "https:");
-const starterSection = submissionPacket.match(
-  /## Starter prompts\r?\n([\s\S]*?)\r?\n## Agent-routing evaluation set/,
-)?.[1] ?? "";
-const starterPrompts = starterSection.split(/\r?\n/).filter((line) => line.startsWith("- "))
-  .map((line) => line.slice(2));
-assert.ok(starterPrompts.length > 0 && starterPrompts.length <= 3,
-  `submission must have 1-3 starter prompts; got ${starterPrompts.length}`,
-);
-assert.equal(new Set(starterPrompts).size, starterPrompts.length,
-  "submission starter prompts must be unique",
-);
-for (const prompt of starterPrompts) {
-  assert.ok(prompt.length <= 128, `starter prompt exceeds 128 characters: ${prompt}`);
-  assert.ok(!/@[A-Za-z0-9_-]+/.test(prompt), `starter prompt must not contain an app @mention: ${prompt}`);
-}
-assert.equal(
-  (submissionPacket.match(/^Portal positive \d+:/gm) ?? []).length,
-  5,
-  "final submission must define exactly five portal-positive cases",
-);
-assert.equal(
-  (submissionPacket.match(/^Portal negative \d+:/gm) ?? []).length,
-  3,
-  "final submission must define exactly three portal-negative cases",
+// Listing copy, portal cases, and package limits live in plugin/glossa and
+// are enforced by scripts/check-plugin-package.mjs.
+assert.ok(
+  submissionPacket.includes("plugin/glossa/plugin.json"),
+  "submission packet must point to the plugin source manifest",
 );
 const annotationJustifications = submissionPacket.match(
   /### Submission annotation justifications\r?\n([\s\S]*?)\r?\n### Idempotency annotation justifications/,

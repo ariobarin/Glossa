@@ -1,0 +1,28 @@
+[Unit]
+Description=Glossa OpenAI reviewer worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=glossa-review
+Group=glossa-review
+Environment=HOME=/var/lib/glossa-review
+WorkingDirectory=/var/lib/glossa-review/glossa/.review-workspace
+ExecStart=/usr/local/bin/glossa --headless --access system --label openai-review /var/lib/glossa-review/glossa/.review-workspace
+Restart=always
+RestartSec=5
+# Store the device credential in its mode-0600 file: kernel keyrings don't
+# survive a reboot, and the server has no Secret Service.
+SystemCallFilter=~@keyring
+SystemCallErrorNumber=EPERM
+# Reviewer commands run as this unit. Keep them on the public internet: no
+# loopback services, cloud metadata, LAN, VPN, or container networks.
+# setup.sh allows the configured DNS resolvers in a drop-in.
+IPAddressDeny=localhost link-local multicast 10.0.0.0/8 100.64.0.0/10 172.16.0.0/12 192.168.0.0/16 fc00::/7
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

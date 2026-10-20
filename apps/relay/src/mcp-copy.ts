@@ -1,4 +1,4 @@
-export const MCP_SERVER_INSTRUCTIONS = "Glossa gives access to the user's connected workspaces: files, images, and local command-line tools. File paths are relative to each workspace root. Commands run with the local account's permissions, environment, and network access.";
+export const MCP_SERVER_INSTRUCTIONS = "Glossa gives access to the user's connected workspaces: files, images, and local command-line tools. File paths are relative to each workspace root. Commands run with the local account's permissions, environment, and network access. Don't use Glossa to list, read, or reveal credentials, secrets, tokens, or environment variables.";
 
 export const MCP_TOOL_COPY = {
   list_workspaces: {
@@ -15,7 +15,7 @@ export const MCP_TOOL_COPY = {
   },
   view_image: {
     title: "View Workspace Image",
-    description: "Reads a PNG, JPEG, or WebP image up to 4 MiB. Returns the image, MIME type, byte length, and SHA-256.",
+    description: "Reads a PNG, JPEG, or WebP image up to 4 MiB. Returns the image, MIME type, byte length, and SHA-256. If the image isn't shown to you, say so instead of reading the file another way.",
   },
   list_files: {
     title: "List Workspace Files",
