@@ -8,7 +8,7 @@ Glossa is a managed service. Self-hosting is the optional alternative for people
 - Postgres 17 with TLS enabled
 - one public HTTPS origin for the relay
 - an Auth0 tenant that issues JWT access tokens for your relay audience
-- one Auth0 Native application with Device Code enabled for the CLI
+- one Auth0 Regular Web Application for the control panel, where the CLI's pairing codes are redeemed
 
 Keep the relay at one process. Active worker routes and pending jobs live in relay memory, so horizontal scaling is not supported.
 
@@ -17,9 +17,9 @@ Keep the relay at one process. Active worker routes and pending jobs live in rel
 Create an Auth0 API whose identifier is your relay audience, such as `https://mcp.example.com/`. Add these permissions:
 
 - `glossa:access` for the MCP client
-- `glossa:device` for CLI enrollment and device management
+- `glossa:device` for CLI 0.2.1 and older, which enroll with an OAuth token
 
-The Native application is a public client and needs Device Code and refresh token grants. Its allowed scopes must include `openid`, `profile`, `offline_access`, and `glossa:device`.
+Current CLIs hold no OAuth credentials. They print a pairing code, which you redeem on the relay's control panel, and then use only a revocable device credential.
 
 The relay accepts an explicit allowlist of Auth0 provider prefixes and exact subjects. Managed Glossa defaults to the `google-oauth2|` prefix. A private installation may set `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES` to one or more comma-separated connection prefixes, each including the trailing `|` separator, and `GLOSSA_AUTH0_ALLOWED_SUBJECTS` to one or more complete Auth0 subjects. Prefer exact subjects for isolated reviewer or service accounts so a whole connection is not admitted. The singular `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIX` setting has been removed; rename it to `GLOSSA_AUTH0_ALLOWED_SUBJECT_PREFIXES` before upgrading.
 
@@ -70,7 +70,7 @@ Terminate TLS in front of the relay. The example binds HTTP to loopback for a pr
 
 ## Control panel
 
-The relay can serve a small control panel at `/panel` for redeeming pairing codes in a browser and for listing and revoking the devices on your account, which is the recovery path when a computer is lost. The panel is disabled unless all three panel variables are set.
+The relay serves a small control panel at `/panel` for redeeming pairing codes and for listing and revoking the devices on your account, which is the recovery path when a computer is lost. New computers cannot pair without it. The panel is disabled unless all three panel variables are set.
 
 Create an Auth0 Regular Web Application in the same tenant. Add `${GLOSSA_PUBLIC_ORIGIN}/panel/auth/callback` to its allowed callback URLs, for example `https://mcp.example.com/panel/auth/callback`. Then set:
 
@@ -84,41 +84,22 @@ The session secret signs the panel's stateless session cookies. Keep it in the r
 
 ## CLI
 
-Use the same issuer, audience, and Native application when running the repository build:
+Point the CLI at your relay. It needs no identity settings:
 
 Windows PowerShell:
 
 ```powershell
 $env:GLOSSA_RELAY_ORIGIN = "https://mcp.example.com"
-$env:GLOSSA_WORKER_ORIGIN = "https://mcp.example.com"
-$env:GLOSSA_AUTH0_ISSUER = "https://YOUR_TENANT.auth0.com/"
-$env:GLOSSA_AUTH0_AUDIENCE = "https://mcp.example.com/"
-$env:GLOSSA_AUTH0_CLI_CLIENT_ID = "YOUR_NATIVE_CLIENT_ID"
-
-Set-Location C:\path\to\glossa
-npm ci
-npm run build
-
-Set-Location C:\path\to\a\project
-node C:\path\to\glossa\packages\cli\dist\main.js
+glossa
 ```
 
 macOS or Linux:
 
 ```shell
-export GLOSSA_RELAY_ORIGIN="https://mcp.example.com"
-export GLOSSA_WORKER_ORIGIN="https://mcp.example.com"
-export GLOSSA_AUTH0_ISSUER="https://YOUR_TENANT.auth0.com/"
-export GLOSSA_AUTH0_AUDIENCE="https://mcp.example.com/"
-export GLOSSA_AUTH0_CLI_CLIENT_ID="YOUR_NATIVE_CLIENT_ID"
-
-cd /path/to/glossa
-npm ci
-npm run build
-
-cd /path/to/a/project
-node /path/to/glossa/packages/cli/dist/main.js
+GLOSSA_RELAY_ORIGIN="https://mcp.example.com" glossa
 ```
+
+Redeem the printed pairing code at `https://mcp.example.com/panel`. Set `GLOSSA_WORKER_ORIGIN` only when workers must reach the relay at a different origin than browsers do.
 
 The worker defaults to `workspace` access: structured reads and guarded writes stay inside the selected project, and commands are disabled. Start it with `--access read-only` for inspection or `--access system` only when commands are required. A system-profile command has the full environment, credentials, filesystem permissions, and network access of the operating-system account that launched it and is not confined to the selected project.
 

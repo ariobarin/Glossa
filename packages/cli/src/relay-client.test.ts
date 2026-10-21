@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createPairing,
-  enrollDevice,
   listDevices,
   PairingCodeExpiredError,
   redeemPairing,
@@ -14,7 +13,6 @@ const endpoints = {
   relayOrigin: "https://mcp.glossa.test",
   workerOrigin: "https://mcp.glossa.test",
 };
-const pairingAuthorization = "Bearer access";
 const deviceAuthorization = "Device paired-device-token";
 const device = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -44,28 +42,6 @@ test("revokes a paired computer with its device credential", async () => {
       return new Response(null, { status: 204 });
     },
   );
-});
-
-test("enrolls a device with temporary browser authorization", async () => {
-  const enrolled = await enrollDevice(endpoints, pairingAuthorization, "Test PC", async (input, init) => {
-    assert.equal(input, "https://mcp.glossa.test/v1/devices/enroll");
-    assert.equal(init?.method, "POST");
-    assert.equal(
-      (init?.headers as Record<string, string>).authorization,
-      pairingAuthorization,
-    );
-    return Response.json({
-      device: { id: device.id, name: device.name },
-      device_token: "paired-device-token",
-    }, { status: 201 });
-  });
-
-  assert.deepEqual(enrolled, {
-    relayOrigin: endpoints.relayOrigin,
-    deviceId: device.id,
-    deviceName: device.name,
-    token: "paired-device-token",
-  });
 });
 
 test("lists devices with the device credential", async () => {
