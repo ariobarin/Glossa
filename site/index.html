@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#111016" />
     <title>Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=42" />
+    <link rel="stylesheet" href="/styles.css?v=43" />
   </head>
   <body class="landing-shell">
     <header class="site-header page-width">
@@ -34,6 +34,22 @@
           <div class="hero-action-row">
             <a class="primary-action" href="/docs/quickstart">Add to ChatGPT</a>
           </div>
+          <div class="hero-installer">
+            <div class="hero-installer-heading">
+              <span>Then install the CLI</span>
+            </div>
+            <div class="hero-install-panel">
+              <div class="code-block hero-code-block">
+                <button
+                  class="copy-button"
+                  type="button"
+                  aria-label="Copy npm install command"
+                  data-copy-target="hero-install-npm"
+                ><span class="copy-tooltip" aria-hidden="true">Copy</span></button>
+                <pre><code id="hero-install-npm">npm install -g @ariobarin/glossa</code></pre>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -50,5 +66,6 @@
         </nav>
       </div>
     </footer>
+    <script type="module" src="/copy.js"></script>
   </body>
 </html>
