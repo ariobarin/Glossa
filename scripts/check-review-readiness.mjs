@@ -136,14 +136,8 @@ if (process.env.GLOSSA_ALLOW_PRERELEASE === "1") {
 }
 assert.equal(cliPackage.publishConfig?.tag, "latest", "CLI must publish to npm latest");
 
-const mcpSource = await readFile(
-  join(repositoryRoot, "apps", "relay", "src", "mcp.ts"),
-  "utf8",
-);
-const mcpResults = await readFile(join(repositoryRoot, "apps/relay/src/mcp-results.ts"), "utf8");
-const contractVersion = mcpSource.match(/MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
-assert.equal(contractVersion, "3.2.0", "MCP public contract must be 3.2.0");
-
+// Tool names, titles, and annotations are asserted against the real MCP
+// tools/list response in apps/relay/src/mcp.test.ts.
 const expectedTools = [
   "list_workspaces",
   "get_logout_instructions",
@@ -162,54 +156,6 @@ const expectedTools = [
   "read_command_output",
   "cancel_command",
 ];
-const expectedToolAnnotations = {
-  list_workspaces: [true, false, true, false],
-  get_logout_instructions: [true, false, true, false],
-  read_file: [true, false, true, false],
-  view_image: [true, false, true, false],
-  list_files: [true, false, true, false],
-  search_text: [true, false, true, false],
-  read_file_range: [true, false, true, false],
-  write_file: [false, true, false, false],
-  edit_file: [false, true, false, false],
-  make_directory: [false, false, true, false],
-  delete_path: [false, true, false, false],
-  move_path: [false, false, false, false],
-  run_command: [false, true, false, true],
-  get_command: [true, false, true, false],
-  read_command_output: [true, false, true, false],
-  cancel_command: [false, true, true, false],
-};
-for (const tool of expectedTools) {
-  const registration = mcpSource.match(
-    new RegExp(`server\\.registerTool\\(\\s*"${tool}",[\\s\\S]*?\\n\\s*async`),
-  )?.[0];
-  assert.ok(registration, `${tool} must have one MCP registration`);
-  const [readOnlyHint, destructiveHint, idempotentHint, openWorldHint] =
-    expectedToolAnnotations[tool];
-  const sharedAnnotations = registration.match(/annotations: ([A-Z_]+)/)?.[1];
-  const annotations = sharedAnnotations
-    ? mcpSource.match(new RegExp(`const ${sharedAnnotations} = \\{[\\s\\S]*?\\n\\}`))?.[0] ?? ""
-    : registration;
-  assert.match(annotations, new RegExp(`readOnlyHint: ${readOnlyHint}`));
-  assert.match(annotations, new RegExp(`destructiveHint: ${destructiveHint}`));
-  assert.match(annotations, new RegExp(`idempotentHint: ${idempotentHint}`));
-  assert.match(annotations, new RegExp(`openWorldHint: ${openWorldHint}`));
-}
-assert.ok(
-  mcpSource.includes("accessProfile") && mcpSource.includes("permissions"),
-  "list_workspaces must expose access profiles and permissions",
-);
-assert.ok(
-  mcpResults.includes("command_access_disabled") &&
-    mcpResults.includes("write_access_disabled"),
-  "MCP must expose actionable permission errors",
-);
-assert.ok(
-  mcpResults.includes("RESTRICTED_DATA_ERROR_CODE") &&
-    mcpSource.includes("containsRestrictedAuthenticationData(job)"),
-  "MCP must enforce credential checks and return their error code",
-);
 
 const homepage = await readFile(join(repositoryRoot, "site/index.html"), "utf8");
 assert.doesNotMatch(

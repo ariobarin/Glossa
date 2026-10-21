@@ -22,7 +22,6 @@
     "dev:down": "docker compose down",
     "docs:build": "node scripts/build-docs.mjs",
     "site:check": "node scripts/check-site-chrome.mjs",
-    "cli:hud-demo": "npm run build --workspace @glossa/protocol && npm run hud:demo --workspace @ariobarin/glossa",
     "cli:hud-preview": "npm run build --workspace @glossa/protocol && npm run hud:preview --workspace @ariobarin/glossa --",
     "cli:prepare": "node scripts/prepare-cli-release.mjs",
     "cli:smoke:update": "node packages/cli/scripts/smoke-update.mjs",
@@ -40,7 +39,7 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "jose": "6.2.3",
     "marked": "18.0.6"
   }
