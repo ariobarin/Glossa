@@ -75,10 +75,6 @@ async function runWorkspaceSession(
   { path, label, accessProfile, headless, keepAwake }: Extract<CliInvocation, { command: "workspace" }>,
   initialNotice?: string,
 ): Promise<void> {
-  // Fail before login or pairing, not after the user has redeemed a code.
-  if (!headless && (!process.stdin.isTTY || !process.stdout.isTTY)) {
-    throw new Error(INTERACTIVE_TERMINAL_REQUIRED);
-  }
   const root = await selectExposureRoot(path);
   const lease = await acquireWorkspaceLease(root);
   try {
@@ -304,6 +300,10 @@ async function main(): Promise<void> {
   } else if (invocation.command === "workspace") {
     if (invocation.keepAwake && process.platform !== "win32") {
       throw new UsageError("--keep-awake is currently supported only on Windows.");
+    }
+    // Fail before updates, login or pairing, not after the user has redeemed a code.
+    if (!invocation.headless && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+      throw new Error(INTERACTIVE_TERMINAL_REQUIRED);
     }
     const update = await updateBeforeWorkspace();
     if (update.exit) return;
