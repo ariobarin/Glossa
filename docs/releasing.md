@@ -2,7 +2,7 @@
 
 ## Verify before publishing
 
-Keep release preparation in reviewed pull requests. The `CLI release` workflow has a manual verification route that builds and smoke-tests the same executables as a tagged release without publishing anything:
+Keep release preparation in reviewed pull requests. The `CLI release` workflow has a manual verification route that runs the same checks as a tagged release without publishing anything:
 
 ```shell
 gh workflow run publish-cli.yml --ref YOUR_REVIEW_BRANCH
@@ -10,11 +10,9 @@ gh workflow run publish-cli.yml --ref YOUR_REVIEW_BRANCH
 
 Replace `YOUR_REVIEW_BRANCH` with the branch containing the complete candidate. Inspect that run's exact commit and job results, not just the branch name. GitHub must already know this workflow on the default branch for manual dispatch to be available.
 
-The run checks the package version and repository checks, then builds Windows, macOS and Linux executables for x64 and ARM64. Each platform executes its binary, checks regex/glob matching and matcher timeout cleanup through that executable's embedded runtime, and exercises the direct installer against a local release server and temporary installation directory. The matcher probe loads the candidate's source fixture; the ordinary CLI smoke separately runs its compiled entrypoint. It does not replace the reviewer's installed CLI. Build artifacts and checksums are retained for seven days.
+The run checks the package version and runs `npm run check`, which builds the npm bundle and smoke-tests its help, version, argument handling and update notices. CI also runs the full check on Windows for every pull request.
 
 Both publishing jobs must be **skipped** on a manual run, even when dispatching against a tag. Their conditions require a `push` event for a `cli-v*` tag. Verification jobs have read-only repository permissions and no npm identity-token permission.
-
-The native matrix is intentionally not part of every pull request. Use it for release candidates and changes to packaging, native execution or installers. Ordinary `npm run check` also runs the shared help/version/argument smoke against the built npm bundle, so a stale usage assertion fails before release day.
 
 ## Prepare the version
 
@@ -28,7 +26,7 @@ This changes package metadata, runs repository checks and dry-runs npm packing. 
 
 ## Publish only after approval
 
-A pushed `cli-v<VERSION>` tag starts the publishing path. The tag must exactly match `packages/cli/package.json`. Repository checks and all six native targets must succeed before a GitHub release is created; npm publishing follows the GitHub release. Prerelease versions use the npm `beta` channel, and stable versions use `latest`.
+A pushed `cli-v<VERSION>` tag starts the publishing path. The tag must exactly match `packages/cli/package.json`. Repository checks must succeed before npm publishing, and a notes-only GitHub release follows it. Prerelease versions use the npm `beta` channel, and stable versions use `latest`.
 
 Only the GitHub-release job receives repository write permission, and only the npm-publish job receives identity-token permission. A failed prerequisite prevents downstream publication. Do not bypass these checks with a direct package publish.
 

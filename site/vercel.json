@@ -9,41 +9,19 @@
       "source": "/get-started",
       "destination": "/docs/quickstart",
       "permanent": true
-    }
-  ],
-  "rewrites": [
+    },
     {
       "source": "/install",
-      "destination": "/install.ps1"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/install",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "text/plain; charset=utf-8"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=300"
-        }
-      ]
+      "destination": "/docs/quickstart",
+      "permanent": false
     },
     {
       "source": "/install.sh",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "text/plain; charset=utf-8"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=300"
-        }
-      ]
-    },
+      "destination": "/docs/quickstart",
+      "permanent": false
+    }
+  ],
+  "headers": [
     {
       "source": "/(.*)",
       "headers": [

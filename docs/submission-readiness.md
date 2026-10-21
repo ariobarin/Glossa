@@ -25,7 +25,7 @@ npm run review:check:submission
 It runs:
 
 - documentation, site, review-readiness, build, and test checks, including validation of the `plugin/glossa` source package;
-- the production website, OAuth metadata, relay health, GitHub release, native-asset, and npm stable-release checks;
+- the production website, OAuth metadata, relay health, GitHub release and npm stable-release checks;
 - the plugin build, then validation of the submission ZIP and the `.app.json` local-testing package against the real `plugin_asdk_app...` connection ID;
 - an npm package dry-run for `@ariobarin/glossa`;
 - `git diff --check`.

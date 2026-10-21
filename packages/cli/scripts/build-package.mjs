@@ -15,7 +15,6 @@ await rm("dist", { recursive: true, force: true });
 const applicationDefine = {
   "process.env.NODE_ENV": JSON.stringify("production"),
   __GLOSSA_VERSION__: JSON.stringify(packageJson.version),
-  __GLOSSA_DISTRIBUTION__: JSON.stringify("npm"),
 };
 
 const omitInkDevtools = {
