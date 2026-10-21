@@ -55,7 +55,7 @@ test("pairs with a relay-issued code and stores nothing itself", async () => {
     "",
     "Pairing code: ABCD-EFGH (valid for 10 minutes)",
     "",
-    "Enter it at https://mcp.glossa.test/panel",
+    "Enter it at https://mcp.glossa.test/panel/pair",
     "Paired with Glossa as gpu-box.",
   ]);
 });

@@ -27,6 +27,8 @@ import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
 import { unpairComputer } from "./unpair.js";
 import {
   deviceForSession,
+  headlessReporter,
+  INTERACTIVE_TERMINAL_REQUIRED,
   runManagedSession,
 } from "./worker/managed-session.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
@@ -73,6 +75,10 @@ async function runWorkspaceSession(
   { path, label, accessProfile, headless, keepAwake }: Extract<CliInvocation, { command: "workspace" }>,
   initialNotice?: string,
 ): Promise<void> {
+  // Fail before login or pairing, not after the user has redeemed a code.
+  if (!headless && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+    throw new Error(INTERACTIVE_TERMINAL_REQUIRED);
+  }
   const root = await selectExposureRoot(path);
   const lease = await acquireWorkspaceLease(root);
   try {
@@ -86,6 +92,7 @@ async function runWorkspaceSession(
         accessProfile,
         ...(keepAwake ? { keepAwake: true } : {}),
         ...(label ? { workspaceLabel: label } : {}),
+        onEvent: headlessReporter(),
         quiet: true,
       });
       return;

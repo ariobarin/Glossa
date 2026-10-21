@@ -1,6 +1,7 @@
 import type { ReadStream, WriteStream } from "node:tty";
 import type { WorkerAccessProfile } from "@glossa/protocol";
 import { stripVTControlCharacters } from "node:util";
+import { INTERACTIVE_TERMINAL_REQUIRED } from "./worker/managed-session.js";
 import React, {
   useEffect,
   useState,
@@ -1716,7 +1717,7 @@ export async function runSessionHud(
   output: WriteStream = process.stdout,
 ): Promise<void> {
   if (!input.isTTY || !output.isTTY) {
-    throw new Error("Glossa requires an interactive terminal.");
+    throw new Error(INTERACTIVE_TERMINAL_REQUIRED);
   }
 
   const controller = new AbortController();
