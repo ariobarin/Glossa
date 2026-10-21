@@ -7,7 +7,10 @@ import { buildPanel } from "./panel.js";
 
 const config = loadConfig();
 const store = new Store(config.DATABASE_URL);
-const state = new RouterState();
+const state = new RouterState({
+  maxWorkers: config.GLOSSA_MAX_WORKERS,
+  maxWorkersPerAccount: config.GLOSSA_MAX_WORKERS_PER_ACCOUNT,
+});
 
 const app = express();
 app.disable("x-powered-by");

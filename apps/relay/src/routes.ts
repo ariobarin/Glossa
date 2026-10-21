@@ -109,6 +109,8 @@ export interface RouteDependencies {
   authFactory?: AuthFactory;
   enrollmentRateLimiter?: FixedWindowRateLimiter;
   deviceRateLimiter?: FixedWindowRateLimiter;
+  mcpRateLimiter?: FixedWindowRateLimiter;
+  ipRateLimiter?: FixedWindowRateLimiter;
   beforeDeadline?: DeadlineRunner;
   timingSink?: RelayTimingSink;
 }
@@ -344,6 +346,18 @@ export function buildRoutes(
       config.GLOSSA_DEVICE_AUTH_RATE_LIMIT,
       config.GLOSSA_RATE_LIMIT_WINDOW_MS,
     );
+  const mcpRateLimiter =
+    dependencies.mcpRateLimiter ??
+    new FixedWindowRateLimiter(
+      config.GLOSSA_MCP_RATE_LIMIT,
+      config.GLOSSA_RATE_LIMIT_WINDOW_MS,
+    );
+  const ipRateLimiter =
+    dependencies.ipRateLimiter ??
+    new FixedWindowRateLimiter(
+      config.GLOSSA_IP_RATE_LIMIT,
+      config.GLOSSA_RATE_LIMIT_WINDOW_MS,
+    );
   const timingSink = dependencies.timingSink ??
     (config.GLOSSA_TIMING_LOGS ? consoleRelayTimingSink : undefined);
   if (timingSink) router.use(relayTimingMiddleware(timingSink));
@@ -387,6 +401,14 @@ export function buildRoutes(
 
   router.get("/healthz", (_request, response) => {
     response.json({ ok: true, service: "glossa-relay" });
+  });
+
+  // A coarse per-source ceiling so one client cannot monopolize the single
+  // relay process. Per-account and failure limits below stay tighter.
+  router.use((request, response, next) => {
+    const source = request.ip || request.socket.remoteAddress || "unknown";
+    if (rejectRateLimit(response, ipRateLimiter, source)) return;
+    next();
   });
 
   router.get("/.well-known/openai-apps-challenge", (_request, response) => {
@@ -663,29 +685,44 @@ export function buildRoutes(
       return;
     }
     const workerId = parsed.data.workerId;
-    const session = state.register(
-      device.accountId,
-      device.id,
-      device.name,
-      workerId,
-      {
-        accessProfile: parsed.data.accessProfile,
-        ...(parsed.data.workerVersion
-          ? { workerVersion: parsed.data.workerVersion }
-          : {}),
-        ...(parsed.data.workspaceLabel
-          ? { workspaceLabel: parsed.data.workspaceLabel }
-          : {}),
-        capabilities: {
-          commandProgress: true,
-          concurrentJobs: true,
-          structuredReads: true,
-          imageReads: parsed.data.capabilities.imageReads === true,
-          structuredMutations: true,
-          commandOutputRanges: true,
+    let session: { generation: string; workerToken: string };
+    try {
+      session = state.register(
+        device.accountId,
+        device.id,
+        device.name,
+        workerId,
+        {
+          accessProfile: parsed.data.accessProfile,
+          ...(parsed.data.workerVersion
+            ? { workerVersion: parsed.data.workerVersion }
+            : {}),
+          ...(parsed.data.workspaceLabel
+            ? { workspaceLabel: parsed.data.workspaceLabel }
+            : {}),
+          capabilities: {
+            commandProgress: true,
+            concurrentJobs: true,
+            structuredReads: true,
+            imageReads: parsed.data.capabilities.imageReads === true,
+            structuredMutations: true,
+            commandOutputRanges: true,
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      if (code === "too_many_workers") {
+        response.status(429).json({ error: code });
+        return;
+      }
+      if (code === "relay_at_capacity") {
+        response.setHeader("Retry-After", "60");
+        response.status(503).json({ error: code });
+        return;
+      }
+      throw error;
+    }
     response.json({
       deviceId: device.id,
       workerId,
@@ -863,6 +900,7 @@ export function buildRoutes(
     async (request: AuthenticatedRequest, response: Response) => {
       const accountId = await activeAccountId(request, response, store);
       if (!accountId) return;
+      if (rejectRateLimit(response, mcpRateLimiter, accountId)) return;
       await handleMcpRequest(
         request,
         response,

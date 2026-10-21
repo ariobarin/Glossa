@@ -1088,3 +1088,140 @@ test("retries device enrollment with a suffixed name after a conflict", async (c
   assert.equal(body.device_token, token);
   assert.equal(enrollAttempts, 2);
 });
+
+function limitConfig() {
+  return loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+}
+
+async function listen(
+  context: { after: (fn: () => void) => void },
+  app: express.Express,
+): Promise<string> {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+test("limits MCP requests per account", async (context) => {
+  const config = limitConfig();
+  assert.equal(config.GLOSSA_MCP_RATE_LIMIT, 300);
+  const store: RelayStore = {
+    ...unusedStore,
+    accountIdForSubject: async () => accountId,
+  };
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: (_config, scope) => (request, _response, next) => {
+      (request as AuthenticatedRequest).auth = {
+        subject: "google-oauth2|limited",
+        scopes: new Set(scope ? [scope] : []),
+        claims: {},
+      };
+      next();
+    },
+    mcpRateLimiter: new FixedWindowRateLimiter(1, 60_000),
+  }));
+  const origin = await listen(context, app);
+  const call = () => fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+
+  const first = await call();
+  assert.notEqual(first.status, 429);
+  await first.body?.cancel();
+  const second = await call();
+  assert.equal(second.status, 429);
+  assert.ok(Number(second.headers.get("retry-after")) > 0);
+  assert.deepEqual(await second.json(), { error: "rate_limited" });
+});
+
+test("limits requests per source address but keeps health checks open", async (context) => {
+  const config = limitConfig();
+  assert.equal(config.GLOSSA_IP_RATE_LIMIT, 1200);
+  const app = express();
+  app.use(buildRoutes(config, unusedStore, new RouterState(), {
+    ipRateLimiter: new FixedWindowRateLimiter(1, 60_000),
+  }));
+  const origin = await listen(context, app);
+  const resource = `${origin}/.well-known/oauth-protected-resource`;
+
+  assert.equal((await fetch(resource)).status, 200);
+  const limited = await fetch(resource);
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), { error: "rate_limited" });
+  assert.equal((await fetch(`${origin}/healthz`)).status, 200);
+  assert.equal((await fetch(`${origin}/healthz`)).status, 200);
+});
+
+test("rejects new workers beyond the account and relay caps", async (context) => {
+  const store: RelayStore = {
+    ...unusedStore,
+    authenticateDevice: async (id) => (id === deviceId ? device : null),
+  };
+  const register = async (origin: string, id: string) => {
+    const response = await fetch(`${origin}/device/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Device ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        workerId: id,
+        accessProfile: "read-only",
+        capabilities: {
+          commandProgress: true,
+          concurrentJobs: true,
+          structuredReads: true,
+          imageReads: true,
+          structuredMutations: true,
+          commandOutputRanges: true,
+        },
+      }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+
+  const perAccount = express();
+  perAccount.use(express.json());
+  perAccount.use(buildRoutes(
+    limitConfig(),
+    store,
+    new RouterState({ maxWorkersPerAccount: 1 }),
+  ));
+  const accountOrigin = await listen(context, perAccount);
+  assert.equal((await register(accountOrigin, workerId)).status, 200);
+  assert.equal((await register(accountOrigin, workerId)).status, 200);
+  assert.deepEqual(
+    await register(accountOrigin, "00000000-0000-4000-8000-000000000005"),
+    { status: 429, body: { error: "too_many_workers" } },
+  );
+
+  const fullState = new RouterState({ maxWorkers: 1 });
+  fullState.register(
+    "00000000-0000-4000-8000-000000000009",
+    "00000000-0000-4000-8000-00000000000a",
+    "Other PC",
+    "00000000-0000-4000-8000-00000000000b",
+  );
+  const full = express();
+  full.use(express.json());
+  full.use(buildRoutes(limitConfig(), store, fullState));
+  const fullOrigin = await listen(context, full);
+  assert.deepEqual(
+    await register(fullOrigin, workerId),
+    { status: 503, body: { error: "relay_at_capacity" } },
+  );
+});

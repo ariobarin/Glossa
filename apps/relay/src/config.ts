@@ -42,6 +42,14 @@ const environmentSchema = z
       .int()
       .positive()
       .default(120),
+    GLOSSA_MCP_RATE_LIMIT: z.coerce.number().int().positive().default(300),
+    GLOSSA_IP_RATE_LIMIT: z.coerce.number().int().positive().default(1200),
+    GLOSSA_MAX_WORKERS: z.coerce.number().int().positive().default(2000),
+    GLOSSA_MAX_WORKERS_PER_ACCOUNT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(16),
     GLOSSA_WORKER_POLL_MS: z.coerce
       .number()
       .int()

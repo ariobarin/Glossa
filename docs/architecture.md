@@ -76,10 +76,10 @@ The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/s
 
 ### Relay memory
 
-- active worker connections
+- active worker connections, capped per account and per relay process
 - device IDs, ephemeral worker IDs, connection generations, selected access profiles, optional user-chosen workspace labels, hashed worker credentials, and coalesced presence timestamps, without local absolute paths
-- pending jobs after relay-side profile and recognizable-authentication-secret input checks
-- request waiters
+- pending jobs after relay-side profile and recognizable-authentication-secret input checks, at most 32 queued or in-flight per worker
+- request waiters, at most 4000 per relay process
 - recent nonces and bounded rate-limit counters
 
 ### Worker

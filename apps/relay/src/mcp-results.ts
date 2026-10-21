@@ -45,6 +45,18 @@ export function routedError(error: unknown): CallToolResult {
   if (code === "write_access_disabled" || code === "command_access_disabled") {
     return errorResult(code, workerErrorMessage(code));
   }
+  if (code === "worker_busy") {
+    return errorResult(
+      code,
+      "This workspace already has the maximum number of operations in progress. Wait for one to finish, then retry.",
+    );
+  }
+  if (code === "relay_at_capacity") {
+    return errorResult(
+      code,
+      "The Glossa relay is at capacity. Retry in a minute.",
+    );
+  }
   if (code === "worker_protocol_unsupported") {
     return errorResult(
       code,
