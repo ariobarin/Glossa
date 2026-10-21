@@ -12,11 +12,7 @@ Install the CLI with Node.js 22.9 or newer:
 npm install --global @ariobarin/glossa
 ```
 
-Add this MCP server to ChatGPT using OAuth:
-
-```text
-https://mcp.glossa.sh/mcp
-```
+Install [Glossa from the ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11). Without directory access, add `https://mcp.glossa.sh/mcp` as a custom OAuth MCP app.
 
 Then open a terminal in the project and start Glossa:
 
@@ -36,7 +32,7 @@ Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete conn
 | `workspace` (default) | Yes | Yes | No |
 | `system` | Yes | Yes | Yes |
 
-The default is useful for most code changes because it permits guarded file edits without command execution.
+The default allows guarded file edits without command execution.
 
 > **`system` is not sandboxed.** Commands have the full environment, credentials, filesystem permissions, and network access of the operating-system account that started Glossa. They are not confined to the selected project.
 

@@ -12,7 +12,7 @@ Start with the [quickstart](/docs/quickstart). For reproducible bugs, setup prob
 - **`restricted_data_blocked`:** remove the credential from the request or reproduce the problem with a non-sensitive placeholder such as `<redacted>`. Do not retry with encoding, another tool, or a shell workaround.
 - **Wrong paired account:** stop workers, run `glossa unpair`, start `glossa` again, and redeem the new pairing code on the control panel with the intended account.
 - **Previous relay unavailable:** run `glossa unpair` to remove the stale local pairing. If Glossa cannot confirm remote revocation, revoke that device from the old relay's control panel if it becomes available again.
-- **Tools changed:** run **Scan Tools** again after a Glossa update.
+- **Tools changed:** if you added Glossa as a custom Developer Mode app, run **Scan Tools** again after a Glossa update.
 
 Before posting diagnostics, remove source code, local paths, account identifiers, tokens, credentials, and command output.
 
