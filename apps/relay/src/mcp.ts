@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, type ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -313,119 +313,75 @@ function registerTools(
     "openai/visibility": "public",
   };
 
-  server.registerTool(
-    "list_workspaces",
-    {
-      ...MCP_TOOL_COPY.list_workspaces,
-      inputSchema: z.object({}).strict(),
-      outputSchema: listWorkspacesOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
-    async () => {
-      const workspaces = state.listDevices(accountId).map(({ deviceId, ...device }) => {
-        const workspaceLabel = device.workspaceLabel &&
-          !containsRestrictedAuthenticationData(device.workspaceLabel)
-          ? device.workspaceLabel : undefined;
-        return {
-          workspaceId: deviceId,
-          ...(workspaceLabel
-            ? { workspaceLabel }
-            : {}),
-          accessProfile: device.accessProfile,
-          permissions: device.permissions,
-        };
-      });
-      const documentationUrl = officialDocumentationUrl(
-        config.GLOSSA_PUBLIC_ORIGIN,
-      );
-      return structuredResult(
-        workspaces.length > 0
-          ? {
-              product: PRODUCT_CONTEXT,
-              documentationUrl,
-              workspaces,
-              availability: "online",
-              message: "Glossa workspaces are online.",
-            }
-          : {
-              product: PRODUCT_CONTEXT,
-              documentationUrl,
-              workspaces,
-              availability: "offline",
-              message: "No Glossa workspaces are online.",
-            },
-      );
-    },
-  );
+  type ToolName = keyof typeof MCP_TOOL_COPY;
+  type Annotations = { [K in keyof typeof READ_ONLY_TOOL_ANNOTATIONS]: boolean };
+  function tool<Input extends z.ZodObject>(
+    name: ToolName,
+    inputSchema: Input,
+    outputSchema: z.ZodObject,
+    annotations: Annotations,
+    handler: ToolCallback<Input>,
+  ): void {
+    server.registerTool(
+      name,
+      {
+        ...MCP_TOOL_COPY[name],
+        inputSchema,
+        outputSchema,
+        _meta: toolMetadata,
+        annotations,
+      },
+      handler,
+    );
+  }
+  const read = READ_ONLY_TOOL_ANNOTATIONS;
+  const destructive = DESTRUCTIVE_FILE_TOOL_ANNOTATIONS;
+  const readTimeoutMs = structuredReadTimeoutMs(config);
+  const noInput = z.object({}).strict();
 
-  server.registerTool(
-    "get_logout_instructions",
-    {
-      ...MCP_TOOL_COPY.get_logout_instructions,
-      inputSchema: z.object({}).strict(),
-      outputSchema: logoutOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
-    async () => {
-      const logoutUrl = browserLogoutUrl(config.GLOSSA_AUTH0_ISSUER);
-      return structuredResult({
-        logoutUrl,
-        instructions: "Sign out on the Glossa control panel. To change a computer's account, stop Glossa, run `glossa unpair`, then restart and pair with the new account. Reconnect the Glossa app in ChatGPT to change its account.",
-      });
-    },
-  );
+  tool("list_workspaces", noInput, listWorkspacesOutputSchema, read, async () => {
+    const workspaces = state.listDevices(accountId).map(({ deviceId, ...device }) => {
+      const workspaceLabel = device.workspaceLabel &&
+        !containsRestrictedAuthenticationData(device.workspaceLabel)
+        ? device.workspaceLabel : undefined;
+      return {
+        workspaceId: deviceId,
+        ...(workspaceLabel ? { workspaceLabel } : {}),
+        accessProfile: device.accessProfile,
+        permissions: device.permissions,
+      };
+    });
+    const online = workspaces.length > 0;
+    return structuredResult({
+      product: PRODUCT_CONTEXT,
+      documentationUrl: officialDocumentationUrl(config.GLOSSA_PUBLIC_ORIGIN),
+      workspaces,
+      availability: online ? "online" : "offline",
+      message: online ? "Glossa workspaces are online." : "No Glossa workspaces are online.",
+    });
+  });
 
-  server.registerTool(
-    "read_file",
-    {
-      ...MCP_TOOL_COPY.read_file,
-      inputSchema: readFileInputSchema,
-      outputSchema: readFileOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("get_logout_instructions", noInput, logoutOutputSchema, read, async () =>
+    structuredResult({
+      logoutUrl: browserLogoutUrl(config.GLOSSA_AUTH0_ISSUER),
+      instructions: "Sign out on the Glossa control panel. To change a computer's account, stop Glossa, run `glossa unpair`, then restart and pair with the new account. Reconnect the Glossa app in ChatGPT to change its account.",
+    }));
+
+  tool("read_file", readFileInputSchema, readFileOutputSchema, read,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "read_file",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "read_file", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, readFileOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "view_image",
-    {
-      ...MCP_TOOL_COPY.view_image,
-      inputSchema: viewImageInputSchema,
-      outputSchema: viewImageOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("view_image", viewImageInputSchema, viewImageOutputSchema, read,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "view_image",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "view_image", requestId: randomUUID(), ...input },
       imageSuccess,
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "list_files",
-    {
-      ...MCP_TOOL_COPY.list_files,
-      inputSchema: listFilesInputSchema,
-      outputSchema: listFilesOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("list_files", listFilesInputSchema, listFilesOutputSchema, read,
     async ({ workspaceId, path, cursor, ...input }) => dispatch(
       workspaceId,
       {
@@ -434,21 +390,12 @@ function registerTools(
         ...input,
         ...(path ? { path } : {}),
         ...(cursor ? { cursor } : {}),
-        timeoutMs: structuredReadTimeoutMs(config),
+        timeoutMs: readTimeoutMs,
       },
       (result) => workerSuccess(result, listFilesOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "search_text",
-    {
-      ...MCP_TOOL_COPY.search_text,
-      inputSchema: searchTextInputSchema,
-      outputSchema: searchTextOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("search_text", searchTextInputSchema, searchTextOutputSchema, read,
     async ({ workspaceId, path, ...input }) => dispatch(
       workspaceId,
       {
@@ -456,178 +403,76 @@ function registerTools(
         requestId: randomUUID(),
         ...input,
         ...(path ? { path } : {}),
-        timeoutMs: structuredReadTimeoutMs(config),
+        timeoutMs: readTimeoutMs,
       },
       (result) => workerSuccess(result, searchTextOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "read_file_range",
-    {
-      ...MCP_TOOL_COPY.read_file_range,
-      inputSchema: readFileRangeInputSchema,
-      outputSchema: readFileRangeOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("read_file_range", readFileRangeInputSchema, readFileRangeOutputSchema, read,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "read_file_range",
-        requestId: randomUUID(),
-        ...input,
-        timeoutMs: structuredReadTimeoutMs(config),
-      },
+      { type: "read_file_range", requestId: randomUUID(), ...input, timeoutMs: readTimeoutMs },
       (result) => workerSuccess(result, readFileRangeOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "write_file",
-    {
-      ...MCP_TOOL_COPY.write_file,
-      inputSchema: writeFileInputSchema,
-      outputSchema: writeFileOutputSchema,
-      _meta: toolMetadata,
-      annotations: DESTRUCTIVE_FILE_TOOL_ANNOTATIONS,
-    },
+  tool("write_file", writeFileInputSchema, writeFileOutputSchema, destructive,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "write_file",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "write_file", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, writeFileOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "edit_file",
-    {
-      ...MCP_TOOL_COPY.edit_file,
-      inputSchema: editFileInputSchema,
-      outputSchema: editFileOutputSchema,
-      _meta: toolMetadata,
-      annotations: DESTRUCTIVE_FILE_TOOL_ANNOTATIONS,
-    },
+  tool("edit_file", editFileInputSchema, editFileOutputSchema, destructive,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "edit_file",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "edit_file", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, editFileOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
+  tool(
     "make_directory",
-    {
-      ...MCP_TOOL_COPY.make_directory,
-      inputSchema: makeDirectoryInputSchema,
-      outputSchema: makeDirectoryOutputSchema,
-      _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
+    makeDirectoryInputSchema,
+    makeDirectoryOutputSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "make_directory",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "make_directory", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, makeDirectoryOutputSchema),
     ),
   );
 
-  server.registerTool(
-    "delete_path",
-    {
-      ...MCP_TOOL_COPY.delete_path,
-      inputSchema: deletePathInputSchema,
-      outputSchema: deletePathOutputSchema,
-      _meta: toolMetadata,
-      annotations: DESTRUCTIVE_FILE_TOOL_ANNOTATIONS,
-    },
+  tool("delete_path", deletePathInputSchema, deletePathOutputSchema, destructive,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "delete_path",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "delete_path", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, deletePathOutputSchema),
-    ),
-  );
+    ));
 
-  server.registerTool(
+  tool(
     "move_path",
-    {
-      ...MCP_TOOL_COPY.move_path,
-      inputSchema: movePathInputSchema,
-      outputSchema: movePathOutputSchema,
-      _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
-    },
+    movePathInputSchema,
+    movePathOutputSchema,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "move_path",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "move_path", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, movePathOutputSchema),
     ),
   );
 
-  server.registerTool(
+  tool(
     "run_command",
-    {
-      ...MCP_TOOL_COPY.run_command,
-      inputSchema: runCommandInputSchema,
-      outputSchema: commandOutputSchema,
-      _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
-    },
+    runCommandInputSchema,
+    commandOutputSchema,
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     async ({ workspaceId, command, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "run_command",
-        requestId: randomUUID(),
-        ...input,
-        ...command,
-      },
+      { type: "run_command", requestId: randomUUID(), ...input, ...command },
       (result) => workerSuccess(result, workerCommandOutputSchema, workspaceId),
     ),
   );
 
-  server.registerTool(
-    "get_command",
-    {
-      ...MCP_TOOL_COPY.get_command,
-      inputSchema: getCommandInputSchema,
-      outputSchema: commandOutputSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("get_command", getCommandInputSchema, commandOutputSchema, read,
     async ({ workspaceId, waitMs, ...input }) => dispatch(
       workspaceId,
       {
@@ -637,54 +482,26 @@ function registerTools(
         ...(waitMs === undefined ? {} : { waitMs: commandStatusWaitMs(config, waitMs) }),
       },
       (result) => workerSuccess(result, workerCommandOutputSchema, workspaceId),
-    ),
-  );
+    ));
 
-  server.registerTool(
-    "read_command_output",
-    {
-      ...MCP_TOOL_COPY.read_command_output,
-      inputSchema: readCommandOutputInputSchema,
-      outputSchema: commandOutputRangeSchema,
-      _meta: toolMetadata,
-      annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    },
+  tool("read_command_output", readCommandOutputInputSchema, commandOutputRangeSchema, read,
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "read_command_output",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "read_command_output", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, workerCommandOutputRangeSchema, workspaceId),
-    ),
-  );
+    ));
 
-  server.registerTool(
+  tool(
     "cancel_command",
-    {
-      ...MCP_TOOL_COPY.cancel_command,
-      inputSchema: cancelCommandInputSchema,
-      outputSchema: commandOutputSchema,
-      _meta: toolMetadata,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
+    cancelCommandInputSchema,
+    commandOutputSchema,
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ workspaceId, ...input }) => dispatch(
       workspaceId,
-      {
-        type: "cancel_command",
-        requestId: randomUUID(),
-        ...input,
-      },
+      { type: "cancel_command", requestId: randomUUID(), ...input },
       (result) => workerSuccess(result, workerCommandOutputSchema, workspaceId),
     ),
   );
-
 }
 
 export function createMcpServer(
