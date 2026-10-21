@@ -508,3 +508,71 @@ test("does not deliver a queued job after its request times out", async () => {
     null,
   );
 });
+
+test("caps new workers per account and per relay without blocking reconnects", () => {
+  const otherAccountId = "00000000-0000-4000-8000-000000000009";
+  const state = new RouterState({ maxWorkersPerAccount: 2, maxWorkers: 3 });
+  state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  state.register(accountId, deviceId, "Test PC", secondWorkerId);
+  assert.throws(
+    () => state.register(accountId, deviceId, "Test PC", randomUUID()),
+    /^Error: too_many_workers$/,
+  );
+  // Reconnecting an existing worker at the cap still succeeds.
+  state.register(accountId, deviceId, "Test PC", firstWorkerId);
+
+  state.register(otherAccountId, deviceId, "Other PC", randomUUID());
+  assert.throws(
+    () => state.register(otherAccountId, deviceId, "Other PC", randomUUID()),
+    /^Error: relay_at_capacity$/,
+  );
+
+  state.unregisterWorker(accountId, deviceId, secondWorkerId);
+  state.register(accountId, deviceId, "Test PC", randomUUID());
+});
+
+test("caps queued and in-flight jobs per worker and across the relay", async () => {
+  const state = new RouterState({ maxJobsPerWorker: 2, maxPendingResults: 3 });
+  const first = state.register(accountId, deviceId, "Test PC", firstWorkerId);
+  state.register(accountId, deviceId, "Test PC", secondWorkerId);
+  const job = (): WorkerJob => ({
+    type: "get_command",
+    requestId: randomUUID(),
+    commandId: randomUUID(),
+    waitMs: 25,
+    afterSequence: 0,
+  });
+
+  const firstJob = job();
+  const pending = [
+    state.enqueue(accountId, firstWorkerId, firstJob, 5_000),
+    state.enqueue(accountId, firstWorkerId, job(), 5_000),
+  ];
+  await assert.rejects(
+    state.enqueue(accountId, firstWorkerId, job(), 5_000),
+    /^Error: worker_busy$/,
+  );
+  pending.push(state.enqueue(accountId, secondWorkerId, job(), 5_000));
+  await assert.rejects(
+    state.enqueue(accountId, secondWorkerId, job(), 5_000),
+    /^Error: relay_at_capacity$/,
+  );
+
+  // Completing a job frees its slot.
+  assert.deepEqual(
+    await state.poll(accountId, deviceId, firstWorkerId, first.generation, 100),
+    firstJob,
+  );
+  state.complete(accountId, firstWorkerId, {
+    requestId: firstJob.requestId,
+    ok: true,
+    value: { status: "running" },
+  });
+  await pending[0];
+  pending.push(state.enqueue(accountId, firstWorkerId, job(), 5_000));
+
+  state.unregisterWorker(accountId, deviceId, firstWorkerId);
+  state.unregisterWorker(accountId, deviceId, secondWorkerId);
+  const settled = await Promise.allSettled(pending.slice(1));
+  assert.ok(settled.every((outcome) => outcome.status === "rejected"));
+});

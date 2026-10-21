@@ -87,9 +87,17 @@ export class RelayProtocolUnsupportedError extends Error {
   }
 }
 
+function relayStatusMessage(status: number): string {
+  if (status === 429) {
+    return "The relay is rate limiting this computer, or this account already has the maximum number of connected workspaces.";
+  }
+  if (status === 503) return "The relay is busy or at capacity.";
+  return `The relay returned HTTP ${status}.`;
+}
+
 class RelayResponseError extends Error {
   constructor(readonly status: number) {
-    super(`The relay returned HTTP ${status}.`);
+    super(relayStatusMessage(status));
     this.name = "RelayResponseError";
   }
 }

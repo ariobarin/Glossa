@@ -12,6 +12,24 @@ const WORKER_STALE_MS = 45_000;
 const WORKER_PRUNE_INTERVAL_MS = 5_000;
 const DEVICE_SEEN_PERSIST_MS = 60_000;
 const WORKER_TOKEN_PATTERN = /^glw_[A-Za-z0-9_-]{43}$/;
+
+export interface RouterStateLimits {
+  /** Connected workers across the relay process. */
+  maxWorkers: number;
+  /** Connected workers for one account. */
+  maxWorkersPerAccount: number;
+  /** Queued plus in-flight jobs for one worker. */
+  maxJobsPerWorker: number;
+  /** Jobs awaiting a result across the relay process. */
+  maxPendingResults: number;
+}
+
+export const DEFAULT_ROUTER_STATE_LIMITS: RouterStateLimits = {
+  maxWorkers: 2000,
+  maxWorkersPerAccount: 16,
+  maxJobsPerWorker: 32,
+  maxPendingResults: 4000,
+};
 export const CURRENT_WORKER_CAPABILITIES = {
   commandProgress: true,
   concurrentJobs: true,
@@ -99,8 +117,15 @@ export class RouterState {
   readonly #workerCountsByDevice = new Map<string, number>();
   readonly #deviceSeenPersistedAt = new Map<string, number>();
   #revocationVersion = Symbol();
+  readonly #workerCountsByAccount = new Map<string, number>();
   readonly #results = new Map<string, ResultWaiter>();
+  readonly #resultCountsByWorker = new Map<string, number>();
+  readonly #limits: RouterStateLimits;
   #lastPrunedAt = 0;
+
+  constructor(limits: Partial<RouterStateLimits> = {}) {
+    this.#limits = { ...DEFAULT_ROUTER_STATE_LIMITS, ...limits };
+  }
 
   get revocationVersion(): symbol {
     return this.#revocationVersion;
@@ -129,6 +154,15 @@ export class RouterState {
     ) {
       throw new Error("worker_identity_conflict");
     }
+    if (!previous) {
+      const accountWorkers = this.#workerCountsByAccount.get(accountId) ?? 0;
+      if (accountWorkers >= this.#limits.maxWorkersPerAccount) {
+        throw new Error("too_many_workers");
+      }
+      if (this.#workers.size >= this.#limits.maxWorkers) {
+        throw new Error("relay_at_capacity");
+      }
+    }
     previous?.pollWaiter?.resolve(null);
     if (previous) {
       this.#workerSessions.delete(previous.sessionDigest);
@@ -139,6 +173,10 @@ export class RouterState {
       this.#workerCountsByDevice.set(
         key,
         (this.#workerCountsByDevice.get(key) ?? 0) + 1,
+      );
+      this.#workerCountsByAccount.set(
+        accountId,
+        (this.#workerCountsByAccount.get(accountId) ?? 0) + 1,
       );
     }
     this.#workers.set(workerId, {
@@ -305,6 +343,13 @@ export class RouterState {
     if (permissionError) {
       return Promise.reject(new Error(permissionError));
     }
+    const workerJobs = this.#resultCountsByWorker.get(workerId) ?? 0;
+    if (workerJobs >= this.#limits.maxJobsPerWorker) {
+      return Promise.reject(new Error("worker_busy"));
+    }
+    if (this.#results.size >= this.#limits.maxPendingResults) {
+      return Promise.reject(new Error("relay_at_capacity"));
+    }
 
     const waitingPoll = worker.pollWaiter;
     if (
@@ -324,7 +369,7 @@ export class RouterState {
       const timer = setTimeout(() => {
         const pending = this.#results.get(job.requestId);
         if (!pending || pending.expiresAt !== expiresAt) return;
-        this.#results.delete(job.requestId);
+        this.#deleteResult(job.requestId, pending);
         const queuedIndex = worker.pendingJobs.findIndex(
           (queuedJob) => queuedJob.requestId === job.requestId,
         );
@@ -340,6 +385,7 @@ export class RouterState {
         expiresAt,
         timer,
       });
+      this.#resultCountsByWorker.set(workerId, workerJobs + 1);
     });
   }
 
@@ -356,7 +402,7 @@ export class RouterState {
     ) {
       return false;
     }
-    this.#results.delete(result.requestId);
+    this.#deleteResult(result.requestId, waiter);
     clearTimeout(waiter.timer);
     waiter.resolve(result);
     return true;
@@ -429,6 +475,13 @@ export class RouterState {
       this.#workerCountsByDevice.delete(key);
       this.#deviceSeenPersistedAt.delete(key);
     }
+    const accountWorkers =
+      (this.#workerCountsByAccount.get(worker.accountId) ?? 1) - 1;
+    if (accountWorkers > 0) {
+      this.#workerCountsByAccount.set(worker.accountId, accountWorkers);
+    } else {
+      this.#workerCountsByAccount.delete(worker.accountId);
+    }
     this.#rejectWorkerWaiters(worker.workerId);
   }
 
@@ -436,8 +489,18 @@ export class RouterState {
     for (const [requestId, waiter] of this.#results) {
       if (waiter.workerId !== workerId) continue;
       clearTimeout(waiter.timer);
-      this.#results.delete(requestId);
+      this.#deleteResult(requestId, waiter);
       waiter.reject(new Error("device_offline"));
+    }
+  }
+
+  #deleteResult(requestId: string, waiter: ResultWaiter): void {
+    this.#results.delete(requestId);
+    const remaining = (this.#resultCountsByWorker.get(waiter.workerId) ?? 1) - 1;
+    if (remaining > 0) {
+      this.#resultCountsByWorker.set(waiter.workerId, remaining);
+    } else {
+      this.#resultCountsByWorker.delete(waiter.workerId);
     }
   }
 

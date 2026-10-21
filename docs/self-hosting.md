@@ -64,6 +64,21 @@ npm run start --workspace @glossa/relay
 
 Terminate TLS in front of the relay. The example binds HTTP to loopback for a proxy on the Docker host; use a private network instead when the proxy runs elsewhere. Do not expose the HTTP listener directly to the Internet. Confirm `https://mcp.example.com/healthz` returns an object with `ok` set to `true`.
 
+### Capacity limits
+
+The relay is one process, so it bounds how much of it any one account or source address can hold. Limits count per `GLOSSA_RATE_LIMIT_WINDOW_MS` (default one minute) and are kept in memory, so they reset when the relay restarts.
+
+| Setting | Default | Applies to |
+| --- | --- | --- |
+| `GLOSSA_MCP_RATE_LIMIT` | 300 | MCP requests per account per window. Excess requests get HTTP 429 with `Retry-After`. |
+| `GLOSSA_IP_RATE_LIMIT` | 1200 | Requests per source address per window on device, pairing and panel-facing API routes. `/healthz`, `/mcp` and `/.well-known/*` are exempt because ChatGPT traffic for every account shares OpenAI egress addresses; the per-account MCP limit bounds that traffic. Long polls use about four per worker each minute. |
+| `GLOSSA_ENROLL_RATE_LIMIT` | 10 | Device enrollment and pairing-code creation per source address. |
+| `GLOSSA_DEVICE_AUTH_RATE_LIMIT` | 120 | Failed device or worker authentication and pairing redemption per source address. |
+| `GLOSSA_MAX_WORKERS_PER_ACCOUNT` | 16 | Connected workspaces per account. A new worker beyond it gets HTTP 429 `too_many_workers`; a reconnecting worker is always accepted. |
+| `GLOSSA_MAX_WORKERS` | 2000 | Connected workspaces across the relay. A new worker beyond it gets HTTP 503 `relay_at_capacity`. |
+
+Each worker also holds at most 32 queued or in-flight operations, and the relay holds at most 4000 across all workers. Beyond those, tool calls return a `worker_busy` or `relay_at_capacity` error instead of queueing more request content in memory.
+
 ### Usage counts
 
 `npm run stats --workspace @glossa/relay` prints aggregate counts from the database: accounts signed up and admitted, new accounts, devices, and how many accounts had a paired device connect in the last 24 hours, 7 days and 30 days. It reads counts only, never names, tokens or identifiers. Pass `--exclude-subject <auth0-subject>` (repeatable) or set `GLOSSA_STATS_EXCLUDE_SUBJECTS` to a comma-separated list to leave your own accounts out (the heading shows how many accounts the subjects matched), and `--json` for machine-readable output.
