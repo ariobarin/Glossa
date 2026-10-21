@@ -22,7 +22,7 @@ This packet records tool explanations, reviewer setup, regression cases, securit
 
 - Submission type: MCP only, uploaded as a ZIP through **With MCP** at `https://platform.openai.com/plugins` → **Upload new or existing plugin**. OpenAI rejects ZIPs that contain `apps` or `.app.json` (`app_configuration_excluded`), so the registered ChatGPT connection is used only for local testing.
 - Package source: `plugin/glossa` in the portable Agent Plugins format: `plugin.json` (identity, listing, review cases, release notes), `mcp.json` (server URL and OAuth settings), and `assets/glossa.svg`
-- Build and check: `npm run review:check:plugin` writes `.plugin-build/glossa-0.1.0.zip` and validates it against the directory limits
+- Build and check: `npm run review:check:plugin` writes `.plugin-build/glossa-<version>.zip` and validates it against the directory limits
 - Package name: `glossa`
 - Initial plugin version: `0.1.0`
 - Package author name: use the exact verified publisher identity selected for submission; `author.name` and `interface.developerName` must match. Build with `GLOSSA_VERIFIED_PUBLISHER_NAME` set to that name; the portal also replaces the developer name with the selected identity (`developer_name_defaulted`)
@@ -179,7 +179,7 @@ Post-registration packaging sequence:
    npm run review:check:plugin
    ```
 
-   This writes `.plugin-build/glossa-0.1.0.zip`, the unpacked submission package in `.plugin-build/glossa`, and the local-testing package in `.plugin-build/local/glossa`. The validator checks listing limits, the four listing URLs, branding assets, the five positive and three negative cases, the MCP URL and OAuth settings, the ZIP entries, and the `.app.json` mapping (`asdk_app_...`, the registered ID without its `plugin_` prefix).
+   This writes `.plugin-build/glossa-<version>.zip`, the unpacked submission package in `.plugin-build/glossa`, and the local-testing package in `.plugin-build/local/glossa`. The validator checks listing limits, the four listing URLs, branding assets, the five positive and three negative cases, the MCP URL and OAuth settings, the ZIP entries, and the `.app.json` mapping (`asdk_app_...`, the registered ID without its `plugin_` prefix).
 3. Copy `.plugin-build/local/glossa` to `~/.codex/plugins/glossa` and add this entry to the personal marketplace at `~/.agents/plugins/marketplace.json`:
 
    ```json
@@ -199,7 +199,7 @@ Post-registration packaging sequence:
 
 4. Restart the ChatGPT desktop app, install Glossa from the **Glossa local** source in the Plugins Directory, and test it in a new conversation. Also test through a supported Codex surface.
 5. Rerun the five portal-positive and three portal-negative cases on the installed plugin. Keep the raw MCP connection tests as a separate lower-level regression suite.
-6. Upload `.plugin-build/glossa-0.1.0.zip` through **Upload new or existing plugin**, choose the verified developer identity, resolve **Metadata & Skills** findings, then open **MCPs → Connect**, complete domain verification and OAuth, and wait for the tool scan.
+6. Upload `.plugin-build/glossa-<version>.zip` through **Upload new or existing plugin**, choose the verified developer identity, resolve **Metadata & Skills** findings, then open **MCPs → Connect**, complete domain verification and OAuth, and wait for the tool scan.
 
 ### Registered connection
 

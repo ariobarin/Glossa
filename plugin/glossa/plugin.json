@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "glossa",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Let ChatGPT work on a project on your computer through the Glossa relay and a local worker you start.",
   "author": {
     "name": "Ario Barin Ostovary",
@@ -100,7 +100,7 @@
         "commerce_description": "Glossa does not sell products or process payments."
       },
       "publication": {
-        "release_notes": "Initial release. Lets ChatGPT read, search, and edit files, view images, and run commands in a local project folder the user starts with Glossa, with read-only, workspace, and system access levels."
+        "release_notes": "Updates the Glossa icon to the transparent symbol so it sits cleanly on light and dark backgrounds. No changes to tools, permissions, or authentication."
       }
     }
   }

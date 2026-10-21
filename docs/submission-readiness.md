@@ -4,7 +4,7 @@ This is the release-owner GO / NO-GO sheet for publishing Glossa to the OpenAI p
 
 ## Current verdict
 
-**Listed.** Plugin version `0.1.0` is live in the [ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11) as of 2026-10-21. Per [Restricted Data review](restricted-data.md), the listing alone does not establish a qualifying Restricted Data outcome. Record OpenAI's answer to the reviewer-notes question with this decision before treating that gate as closed.
+**Listed.** Plugin version `0.1.0` is live in the [ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11) as of 2026-10-21. Version `0.1.1` only changes the icon to the transparent symbol. Per [Restricted Data review](restricted-data.md), the listing alone does not establish a qualifying Restricted Data outcome. Record OpenAI's answer to the reviewer-notes question with this decision before treating that gate as closed.
 
 The pre-listing verdict and gates follow and still apply until that outcome is recorded.
 
@@ -91,7 +91,7 @@ glossa --access system --label openai-review .review-workspace
 ## Plugin package and product-surface gates
 
 - [ ] The production MCP connection is registered in ChatGPT as a custom MCP plugin and its generated `plugin_asdk_app...` technical ID is recorded.
-- [ ] The submission ZIP is built from `plugin/glossa` with no `.app.json`, and the local-testing `.codex-plugin/plugin.json` and `.app.json` are built using that real connection ID; no placeholder ID is used. Both use package name `glossa`, semantic plugin version `0.1.0`, the current listing copy, all four listing URLs, and required branding assets.
+- [ ] The submission ZIP is built from `plugin/glossa` with no `.app.json`, and the local-testing `.codex-plugin/plugin.json` and `.app.json` are built using that real connection ID; no placeholder ID is used. Both use package name `glossa`, the semantic plugin version from `plugin/glossa/plugin.json`, the current listing copy, all four listing URLs, and required branding assets.
 - [ ] The local-testing package is installed from a personal marketplace and exercises the intended MCP connection rather than only the raw server.
 
 ## ChatGPT and Codex behavior gates
