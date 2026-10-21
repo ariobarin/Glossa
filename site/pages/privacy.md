@@ -2,7 +2,7 @@
 
 Glossa routes requests between an authenticated ChatGPT or MCP client and a local project that you explicitly expose from your computer.
 
-*Last updated August 17, 2026*
+*Last updated October 21, 2026*
 
 Public Glossa does not support processing payment-card data subject to PCI DSS, protected health information, government identifiers, access credentials, or authentication secrets. Do not expose a workspace containing those categories to the public app. See [Security and permissions](/security).
 
@@ -16,6 +16,7 @@ Glossa processes:
 - Metadata-only security audit records, limited to event type, status, timestamp, and related account or device identifiers.
 - Tool requests and responses in transit, including relative paths, text file contents, bounded image bytes returned by `view_image`, command arguments, command input, and captured command output. Glossa may check text for recognizable authentication-secret patterns so it can block accidental disclosure. Image pixels and embedded metadata are not OCR-scanned or metadata-scrubbed by that text detector.
 - Network and service metadata processed by hosting and authentication providers, such as IP address, request time, client information, and error status.
+- Aggregate daily usage counts for the whole service, such as MCP requests, tool calls, pairings, and the peak number of connected workspaces. These counts carry no account, device, path, or tool-argument information.
 
 ## How data is used
 
@@ -27,7 +28,7 @@ Glossa does not sell personal data, serve advertisements, or use workspace conte
 
 File contents, command arguments, command input, command output, local absolute paths, environment variables, OAuth access tokens, and device or worker bearer secrets are not intentionally written to Glossa's durable database. Request content remains in relay process memory only while an authenticated operation is queued or awaiting its result. It is removed when the operation completes or times out, the worker disconnects or reconnects, the device is revoked, or the relay process restarts. The relay is not a durable job queue.
 
-Account, device, and audit metadata are retained for the life of the account or service, or until an account-deletion request is completed. Revoking a device prevents further use of its credential but does not by itself erase the device metadata. Glossa does not currently apply a shorter automatic expiration period to audit metadata.
+Account, device, and audit metadata are retained for the life of the account or service, or until an account-deletion request is completed. Revoking a device prevents further use of its credential but does not by itself erase the device metadata. Glossa does not currently apply a shorter automatic expiration period to audit metadata. Aggregate daily usage counts are kept for the life of the service.
 
 Active worker IDs, profiles, labels, capabilities, command routes, pending jobs, command output, and liveness state are held only in relay memory. When recognizable authentication data is blocked, the matched content is not returned to the client.
 
@@ -35,7 +36,7 @@ The Glossa CLI stores OAuth and device credentials on the user's computer using 
 
 ## Service providers
 
-Glossa relies on Auth0 for authentication, Heroku for the managed relay and database, and Vercel for the public website. GitHub and npm distribute the repository and CLI package. These providers process the data needed for their part of the service under their own terms and privacy practices.
+Glossa relies on Auth0 for authentication, Heroku for the managed relay and database, Better Stack for relay logs, and Vercel for the public website. Better Stack receives Heroku's request logs, which include IP address, request time, path, and status, plus the relay's own metadata-only event and error logs, and keeps them for eight days. GitHub and npm distribute the repository and CLI package. These providers process the data needed for their part of the service under their own terms and privacy practices.
 
 ChatGPT or another connected MCP client receives the file contents, command details, and command output returned in response to its requests. That client processes and retains data under its own terms, privacy policy, workspace settings, and model-data controls.
 

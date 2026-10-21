@@ -17,6 +17,7 @@ import { requireAuth, type AuthenticatedRequest } from "./auth.js";
 import { parseDeviceToken } from "./device-token.js";
 import { generatePairingCode, pairingCodeHash } from "./pairing-code.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
+import type { UsageRecorder } from "./usage-counters.js";
 import { handleMcpRequest, MCP_SERVER_VERSION } from "./mcp.js";
 import type { DeviceRecord, RelayStore } from "./store.js";
 import {
@@ -111,6 +112,7 @@ export interface RouteDependencies {
   deviceRateLimiter?: FixedWindowRateLimiter;
   mcpRateLimiter?: FixedWindowRateLimiter;
   ipRateLimiter?: FixedWindowRateLimiter;
+  usage?: UsageRecorder;
   beforeDeadline?: DeadlineRunner;
   timingSink?: RelayTimingSink;
 }
@@ -319,6 +321,16 @@ function requestPairingCodeHash(request: Request): Buffer | null {
   return code ? pairingCodeHash(code) : null;
 }
 
+/** Counts JSON-RPC tools/call messages, singly or batched, without reading arguments. */
+function countToolCalls(body: unknown): number {
+  const messages = Array.isArray(body) ? body : [body];
+  return messages.filter((message) =>
+    typeof message === "object" &&
+    message !== null &&
+    (message as { method?: unknown }).method === "tools/call"
+  ).length;
+}
+
 function retriedDeviceName(name: string, attempt: number): string {
   if (attempt === 0) return name;
   const suffix = `-${attempt + 1}`;
@@ -358,6 +370,7 @@ export function buildRoutes(
       config.GLOSSA_IP_RATE_LIMIT,
       config.GLOSSA_RATE_LIMIT_WINDOW_MS,
     );
+  const usage = dependencies.usage;
   const timingSink = dependencies.timingSink ??
     (config.GLOSSA_TIMING_LOGS ? consoleRelayTimingSink : undefined);
   if (timingSink) router.use(relayTimingMiddleware(timingSink));
@@ -468,6 +481,7 @@ export function buildRoutes(
           parsed.data.name,
           parsed.data.platform ?? null,
         );
+        usage?.increment("device_enrollments");
         response.status(201).json({
           device: publicDevice(enrolled.device, state),
           device_token: enrolled.token,
@@ -642,6 +656,7 @@ export function buildRoutes(
           retriedDeviceName(redeemed.deviceName, attempt),
           redeemed.platform,
         );
+        usage?.increment("pairings_redeemed");
         response.json({
           device: publicDevice(enrolled.device, state),
           device_token: enrolled.token,
@@ -734,6 +749,7 @@ export function buildRoutes(
       }
       throw error;
     }
+    usage?.increment("worker_registrations");
     response.json({
       deviceId: device.id,
       workerId,
@@ -912,6 +928,11 @@ export function buildRoutes(
       const accountId = await activeAccountId(request, response, store);
       if (!accountId) return;
       if (rejectRateLimit(response, mcpRateLimiter, accountId)) return;
+      if (usage) {
+        usage.increment("mcp_requests");
+        const toolCalls = countToolCalls(request.body);
+        if (toolCalls > 0) usage.increment("tool_calls", toolCalls);
+      }
       await handleMcpRequest(
         request,
         response,

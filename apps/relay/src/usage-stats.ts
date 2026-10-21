@@ -16,6 +16,78 @@ export interface UsageStats {
   accountsSeen7d: number;
   accountsSeen30d: number;
   platforms: { platform: string; devices: number }[];
+  /** Relay-wide daily counters, newest first. Not filtered by subject. */
+  daily: DailyUsage[];
+}
+
+export interface DailyUsage {
+  day: string;
+  mcpRequests: number;
+  toolCalls: number;
+  pairings: number;
+  workerRegistrations: number;
+  peakWorkersOnline: number;
+  peakAccountsOnline: number;
+}
+
+export interface NpmDownloads {
+  lastDay: number;
+  lastWeek: number;
+  lastMonth: number;
+}
+
+const DAILY_SQL = `
+SELECT to_char(day, 'YYYY-MM-DD') AS day,
+  coalesce(sum(value) FILTER (WHERE metric = 'mcp_requests'), 0)::int AS mcp_requests,
+  coalesce(sum(value) FILTER (WHERE metric = 'tool_calls'), 0)::int AS tool_calls,
+  coalesce(sum(value) FILTER (
+    WHERE metric IN ('pairings_redeemed', 'device_enrollments')), 0)::int AS pairings,
+  coalesce(sum(value) FILTER (WHERE metric = 'worker_registrations'), 0)::int
+    AS worker_registrations,
+  coalesce(max(value) FILTER (WHERE metric = 'peak_workers_online'), 0)::int
+    AS peak_workers_online,
+  coalesce(max(value) FILTER (WHERE metric = 'peak_accounts_online'), 0)::int
+    AS peak_accounts_online
+FROM usage_daily
+WHERE day > (now() AT TIME ZONE 'UTC')::date - 7
+GROUP BY day
+ORDER BY day DESC
+`;
+
+interface DailyRow {
+  day: string;
+  mcp_requests: number;
+  tool_calls: number;
+  pairings: number;
+  worker_registrations: number;
+  peak_workers_online: number;
+  peak_accounts_online: number;
+}
+
+const NPM_PACKAGE = "@ariobarin/glossa";
+
+/** Public npm registry download counts; null when the registry is unreachable. */
+export async function npmDownloads(
+  fetcher: typeof fetch = fetch,
+): Promise<NpmDownloads | null> {
+  const period = async (name: string): Promise<number> => {
+    const response = await fetcher(
+      `https://api.npmjs.org/downloads/point/${name}/${NPM_PACKAGE}`,
+      { signal: AbortSignal.timeout(5_000) },
+    );
+    if (!response.ok) throw new Error(`npm returned HTTP ${response.status}`);
+    const body = await response.json() as { downloads?: unknown };
+    if (typeof body.downloads !== "number") throw new Error("npm returned no count");
+    return body.downloads;
+  };
+  try {
+    const [lastDay, lastWeek, lastMonth] = await Promise.all(
+      ["last-day", "last-week", "last-month"].map(period),
+    );
+    return { lastDay: lastDay!, lastWeek: lastWeek!, lastMonth: lastMonth! };
+  } catch {
+    return null;
+  }
 }
 
 const COUNTS_SQL = `
@@ -85,6 +157,15 @@ export async function usageStats(
   const platforms = (
     await db.query<{ platform: string; devices: number }>(PLATFORMS_SQL, [subjects])
   ).rows;
+  const daily = (await db.query<DailyRow>(DAILY_SQL)).rows.map((row) => ({
+    day: row.day,
+    mcpRequests: row.mcp_requests,
+    toolCalls: row.tool_calls,
+    pairings: row.pairings,
+    workerRegistrations: row.worker_registrations,
+    peakWorkersOnline: row.peak_workers_online,
+    peakAccountsOnline: row.peak_accounts_online,
+  }));
   return {
     excludedSubjects: subjects.length,
     excludedAccounts: counts.excluded_accounts,
@@ -99,10 +180,14 @@ export async function usageStats(
     accountsSeen7d: counts.accounts_seen_7d,
     accountsSeen30d: counts.accounts_seen_30d,
     platforms,
+    daily,
   };
 }
 
-export function formatUsageStats(stats: UsageStats): string {
+export function formatUsageStats(
+  stats: UsageStats,
+  npm?: NpmDownloads | null,
+): string {
   const platforms = stats.platforms.length
     ? stats.platforms.map((p) => `${p.platform} ${p.devices}`).join(", ")
     : "none";
@@ -119,5 +204,38 @@ export function formatUsageStats(stats: UsageStats): string {
     `Devices          ${stats.devicesEnrolled} enrolled, ${stats.devicesActive} not revoked, ${stats.devicesSeen7d} seen in 7 days`,
     `Platforms        ${platforms}`,
     "An account is active when one of its paired devices connected in that window.",
+    ...(npm === undefined
+      ? []
+      : [
+          npm
+            ? `npm downloads    ${npm.lastDay} in the last day, ${npm.lastWeek} in 7 days, ${npm.lastMonth} in 30 days`
+            : "npm downloads    unavailable (registry unreachable)",
+        ]),
+    "",
+    ...formatDaily(stats.daily),
   ].join("\n");
+}
+
+function formatDaily(daily: DailyUsage[]): string[] {
+  if (daily.length === 0) return ["Daily relay counts: none recorded yet."];
+  const header = ["Day (UTC)", "MCP reqs", "Tool calls", "Pairings", "Workers", "Peak workers", "Peak accounts"];
+  const rows = daily.map((day) => [
+    day.day,
+    day.mcpRequests,
+    day.toolCalls,
+    day.pairings,
+    day.workerRegistrations,
+    day.peakWorkersOnline,
+    day.peakAccountsOnline,
+  ].map(String));
+  const widths = header.map((title, column) =>
+    Math.max(title.length, ...rows.map((row) => row[column]!.length)));
+  const line = (cells: string[]) => cells
+    .map((cell, column) => column === 0 ? cell.padEnd(widths[column]!) : cell.padStart(widths[column]!))
+    .join("  ");
+  return [
+    "Daily relay counts (all accounts; Workers counts worker connections)",
+    line(header),
+    ...rows.map(line),
+  ];
 }

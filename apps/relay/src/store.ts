@@ -2,6 +2,7 @@ import { Pool, type PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { generateDeviceToken, verifyDeviceSecret } from "./device-token.js";
 import { relayPoolOptions } from "./database-options.js";
+import { writeUsageRows, type UsageRow } from "./usage-counters.js";
 
 export interface DeviceRecord {
   id: string;
@@ -86,6 +87,10 @@ export class Store implements RelayStore {
 
   async close(): Promise<void> {
     await this.#pool.end();
+  }
+
+  async recordUsage(rows: UsageRow[]): Promise<void> {
+    await writeUsageRows(this.#pool, rows);
   }
 
   async accountIdForSubject(subject: string): Promise<string | null> {

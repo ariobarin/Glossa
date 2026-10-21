@@ -436,6 +436,14 @@ export class RouterState {
       }));
   }
 
+  /** Connected workers and the distinct accounts they belong to. */
+  onlineTotals(): { workers: number; accounts: number } {
+    this.#pruneStaleWorkers();
+    const accounts = new Set<string>();
+    for (const worker of this.#workers.values()) accounts.add(worker.accountId);
+    return { workers: this.#workers.size, accounts: accounts.size };
+  }
+
   activeWorkerCount(accountId: string, deviceId: string): number {
     this.#pruneStaleWorkers();
     return this.#workerCountsByDevice.get(deviceKey(accountId, deviceId)) ?? 0;

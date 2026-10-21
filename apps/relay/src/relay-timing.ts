@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import type { Request, RequestHandler } from "express";
 import { WORKER_JOB_TYPES } from "@glossa/protocol";
+import { log } from "./log.js";
 
 const MCP_TOOL_NAMES = new Set([
   "get_logout_instructions",
@@ -75,6 +76,6 @@ export function relayTimingMiddleware(sink: RelayTimingSink): RequestHandler {
   };
 }
 
-export const consoleRelayTimingSink: RelayTimingSink = (event) => {
-  console.info(JSON.stringify(event));
+export const consoleRelayTimingSink: RelayTimingSink = ({ event, ...fields }) => {
+  log("info", event, fields);
 };
