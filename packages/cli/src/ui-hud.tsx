@@ -27,6 +27,7 @@ import {
   activityCallDetailFields,
   activityToolTitle,
   formatActivityCall,
+  truncateMiddle,
   type HudActivityMode,
 } from "./ui-hud-activity.js";
 
@@ -214,6 +215,7 @@ function primaryFooterHints(state: HudState): HudHint[] {
     { key: "A", label: "Activity" },
     { key: "W", label: "Workspace" },
     { key: "D", label: "Devices" },
+    ...(state.commands.length > 0 ? [{ key: "C", label: "Commands" }] : []),
     { key: "Q", label: "Quit", tone: COLORS.coral },
   ];
 }
@@ -612,7 +614,7 @@ function Header({ state, usable, bodyBudget, color }: {
       ? `Activity / ${selected ? activityToolTitle(selected.tool) : "Call"}`
       : state.view === "devices"
         ? "Devices"
-        : "Workspace";
+        : state.view === "commands" ? "Commands" : "Workspace";
   const activityListWindow = state.view === "activity"
     ? activityWindow(state, bodyBudget)
     : undefined;
@@ -1187,6 +1189,44 @@ function DevicesView({ state, usable, bodyBudget, color }: {
   );
 }
 
+function CommandsView({ state, usable, bodyBudget, color }: {
+  state: HudState;
+  usable: number;
+  bodyBudget: number;
+  color: boolean;
+}): React.ReactNode {
+  const capacity = Math.max(0, Math.floor((bodyBudget - 4) / 2));
+  const commands = capacity ? state.commands.slice(-capacity) : [];
+  return (
+    <Box height={bodyBudget} flexDirection="column" flexShrink={0} overflow="hidden">
+      <Blank />
+      <SectionTitle color={color}>Tracked commands on this worker</SectionTitle>
+      {commands.length === 0 ? (
+        <Text color={color ? COLORS.muted : undefined}>No tracked commands.</Text>
+      ) : commands.map((command) => {
+        const invocation = state.activities.find((activity) => activity.requestId === command.requestId);
+        const description = invocation?.compactSummary
+          ? truncateMiddle(invocation.compactSummary, 26)
+          : command.program;
+        return (
+          <Box key={command.commandId} flexDirection="column" width={usable} flexShrink={0}>
+            <Text wrap="truncate">{`ID ${command.commandId}`}</Text>
+            <Text wrap="truncate" color={color && command.cleanupFailed ? COLORS.coral : undefined}>
+              {`PID ${command.rootPid ?? "unknown"}  ${command.cleanupFailed ? "cleanup unconfirmed" : command.status}${command.rootExited ? " (root exited)" : ""}  ${description}`}
+            </Text>
+          </Box>
+        );
+      })}
+      {state.commands.length > commands.length ? (
+        <Text color={color ? COLORS.muted : undefined}>Showing newest {commands.length} of {state.commands.length}.</Text>
+      ) : null}
+      <Text color={color ? COLORS.muted : undefined} wrap="truncate">
+        Root PIDs are historical. Descendants are not tracked or verified.
+      </Text>
+    </Box>
+  );
+}
+
 function Overlay({ state, usable, color }: {
   state: HudState;
   usable: number;
@@ -1287,6 +1327,13 @@ export function HudScreen({ state, columns, rows, color = true, now = Date.now()
           bodyBudget={metrics.bodyBudget}
           color={color}
           now={now}
+        />
+      ) : state.view === "commands" ? (
+        <CommandsView
+          state={state}
+          usable={metrics.usable}
+          bodyBudget={metrics.bodyBudget}
+          color={color}
         />
       ) : state.view === "devices" ? (
         <DevicesView
@@ -1652,6 +1699,14 @@ function HudRuntime({ store, actions, signal, stop }: {
         ...state,
         view: "workspace",
         prompt: undefined,
+        notice: undefined,
+      }));
+      return;
+    }
+    if (value === "c" && current.commands.length > 0) {
+      store.update((state) => ({
+        ...state,
+        view: "commands",
         notice: undefined,
       }));
       return;

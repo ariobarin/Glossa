@@ -5,6 +5,7 @@ import {
   type WorkerAccessProfile,
 } from "@glossa/protocol";
 import { activityCallFromEventJob } from "./activity-call.js";
+import type { LocalCommandDiagnostic } from "./worker/command-service.js";
 import {
   statusMessage,
   type ManagedActivityOutput,
@@ -56,7 +57,7 @@ export interface HudStatus {
   devices: HudDevice[];
 }
 
-type HudView = "activity" | "activity-detail" | "workspace" | "devices";
+type HudView = "activity" | "activity-detail" | "workspace" | "devices" | "commands";
 type HudPrompt =
   | { type: "revoke-confirm"; deviceIndex: number }
   | { type: "access-confirm"; accessProfile: WorkerAccessProfile };
@@ -75,6 +76,7 @@ export interface HudState {
   connectedBefore: boolean;
   message: string | undefined;
   activities: HudActivity[];
+  commands: LocalCommandDiagnostic[];
   activityMode: HudActivityMode;
   activitySelection: string | undefined;
   activityBrowseAnchor: string | undefined;
@@ -120,6 +122,7 @@ export function initialHudState(workspace: string): HudState {
     connectedBefore: false,
     message: undefined,
     activities: [],
+    commands: [],
     activityMode: "compact",
     activitySelection: undefined,
     activityBrowseAnchor: undefined,
@@ -408,6 +411,17 @@ export function applyHudEvent(
   }
   if (event.type === "notice") {
     return { ...state, notice: event.message, noticeTone: "info" };
+  }
+  if (event.type === "commands") {
+    return {
+      ...state,
+      commands: event.commands,
+      ...(event.failedId ? {
+        view: "commands" as const,
+        notice: "Command cleanup unconfirmed. Root PIDs are historical identifiers; inspect running processes locally before restarting.",
+        noticeTone: "error" as const,
+      } : {}),
+    };
   }
 
   const requestId = event.job.requestId;
