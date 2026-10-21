@@ -51,7 +51,7 @@ export const MCP_TOOL_COPY = {
   },
   run_command: {
     title: "Run Workspace Command",
-    description: "Runs a command from the workspace directory. Returns status and up to 12 KiB of stdout/stderr; longer commands return a handle for status and output retrieval.",
+    description: "Runs a command from the workspace directory. Returns status and up to 12 KiB of stdout/stderr. For long-running servers, keep the command in the foreground with waitMs: 0, and manage its commandId with get_command and cancel_command. Detached children can outlive the shell and leave cleanup unconfirmed, disabling new command starts.",
   },
   get_command: {
     title: "Check Workspace Command",
