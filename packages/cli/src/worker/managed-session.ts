@@ -440,6 +440,34 @@ export function accessProfileSummary(
   }
 }
 
+/** Shown before login or pairing when the HUD cannot run. */
+export const INTERACTIVE_TERMINAL_REQUIRED =
+  "Glossa's terminal HUD needs an interactive terminal. Use glossa --headless to run it from a script or service.";
+
+/**
+ * Headless mode has no HUD, so print connection state and notices (never
+ * per-request activity) to stderr for the supervisor's log.
+ */
+export function headlessReporter(
+  write: (line: string) => void = (line) => console.error(line),
+): (event: ManagedSessionEvent) => void {
+  let connectedBefore = false;
+  let lastState: RemoteWorkerStatus["state"] | undefined;
+  return (event) => {
+    if (event.type === "session") {
+      write(`Glossa workspace: ${event.root} (${event.accessProfile} access)`);
+    } else if (event.type === "status") {
+      const { status } = event;
+      if (status.state === "retrying" && lastState === "retrying") return;
+      lastState = status.state;
+      write(statusMessage(status, connectedBefore));
+      if (status.state === "connected") connectedBefore = true;
+    } else if (event.type === "notice") {
+      write(event.message);
+    }
+  };
+}
+
 export function statusMessage(status: RemoteWorkerStatus, connectedBefore: boolean): string {
   if (status.state === "connecting") return "Connecting to Glossa...";
   if (status.state === "connected") {

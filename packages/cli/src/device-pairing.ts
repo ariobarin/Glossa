@@ -58,7 +58,7 @@ export async function pairDevice(
       log("");
       log(`Pairing code: ${pairing.code} (valid for 10 minutes)`);
       log("");
-      log(`Enter it at ${endpoints.relayOrigin}/panel`);
+      log(`Enter it at ${endpoints.relayOrigin}/panel/pair`);
 
       const expiresAt = Date.parse(pairing.expiresAt);
       while (now() < expiresAt) {

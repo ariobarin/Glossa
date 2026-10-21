@@ -80,7 +80,7 @@ Use `--headless` when an operating-system supervisor runs an unattended worker:
 glossa --headless --label recovery C:\path\to\project
 ```
 
-Headless mode omits the HUD and activity history; all workspace options still apply. SIGINT or SIGTERM disconnects. Use `notify` updates or configure the supervisor to restart after successful updates and failures.
+Headless mode omits the HUD and activity history and prints only the workspace, connection state, and notices to stderr; all workspace options still apply. Running `glossa` without `--headless` outside an interactive terminal exits before sign-in or pairing. SIGINT or SIGTERM disconnects. Use `notify` updates or configure the supervisor to restart after successful updates and failures.
 
 ## Updates
 

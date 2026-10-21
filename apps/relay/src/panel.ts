@@ -15,6 +15,10 @@ import type { DeviceRecord, PairingRecord, RelayStore } from "./store.js";
 const SESSION_COOKIE = "glossa_panel";
 const SESSION_TTL_MS = 12 * 60 * 60_000;
 const LOGIN_TTL_MS = 10 * 60_000;
+// Where to land after sign-in. Only fixed panel pages are accepted, so the
+// value can never become an open redirect.
+const RETURN_COOKIE = "glossa_panel_return";
+const RETURN_PATHS: Readonly<Record<string, string>> = { pair: "/panel/pair" };
 const deviceIdSchema = z.string().uuid();
 
 // The panel exchanges the authorization code and returns the verified
@@ -320,7 +324,7 @@ export function buildPanel(
     next();
   });
 
-  router.get("/auth/login", (_request, response) => {
+  router.get("/auth/login", (request, response) => {
     const state = randomBytes(32).toString("base64url");
     const codeVerifier = randomBytes(32).toString("base64url");
     const transaction = `${state}.${codeVerifier}.${Date.now() + LOGIN_TTL_MS}`;
@@ -334,10 +338,14 @@ export function buildPanel(
     authorize.searchParams.set("state", state);
     authorize.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
     authorize.searchParams.set("code_challenge_method", "S256");
-    response.setHeader(
-      "Set-Cookie",
+    const next = (request.query as { next?: unknown }).next;
+    const returnTo = typeof next === "string" && Object.hasOwn(RETURN_PATHS, next) ? next : undefined;
+    response.setHeader("Set-Cookie", [
       `${loginCookieName(config)}=${cookie}; ${cookieFlags(config, "/")}; Max-Age=${LOGIN_TTL_MS / 1000}`,
-    );
+      returnTo
+        ? `${RETURN_COOKIE}=${returnTo}; ${cookieFlags(config)}; Max-Age=${LOGIN_TTL_MS / 1000}`
+        : `${RETURN_COOKIE}=; ${cookieFlags(config)}; Max-Age=0`,
+    ]);
     response.redirect(authorize.toString());
   });
 
@@ -350,10 +358,14 @@ export function buildPanel(
       state,
       panel.sessionSecret,
     );
-    response.setHeader(
-      "Set-Cookie",
+    const returnCookie = readCookie(request, RETURN_COOKIE);
+    const returnPath = returnCookie && Object.hasOwn(RETURN_PATHS, returnCookie)
+      ? RETURN_PATHS[returnCookie]!
+      : "/panel";
+    response.setHeader("Set-Cookie", [
       `${loginCookieName(config)}=; ${cookieFlags(config, "/")}; Max-Age=0`,
-    );
+      `${RETURN_COOKIE}=; ${cookieFlags(config)}; Max-Age=0`,
+    ]);
     if (!code || !codeVerifier) {
       sendPage(response, 400, "Sign-in failed", "<h1>Sign-in failed</h1><p>Invalid sign-in response. <a href=\"/panel/auth/login\">Try again</a>.</p>");
       return;
@@ -373,7 +385,7 @@ export function buildPanel(
       "Set-Cookie",
       `${SESSION_COOKIE}=${encodeSession(subject, panel.sessionSecret)}; ${cookieFlags(config)}; Max-Age=${SESSION_TTL_MS / 1000}`,
     );
-    response.redirect("/panel");
+    response.redirect(returnPath);
   });
 
   router.post("/auth/logout", (_request, response) => {
@@ -391,7 +403,11 @@ export function buildPanel(
       panel.sessionSecret,
     );
     if (!subject) {
-      response.redirect("/panel/auth/login");
+      response.redirect(
+        request.method === "GET" && request.path === "/pair"
+          ? "/panel/auth/login?next=pair"
+          : "/panel/auth/login",
+      );
       return;
     }
     const accountId = await store.accountIdForSubject(subject);

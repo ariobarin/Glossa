@@ -550,3 +550,34 @@ test("shows a conflict page for an already-claimed code", async (context) => {
   assert.equal(response.status, 409);
   assert.ok((await response.text()).includes("already claimed"));
 });
+
+test("returns to the pairing page after sign-in, and only to allowlisted pages", async (context) => {
+  const harness = await startPanel(context, storeWith({}));
+  const unauthenticated = await fetch(`${harness.origin}/panel/pair`, { redirect: "manual" });
+  assert.equal(unauthenticated.headers.get("location"), "/panel/auth/login?next=pair");
+
+  const login = await fetch(`${harness.origin}/panel/auth/login?next=pair`, { redirect: "manual" });
+  const state = new URL(login.headers.get("location")!).searchParams.get("state")!;
+  const cookies = login.headers.getSetCookie();
+  const returnCookie = cookies.find((cookie) => cookie.startsWith("glossa_panel_return="))!;
+  assert.ok(returnCookie.startsWith("glossa_panel_return=pair;"));
+  assert.ok(returnCookie.includes("Path=/panel; HttpOnly"));
+  const cookieHeader = cookies.map((cookie) => cookie.split(";")[0]).join("; ");
+  const callback = await fetch(
+    `${harness.origin}/panel/auth/callback?code=test-code&state=${encodeURIComponent(state)}`,
+    { redirect: "manual", headers: { cookie: cookieHeader } },
+  );
+  assert.equal(callback.status, 302);
+  assert.equal(callback.headers.get("location"), "/panel/pair");
+  assert.ok(callback.headers.getSetCookie().some((cookie) =>
+    cookie.startsWith("glossa_panel_return=;") && cookie.includes("Max-Age=0")));
+
+  const bogus = await fetch(`${harness.origin}/panel/auth/login?next=//evil.example`, { redirect: "manual" });
+  assert.ok(bogus.headers.getSetCookie().some((cookie) =>
+    cookie.startsWith("glossa_panel_return=;") && cookie.includes("Max-Age=0")));
+  const forged = await fetch(
+    `${harness.origin}/panel/auth/callback?code=test-code&state=x`,
+    { redirect: "manual", headers: { cookie: "glossa_panel_return=//evil.example" } },
+  );
+  assert.notEqual(forged.headers.get("location"), "//evil.example");
+});

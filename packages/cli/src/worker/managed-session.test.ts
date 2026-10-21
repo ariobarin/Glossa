@@ -7,8 +7,10 @@ import type { RelayEndpoints } from "../relay-client.js";
 import {
   accessProfileSummary,
   deviceForSession,
+  headlessReporter,
   statusMessage,
   visibleWorker,
+  type ManagedSessionEvent,
 } from "./managed-session.js";
 
 test("skips activity handling when output is quiet and unobserved", () => {
@@ -527,4 +529,26 @@ test("redacts restricted inputs from local activity events", async () => {
   assert.doesNotMatch(serialized, new RegExp(key));
   assert.doesNotMatch(serialized, /OPENAI_API_KEY/);
   assert.match(serialized, /restricted input blocked/);
+});
+
+test("headless output reports connection state and notices but not activity", () => {
+  const lines: string[] = [];
+  const report = headlessReporter((line) => lines.push(line));
+  report({ type: "session", root: "/work/app", deviceName: "PC", accessProfile: "workspace" });
+  report({ type: "status", status: { state: "connecting" } } as ManagedSessionEvent);
+  report({ type: "status", status: { state: "connected", reconnected: false } } as ManagedSessionEvent);
+  report({ type: "activity", phase: "started", job: {} } as unknown as ManagedSessionEvent);
+  const retrying = {
+    type: "status",
+    status: { state: "retrying", error: new Error("socket closed"), retryInMs: 2_000 },
+  } as unknown as ManagedSessionEvent;
+  report(retrying);
+  report(retrying);
+  report({ type: "notice", message: "Update available." });
+  assert.equal(lines.length, 5);
+  assert.equal(lines[0], "Glossa workspace: /work/app (workspace access)");
+  assert.equal(lines[1], "Connecting to Glossa...");
+  assert.equal(lines[2], "Connected to Glossa. ChatGPT can now use this workspace.");
+  assert.match(lines[3]!, /^Connection lost: socket closed\./);
+  assert.equal(lines[4], "Update available.");
 });

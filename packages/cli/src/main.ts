@@ -27,6 +27,8 @@ import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
 import { unpairComputer } from "./unpair.js";
 import {
   deviceForSession,
+  headlessReporter,
+  INTERACTIVE_TERMINAL_REQUIRED,
   runManagedSession,
 } from "./worker/managed-session.js";
 import { selectExposureRoot } from "./worker/root-selection.js";
@@ -86,6 +88,7 @@ async function runWorkspaceSession(
         accessProfile,
         ...(keepAwake ? { keepAwake: true } : {}),
         ...(label ? { workspaceLabel: label } : {}),
+        onEvent: headlessReporter(),
         quiet: true,
       });
       return;
@@ -297,6 +300,10 @@ async function main(): Promise<void> {
   } else if (invocation.command === "workspace") {
     if (invocation.keepAwake && process.platform !== "win32") {
       throw new UsageError("--keep-awake is currently supported only on Windows.");
+    }
+    // Fail before updates, login or pairing, not after the user has redeemed a code.
+    if (!invocation.headless && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+      throw new Error(INTERACTIVE_TERMINAL_REQUIRED);
     }
     const update = await updateBeforeWorkspace();
     if (update.exit) return;
