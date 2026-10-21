@@ -79,9 +79,37 @@ The relay is one process, so it bounds how much of it any one account or source 
 
 Each worker also holds at most 32 queued or in-flight operations, and the relay holds at most 4000 across all workers. Beyond those, tool calls return a `worker_busy` or `relay_at_capacity` error instead of queueing more request content in memory.
 
+### Logs
+
+The relay writes one JSON object per line: `level`, `event`, and a few bounded fields. Info goes to stdout, warnings and errors to stderr. Your platform adds the timestamp. Events:
+
+- `relay_started`, `relay_stopping`
+- `request_error`: method, matched route pattern, status, error class, bounded error code, and stack frames. Never the error message, raw URL, or request body, because messages can quote file contents.
+- `uncaught_exception`, `unhandled_rejection`: the same safe error shape, then the process exits so the supervisor restarts it.
+- `relay_security_event`: OAuth failures by fixed surface and category.
+- `relay_usage` every five minutes: `workersOnline`, `accountsOnline`, `mcpRequests5m`.
+- `usage_flush_failed` when daily counters could not be written. They are retried on the next flush.
+- `relay_request_timing` when `GLOSSA_TIMING_LOGS=1`.
+
+Any JSON-aware log drain can filter on `level` and `event`. Managed Glossa runs on Heroku and drains to Better Stack through the `logtail` add-on, so `heroku logs --tail -a <app>` shows the last few minutes and Better Stack keeps eight days for search and alerting. A useful first alert is any `level` of `error`.
+
 ### Usage counts
 
-`npm run stats --workspace @glossa/relay` prints aggregate counts from the database: accounts signed up and admitted, new accounts, devices, and how many accounts had a paired device connect in the last 24 hours, 7 days and 30 days. It reads counts only, never names, tokens or identifiers. Pass `--exclude-subject <auth0-subject>` (repeatable) or set `GLOSSA_STATS_EXCLUDE_SUBJECTS` to a comma-separated list to leave your own accounts out (the heading shows how many accounts the subjects matched), and `--json` for machine-readable output.
+`npm run stats --workspace @glossa/relay` prints aggregate counts from the database. It covers accounts signed up and admitted, new accounts, devices, and how many accounts had a paired device connect in the last 24 hours, 7 days and 30 days. It also prints npm downloads of `@ariobarin/glossa` for the last day, week and month, and a seven-day table of relay-wide daily counters: MCP requests, tool calls, pairings, worker connections, and peak workspaces and accounts online. It reads counts only, never names, tokens or identifiers.
+
+Options:
+
+- Pass `--exclude-subject <auth0-subject>` (repeatable) or set `GLOSSA_STATS_EXCLUDE_SUBJECTS` to a comma-separated list to leave your own accounts out of the account counts. The heading shows how many accounts the subjects matched. The daily counters are relay-wide and are not filtered.
+- Pass `--offline` to skip the npm request.
+- Pass `--json` for machine-readable output.
+
+On Heroku, run it in a one-off dyno:
+
+```shell
+heroku run -a <app> npm run stats --workspace @glossa/relay
+```
+
+The relay keeps daily counters in memory and adds them to the `usage_daily` table every minute and at shutdown. Each row is a UTC day, a fixed metric name, and a number. Metrics starting with `peak_` hold the day's maximum and the rest are sums. A crash can lose up to a minute of counts.
 
 ## Control panel
 

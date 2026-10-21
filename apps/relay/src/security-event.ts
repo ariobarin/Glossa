@@ -1,3 +1,5 @@
+import { log } from "./log.js";
+
 export type RelaySecuritySurface =
   | "mcp_oauth"
   | "device_enrollment_oauth";
@@ -16,8 +18,8 @@ export interface RelaySecurityEvent {
 
 export type RelaySecuritySink = (event: RelaySecurityEvent) => void;
 
-export const consoleRelaySecuritySink: RelaySecuritySink = (event) => {
-  console.warn(JSON.stringify(event));
+export const consoleRelaySecuritySink: RelaySecuritySink = ({ event, ...fields }) => {
+  log("warn", event, fields);
 };
 
 export function emitRelaySecurityEvent(

@@ -242,7 +242,9 @@ Durably retain only what is needed for account, device, and security operation:
 - OAuth subject identifier;
 - metadata-only audit event type, status, and timestamp;
 - optional request timing events limited to a bounded operation label, HTTP status, and duration, with no identifiers, paths, arguments, output, tokens, or request bodies;
-- production OAuth failure events limited to the fixed `relay_security_event` name, a bounded authentication surface, and a bounded failure category, with platform timestamps supplied by the hosting/logging layer.
+- production OAuth failure events limited to the fixed `relay_security_event` name, a bounded authentication surface, and a bounded failure category, with platform timestamps supplied by the hosting/logging layer;
+- request error events limited to the HTTP method, matched route pattern, status, error class name, a bounded error code, and stack frames, never the error message, raw URL, or request body, because messages can quote request content;
+- aggregate daily usage counts keyed only by UTC day and a fixed metric name, plus a five-minute `relay_usage` log line with online worker and account totals.
 
 Do not durably retain:
 

@@ -71,6 +71,7 @@ Published 0.2.0 clients used the earlier MCP short-code flow, which ChatGPT bloc
 - device names
 - schema migrations
 - metadata-only audit events
+- aggregate daily usage counters keyed only by UTC day and metric name ([`003_usage_daily.sql`](../apps/relay/sql/003_usage_daily.sql))
 
 The canonical database schema is [`apps/relay/sql/001_init.sql`](../apps/relay/sql/001_init.sql). Every resource lookup includes the authenticated account ID.
 

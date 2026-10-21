@@ -1229,3 +1229,86 @@ test("rejects new workers beyond the account and relay caps", async (context) =>
     { status: 503, body: { error: "relay_at_capacity" } },
   );
 });
+
+test("counts MCP requests, tool calls, and worker registrations", async (context) => {
+  const counted: Record<string, number> = {};
+  const usage = {
+    increment(metric: string, by = 1) {
+      counted[metric] = (counted[metric] ?? 0) + by;
+    },
+  };
+  const store: RelayStore = {
+    ...unusedStore,
+    accountIdForSubject: async () => accountId,
+    authenticateDevice: async (id) => (id === deviceId ? device : null),
+  };
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(express.json());
+  app.use(buildRoutes(config, store, new RouterState(), {
+    authFactory: (_config, scope) => (request, _response, next) => {
+      (request as AuthenticatedRequest).auth = {
+        subject: "google-oauth2|counted",
+        scopes: new Set(scope ? [scope] : []),
+        claims: {},
+      };
+      next();
+    },
+    usage,
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const mcp = async (body: unknown) => {
+    const response = await fetch(`${origin}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify(body),
+    });
+    await response.body?.cancel();
+  };
+  await mcp({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+  await mcp({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "list_workspaces", arguments: {} },
+  });
+  const registered = await fetch(`${origin}/device/register`, {
+    method: "POST",
+    headers: {
+      authorization: `Device ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      workerId,
+      accessProfile: "read-only",
+      capabilities: {
+        commandProgress: true,
+        concurrentJobs: true,
+        structuredReads: true,
+        imageReads: true,
+        structuredMutations: true,
+        commandOutputRanges: true,
+      },
+    }),
+  });
+  assert.equal(registered.status, 200);
+
+  assert.deepEqual(counted, {
+    mcp_requests: 2,
+    tool_calls: 1,
+    worker_registrations: 1,
+  });
+});
