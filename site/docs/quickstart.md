@@ -1,6 +1,6 @@
 # Connect ChatGPT to a local workspace
 
-Install Glossa, add it to ChatGPT, then pair the computer that will expose your project.
+Install Glossa, add it to ChatGPT from the plugin directory, then pair the computer that will expose your project.
 
 ## 1. Install
 
@@ -12,6 +12,12 @@ npm install --global @ariobarin/glossa
 
 ## 2. Add Glossa to ChatGPT
 
+Open [Glossa in the ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11), select **Install plugin**, and complete authorization.
+
+Review permissions and requested actions.
+
+If the plugin directory isn't available for your account or workspace, add Glossa as a custom app instead:
+
 1. In ChatGPT web, use [Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.
 2. Name it **Glossa** and use this MCP server URL:
 
@@ -20,8 +26,6 @@ https://mcp.glossa.sh/mcp
 ```
 
 3. Choose **OAuth**, then **Scan Tools**. Complete authorization, wait for the scan, then **Create**.
-
-Review permissions and requested actions.
 
 ## 3. Start and pair a workspace
 

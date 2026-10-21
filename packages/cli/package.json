@@ -42,12 +42,23 @@
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   },
+  "keywords": [
+    "chatgpt",
+    "chatgpt-plugin",
+    "mcp",
+    "model-context-protocol",
+    "codex",
+    "local-development",
+    "developer-tools",
+    "cli"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ariobarin/Glossa.git"
+    "url": "git+https://github.com/ariobarin/glossa.git"
   },
   "homepage": "https://glossa.sh",
+  "bugs": "https://github.com/ariobarin/glossa/issues",
   "publishConfig": {
     "access": "public",
     "tag": "latest"

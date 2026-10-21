@@ -6,7 +6,7 @@ The `glossa` CLI connects one project on your computer to the Glossa MCP relay t
 npm install --global @ariobarin/glossa
 ```
 
-Start it in the project you want ChatGPT to use:
+Install [Glossa in ChatGPT](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11), then run it in your project:
 
 ```shell
 glossa

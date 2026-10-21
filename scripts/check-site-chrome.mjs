@@ -145,6 +145,8 @@ requireAll(quickstart, [
   'npm install --global @ariobarin/glossa',
   'https://mcp.glossa.sh/mcp',
   '<strong>Scan Tools</strong>',
+  'https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11',
+  '<strong>Install plugin</strong>',
   'Use Glossa to list my connected workspaces and report each access profile.',
   'unsandboxed',
   'href="/security"',
