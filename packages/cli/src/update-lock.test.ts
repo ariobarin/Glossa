@@ -1,9 +1,48 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { withUpdateLease, withWorkspaceLease } from "./update-lock.js";
+
+for (const suffix of ["session", "update"]) {
+  test(`cleans a ${suffix} lease whose PID belongs to a newer process`, async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "glossa-update-lock-"));
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    try {
+      await once(child, "spawn");
+      await writeFile(
+        path.join(directory, `${child.pid}-reused.${suffix}`),
+        `${JSON.stringify({ pid: child.pid, startedAt: new Date(0).toISOString() })}\n`,
+      );
+      let ran = false;
+      await withUpdateLease(async () => { ran = true; }, directory);
+      assert.equal(ran, true);
+      assert.deepEqual(await readdir(directory), []);
+      const activeLease = `${child.pid}-active.${suffix}`;
+      for (const startedAt of [new Date().toISOString(), undefined, "invalid"]) {
+        await writeFile(
+          path.join(directory, activeLease),
+          `${JSON.stringify({ pid: child.pid, startedAt })}\n`,
+        );
+        await assert.rejects(
+          withUpdateLease(async () => assert.fail("active owner must block updates"), directory),
+          suffix === "session" ? /Disconnect every running Glossa workspace/ : /Another Glossa update/,
+        );
+        assert.deepEqual(await readdir(directory), [activeLease]);
+      }
+    } finally {
+      const exited = once(child, "exit");
+      child.kill();
+      await exited;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 
 test("refuses an update while a workspace lease is active", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "glossa-update-lock-"));
