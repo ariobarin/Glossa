@@ -404,8 +404,19 @@ export function buildRoutes(
   });
 
   // A coarse per-source ceiling so one client cannot monopolize the single
-  // relay process. Per-account and failure limits below stay tighter.
+  // relay process. Per-account and failure limits below stay tighter. MCP and
+  // discovery traffic is exempt: every ChatGPT user shares OpenAI's egress
+  // addresses, so a per-IP ceiling there would throttle all accounts at once.
+  // The per-account MCP limiter bounds that traffic instead.
   router.use((request, response, next) => {
+    if (
+      request.path === "/" ||
+      request.path === "/mcp" ||
+      request.path.startsWith("/.well-known/")
+    ) {
+      next();
+      return;
+    }
     const source = request.ip || request.socket.remoteAddress || "unknown";
     if (rejectRateLimit(response, ipRateLimiter, source)) return;
     next();

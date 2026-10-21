@@ -71,7 +71,7 @@ The relay is one process, so it bounds how much of it any one account or source 
 | Setting | Default | Applies to |
 | --- | --- | --- |
 | `GLOSSA_MCP_RATE_LIMIT` | 300 | MCP requests per account per window. Excess requests get HTTP 429 with `Retry-After`. |
-| `GLOSSA_IP_RATE_LIMIT` | 1200 | Requests per source address per window across every route except `/healthz`. Long polls use about four per worker each minute. |
+| `GLOSSA_IP_RATE_LIMIT` | 1200 | Requests per source address per window on device, pairing and panel-facing API routes. `/healthz`, `/mcp` and `/.well-known/*` are exempt because ChatGPT traffic for every account shares OpenAI egress addresses; the per-account MCP limit bounds that traffic. Long polls use about four per worker each minute. |
 | `GLOSSA_ENROLL_RATE_LIMIT` | 10 | Device enrollment and pairing-code creation per source address. |
 | `GLOSSA_DEVICE_AUTH_RATE_LIMIT` | 120 | Failed device or worker authentication and pairing redemption per source address. |
 | `GLOSSA_MAX_WORKERS_PER_ACCOUNT` | 16 | Connected workspaces per account. A new worker beyond it gets HTTP 429 `too_many_workers`; a reconnecting worker is always accepted. |

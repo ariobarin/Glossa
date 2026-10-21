@@ -1156,12 +1156,16 @@ test("limits requests per source address but keeps health checks open", async (c
     ipRateLimiter: new FixedWindowRateLimiter(1, 60_000),
   }));
   const origin = await listen(context, app);
-  const resource = `${origin}/.well-known/oauth-protected-resource`;
+  const poll = () => fetch(`${origin}/device/poll`, { method: "POST" });
 
-  assert.equal((await fetch(resource)).status, 200);
-  const limited = await fetch(resource);
+  assert.equal((await poll()).status, 401);
+  const limited = await poll();
   assert.equal(limited.status, 429);
   assert.deepEqual(await limited.json(), { error: "rate_limited" });
+  // Discovery and MCP traffic shares OpenAI's egress addresses, so it is exempt.
+  const resource = `${origin}/.well-known/oauth-protected-resource`;
+  assert.equal((await fetch(resource)).status, 200);
+  assert.equal((await fetch(resource)).status, 200);
   assert.equal((await fetch(`${origin}/healthz`)).status, 200);
   assert.equal((await fetch(`${origin}/healthz`)).status, 200);
 });
