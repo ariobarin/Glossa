@@ -59,8 +59,8 @@ await check("homepage production positioning", async () => {
   const source = await publicText("https://glossa.sh/");
   requireMatch(
     source,
-    /npm install -g @ariobarin\/glossa<\/code>/,
-    "homepage does not contain the stable npm install command",
+    /href="\/docs\/quickstart">Add to ChatGPT</,
+    "homepage does not send Add to ChatGPT to the quickstart",
   );
   forbidMatch(
     source,
@@ -93,8 +93,13 @@ await check("quickstart is concise and accurate", async () => {
   );
   requireMatch(
     source,
-    /developer-mode-and-mcp-apps-in-chatgpt/,
-    "quickstart does not use the current Developer Mode guide",
+    /npm install --global @ariobarin\/glossa<\/code>/,
+    "quickstart does not contain the stable npm install command",
+  );
+  requireMatch(
+    source,
+    /href="\/docs\/developer-mode"/,
+    "quickstart does not link to the developer mode fallback",
   );
   requireMatch(
     source,
@@ -105,11 +110,6 @@ await check("quickstart is concise and accurate", async () => {
     source,
     /system.*unsandboxed/is,
     "quickstart does not disclose the system command boundary",
-  );
-  requireMatch(
-    source,
-    /Choose <strong>OAuth<\/strong>, then <strong>Scan Tools<\/strong>\. Complete authorization.*wait for the scan, then <strong>Create<\/strong>/is,
-    "quickstart does not match the current OAuth tool-scan sequence",
   );
   requireMatch(
     source,
@@ -132,6 +132,20 @@ await check("quickstart is concise and accurate", async () => {
     "quickstart should keep alternate access commands in the operations guide",
   );
   forbidMatch(source, /open beta/i, "quickstart still labels Glossa as open beta");
+});
+
+await check("developer mode fallback matches ChatGPT", async () => {
+  const source = await publicText("https://glossa.sh/docs/developer-mode");
+  requireMatch(
+    source,
+    /developer-mode-and-mcp-apps-in-chatgpt/,
+    "developer mode page does not use the current Developer Mode guide",
+  );
+  requireMatch(
+    source,
+    /Choose <strong>OAuth<\/strong>, then <strong>Scan Tools<\/strong>\. Complete authorization.*wait for the scan, then <strong>Create<\/strong>/is,
+    "developer mode page does not match the current OAuth tool-scan sequence",
+  );
 });
 
 await check("rationale keeps the product boundary simple", async () => {
