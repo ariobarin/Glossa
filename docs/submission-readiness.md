@@ -4,9 +4,9 @@ This is the release-owner GO / NO-GO sheet for publishing Glossa to the OpenAI p
 
 ## Current verdict
 
-**Approved and listed.** OpenAI approved plugin version `0.1.0`, and it is live in the [ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11) as of 2026-10-21. Keep the gates below for future plugin metadata revisions.
+**Listed.** Plugin version `0.1.0` is live in the [ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11) as of 2026-10-21. Per [Restricted Data review](restricted-data.md), the listing alone does not establish a qualifying Restricted Data outcome. Record OpenAI's answer to the reviewer-notes question with this decision before treating that gate as closed.
 
-The pre-approval verdict follows for reference.
+The pre-listing verdict and gates follow and still apply until that outcome is recorded.
 
 **NO-GO for final public submission** until every gate below is checked. CLI `0.2.6` is the stable release and the production relay serves MCP contract `3.2.0`. The submission is a ZIP built from `plugin/glossa` and uploaded through OpenAI's plugin portal, which no longer accepts `.app.json` connection references. The release owner decided to submit the full product, including `system` command tools, and to ask OpenAI's Restricted Data question in the reviewer notes.
 
