@@ -6,10 +6,10 @@ Google and database identities remain separate Glossa accounts. Never merge acco
 
 ## Auth0 tenant contract
 
-Maintain these settings for every Auth0 client that can request the managed Glossa audience, including the Native CLI client and dynamically registered MCP clients:
+Maintain these settings for every Auth0 client that can request the managed Glossa audience, including the control-panel web application and dynamically registered MCP clients:
 
 - Enable the `google-oauth2` social connection for regular users.
-- Keep Device Code and refresh-token grants enabled for the Native CLI client.
+- Keep Device Code and refresh-token grants on the Native CLI client only while CLI 0.2.1 and older still enroll through `/v1/devices/enroll`.
 - Configure the Google connection to pass a static upstream `prompt` value of `select_account`.
 - Disable every unapproved social, enterprise, passwordless, and database connection.
 - Configure the relay's identity allowlist explicitly. A valid token is accepted only when its subject matches an approved provider prefix or exact subject.

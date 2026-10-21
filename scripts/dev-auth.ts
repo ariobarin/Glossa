@@ -164,7 +164,4 @@ if (isStandalone) {
   console.log("");
   console.log("CLI environment for local integration:");
   console.log(`  GLOSSA_RELAY_ORIGIN=${relayOrigin}`);
-  console.log(`  GLOSSA_AUTH0_ISSUER=${devAuth.issuer}`);
-  console.log(`  GLOSSA_AUTH0_AUDIENCE=${relayOrigin}/`);
-  console.log("  GLOSSA_AUTH0_CLI_CLIENT_ID=dev-cli");
 }

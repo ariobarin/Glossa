@@ -73,19 +73,17 @@ npm run dev:setup
 npm run dev
 ```
 
-CLI distributable builds pin React to production mode so idle HUD refreshes do not accumulate development timing records in memory.
-
 Stop local Postgres with `npm run dev:down`.
 
 ### Local integration
 
-The full flow — pairing, device management, MCP, and a live worker — runs locally without touching the production tenant or relay:
+The full flow (pairing, device management, MCP, and a live worker) runs locally against disposable Postgres, without touching the production tenant or relay:
 
 ```powershell
-npm run integration:smoke
+npm run integration:local
 ```
 
-The harness starts a local development issuer, boots the relay against local Postgres, pairs a throwaway device, and round-trips an MCP `read_file` through a live worker before revoking the device.
+See [integration tests](docs/integration-tests.md) for what it covers.
 
 For manual end-to-end work, run the development issuer and the relay in separate terminals:
 
@@ -94,7 +92,7 @@ npm run dev:auth   # prints the relay .env and CLI environment values
 npm run dev
 ```
 
-Point the CLI at the local stack with the printed environment values. The development issuer signs any requested identity and auto-approves pairing; never deploy it.
+Point the CLI at the local stack with the printed `GLOSSA_RELAY_ORIGIN`. The development issuer signs any requested identity and signs in to the control panel without a prompt, so redeem pairing codes there; never deploy it.
 
 ## User documentation
 
@@ -114,8 +112,6 @@ Point the CLI at the local stack with the printed environment values. The develo
 - [Self-hosting](docs/self-hosting.md)
 
 ## Maintainer and review documentation
-
-
 
 - [Managed identity and reviewer access](docs/managed-identity.md)
 - [MCP metadata operations](docs/metadata-operations.md)
