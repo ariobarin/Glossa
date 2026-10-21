@@ -62,6 +62,11 @@ await check("homepage production positioning", async () => {
     /href="\/docs\/quickstart">Add to ChatGPT</,
     "homepage does not send Add to ChatGPT to the quickstart",
   );
+  requireMatch(
+    source,
+    /npm install -g @ariobarin\/glossa<\/code>/,
+    "homepage does not contain the stable npm install command",
+  );
   forbidMatch(
     source,
     /hero-footnote|One folder\. You choose the access\. Use the tools already there\./,

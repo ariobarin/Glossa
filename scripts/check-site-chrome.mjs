@@ -148,7 +148,7 @@ requireAll(quickstart, [
   'https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11',
   '<strong>Install plugin</strong>',
   'href="https://chatgpt.com/?prompt=%40Glossa%20',
-  'class="primary-action"',
+  'class="primary-action" target="_blank" rel="noopener" href="https://chatgpt.com/',
   'unsandboxed',
   'href="/security"',
   'Review security',

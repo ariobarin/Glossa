@@ -4,7 +4,7 @@ Add Glossa to ChatGPT, install the CLI, then start it in your project folder.
 
 ## 1. Add Glossa to ChatGPT
 
-<p class="docs-action-row"><a class="primary-action" href="https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11">Open Glossa in ChatGPT</a></p>
+<p class="docs-action-row"><a class="primary-action" target="_blank" rel="noopener" href="https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11">Open Glossa in ChatGPT</a></p>
 
 Select **Install plugin** and sign in. Review permissions and requested actions.
 
@@ -32,7 +32,7 @@ The first time, enter the pairing code it shows on the [Glossa control panel](ht
 
 ## 4. Try it
 
-<p class="docs-action-row"><a class="primary-action" href="https://chatgpt.com/?prompt=%40Glossa%20List%20my%20connected%20workspaces%20and%20their%20access.">Try it in ChatGPT</a></p>
+<p class="docs-action-row"><a class="primary-action" target="_blank" rel="noopener" href="https://chatgpt.com/?prompt=%40Glossa%20List%20my%20connected%20workspaces%20and%20their%20access.">Try it in ChatGPT</a></p>
 
 This opens a new chat with the prompt filled in. If your workspace appears in the answer, you're connected.
 
