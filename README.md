@@ -92,7 +92,7 @@ npm run dev:auth   # prints the relay .env and CLI environment values
 npm run dev
 ```
 
-Point the CLI at the local stack with the printed `GLOSSA_RELAY_ORIGIN`. The development issuer signs any requested identity and auto-approves pairing; never deploy it.
+Point the CLI at the local stack with the printed `GLOSSA_RELAY_ORIGIN`. The development issuer signs any requested identity and signs in to the control panel without a prompt, so redeem pairing codes there; never deploy it.
 
 ## User documentation
 
