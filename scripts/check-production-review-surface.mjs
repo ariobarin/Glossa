@@ -350,16 +350,7 @@ await check("unauthenticated MCP challenge", async () => {
   );
 });
 
-const expectedReleaseAssets = [
-  "glossa-windows-x64.exe",
-  "glossa-windows-arm64.exe",
-  "glossa-linux-x64",
-  "glossa-linux-arm64",
-  "glossa-macos-x64",
-  "glossa-macos-arm64",
-].flatMap((asset) => [asset, `${asset}.sha256`]);
-
-await check("stable GitHub CLI release and native checksums", async () => {
+await check("stable GitHub CLI release", async () => {
   const response = await request(
     "https://api.github.com/repos/ariobarin/glossa/releases/latest",
     {
@@ -387,15 +378,6 @@ await check("stable GitHub CLI release and native checksums", async () => {
     false,
     "latest GitHub release is marked prerelease",
   );
-  const assetNames = new Set(
-    Array.isArray(release.assets)
-      ? release.assets.map((asset) => asset?.name).filter(Boolean)
-      : [],
-  );
-  const missing = expectedReleaseAssets.filter((asset) => !assetNames.has(asset));
-  if (missing.length > 0) {
-    throw new Error(`stable GitHub release is missing: ${missing.join(", ")}`);
-  }
 });
 
 await check("stable npm latest tag", async () => {

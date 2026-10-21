@@ -36,7 +36,7 @@
     "review:check:plugin": "node scripts/build-plugin-package.mjs && node scripts/check-plugin-package.mjs",
     "review:check:submission": "npm run check && npm run review:check:production && npm audit --audit-level=high && npm run review:check:plugin && npm pack --workspace @ariobarin/glossa --dry-run && git diff --check",
     "review:fixture:prepare": "node scripts/prepare-app-review-workspace.mjs --reset",
-    "cli:smoke": "node packages/cli/scripts/smoke-standalone.mjs node packages/cli/dist/main.js"
+    "cli:smoke": "node packages/cli/scripts/smoke-cli.mjs"
   },
   "license": "MIT",
   "devDependencies": {

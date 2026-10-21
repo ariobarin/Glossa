@@ -12,9 +12,7 @@ import {
 } from "./relay-client.js";
 import {
   checkForUpdate,
-  cleanupUpdateBackups,
   installUpdate,
-  type GlossaDistribution,
   type UpdateInfo,
 } from "./update-service.js";
 import {
@@ -33,10 +31,8 @@ import { selectExposureRoot } from "./worker/root-selection.js";
 import { acquireWorkspaceLease } from "./worker/workspace-lease.js";
 
 declare const __GLOSSA_VERSION__: string;
-declare const __GLOSSA_DISTRIBUTION__: GlossaDistribution;
 
 const VERSION = __GLOSSA_VERSION__;
-const DISTRIBUTION = __GLOSSA_DISTRIBUTION__;
 
 const HELP = `Glossa ${VERSION}
 
@@ -225,7 +221,7 @@ async function runUpdateCommand(
 
   console.log(`Updating Glossa ${VERSION} to ${info.availableVersion}...`);
   await withUpdateLease(
-    async () => await installUpdate(info, DISTRIBUTION),
+    async () => await installUpdate(info),
   );
   console.log(`Updated Glossa to ${info.availableVersion}. Run glossa again.`);
 }
@@ -274,7 +270,7 @@ async function updateBeforeWorkspace(): Promise<WorkspaceUpdateResult> {
   try {
     console.error(`Updating Glossa ${VERSION} to ${info.availableVersion}...`);
     await withUpdateLease(
-      async () => await installUpdate(info, DISTRIBUTION),
+      async () => await installUpdate(info),
     );
     console.error(`Updated Glossa to ${info.availableVersion}. Run glossa again.`);
     return { exit: true };
@@ -288,7 +284,6 @@ async function updateBeforeWorkspace(): Promise<WorkspaceUpdateResult> {
 }
 
 async function main(): Promise<void> {
-  await cleanupUpdateBackups(DISTRIBUTION);
   const invocation = parseInvocation(process.argv.slice(2));
   if (invocation.command === "help") {
     console.log(HELP);
