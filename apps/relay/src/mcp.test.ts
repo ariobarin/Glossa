@@ -229,12 +229,6 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.equal(byName.get("run_command")?.annotations?.readOnlyHint, false);
   assert.equal(byName.get("run_command")?.annotations?.destructiveHint, true);
   assert.equal(byName.get("run_command")?.annotations?.openWorldHint, true);
-  const argvCommandSchema = commandSchema?.anyOf?.find((branch) =>
-    branch.properties?.argv
-  );
-  const shellCommandSchema = commandSchema?.anyOf?.find((branch) =>
-    branch.properties?.shellCommand
-  );
   const readCommandOutputTool = byName.get("read_command_output");
   assert.equal(readCommandOutputTool?.annotations?.readOnlyHint, true);
   assert.equal(readCommandOutputTool?.annotations?.destructiveHint, false);
@@ -322,12 +316,6 @@ test("publishes reviewable MCP tool contracts", async (context) => {
   assert.ok(viewImageOutput.properties?.bytes);
   assert.ok(viewImageOutput.properties?.sha256);
   assert.equal(viewImageOutput.properties?.data, undefined);
-  const writeFileSchema = byName.get("write_file")?.inputSchema as {
-    properties?: Record<string, { description?: unknown }>;
-  };
-  const editFileSchema = byName.get("edit_file")?.inputSchema as {
-    properties?: Record<string, { description?: unknown }>;
-  };
 
   for (const [name, args] of [
     ["read_file", { workspaceId: accountId, path: "README.md", extra: true }],

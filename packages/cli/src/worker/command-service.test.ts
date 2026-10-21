@@ -5,7 +5,6 @@ import { setImmediate } from "node:timers/promises";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import {
   MAX_COMMAND_OUTPUT_BYTES,
