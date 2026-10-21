@@ -45,13 +45,9 @@ For closed-lid use, set Windows' plugged-in lid action to **Do nothing**. Use AC
 
 ## Connect ChatGPT
 
-Create a custom MCP app in ChatGPT Developer Mode using OAuth and:
+Install [Glossa from the ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11) and authorize it. Without directory access, create a custom OAuth MCP app in Developer Mode with `https://mcp.glossa.sh/mcp` and run **Scan Tools**.
 
-```text
-https://mcp.glossa.sh/mcp
-```
-
-Authorize Glossa and run **Scan Tools**. On first launch, redeem the printed pairing code on the control panel from any browser. The CLI stores only a revocable device credential.
+On first launch, redeem the printed pairing code on the control panel from any browser. The CLI stores only a revocable device credential.
 
 Verify discovery with:
 
@@ -119,11 +115,4 @@ Press `d` in the interactive HUD to list devices and active workspaces; Enter re
 
 ## Troubleshooting
 
-- **No online workspace:** keep the terminal open, redeem any pending pairing code on the control panel, or confirm the stored pairing is still valid.
-- **Wrong workspace:** stop it and restart in the intended project with a unique `--label`.
-- **Permission error:** restart with broader access only if the task genuinely requires it.
-- **`restricted_data_blocked`:** remove the credential or use a non-sensitive placeholder. Do not retry with encoding, another tool, or a shell fallback.
-- **Wrong paired account:** stop workers, run `glossa unpair`, restart, and redeem the new pairing code on the control panel while signed in to the intended account.
-- **Tool definitions changed:** run **Scan Tools** again.
-- **Service health:** confirm `https://mcp.glossa.sh/healthz` returns an object with `ok` set to `true`.
-- **Sensitive security issue:** use the private process in [`SECURITY.md`](../SECURITY.md), not a public issue.
+Common fixes live on the [support page](https://glossa.sh/support). Check relay health at `https://mcp.glossa.sh/healthz`, and report vulnerabilities through [`SECURITY.md`](../SECURITY.md), not a public issue.
