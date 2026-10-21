@@ -68,6 +68,13 @@ export const PAGE_GROUPS = [
         tabTitle: "Support",
         navLabel: "Support",
       },
+      {
+        source: "site/docs/developer-mode.md",
+        output: "site/docs/developer-mode.html",
+        route: "/docs/developer-mode",
+        tabTitle: "Developer mode",
+        navLabel: "Developer mode",
+      },
     ],
   },
   {
@@ -279,7 +286,7 @@ ${copyPageButton}
     <meta name="theme-color" content="#111016" />
     <title>${escapeHtml(pageConfig.tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=39" />
+    <link rel="stylesheet" href="/styles.css?v=42" />
     <script type="module" src="/copy.js?v=7"></script>
   </head>
   <body class="docs-shell">
@@ -291,6 +298,7 @@ ${copyPageButton}
       </a>
       <nav class="header-links" aria-label="Site navigation">
         <a href="/docs/quickstart">Quickstart</a>
+        <a href="https://mcp.glossa.sh/panel">Control panel</a>
         <a href="/security">Security</a>
         <a href="/support">Support</a>
         <a href="https://github.com/ariobarin/glossa">GitHub</a>
@@ -320,6 +328,7 @@ ${sectionNavigation}
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
           <a href="/support">Support</a>
+          <a href="https://mcp.glossa.sh/panel">Control panel</a>
         </nav>
       </div>
     </footer>

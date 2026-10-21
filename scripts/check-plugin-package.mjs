@@ -156,14 +156,14 @@ async function validateIcon(value, label) {
   assert.ok(rel && !rel.startsWith("..") && !isAbsolute(rel), `${label} must stay inside the package`);
   const info = await lstat(path);
   assert.ok(info.isFile() && info.size > 0 && info.size <= 5 * 1024 * 1024, `${label} must be a file of at most 5 MiB`);
-  assert.equal(extname(path).toLowerCase(), ".svg", `${label} should use the reviewed Glossa SVG badge`);
+  assert.equal(extname(path).toLowerCase(), ".svg", `${label} should use the Glossa SVG icon`);
   const source = await readFile(path, "utf8");
   const viewBox = source.match(/viewBox\s*=\s*["']\s*[-+\d.]+\s+[-+\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
   assert.ok(viewBox, `${label} SVG must define a numeric viewBox`);
   assert.equal(Number(viewBox[1]), Number(viewBox[2]), `${label} must be square`);
   assert.ok(Number(viewBox[1]) >= 48, `${label} must be at least 48 by 48`);
-  const badge = await readFile(join(repositoryRoot, "site", "glossa-symbol-badge.svg"), "utf8");
-  assert.equal(source, badge, `${label} must match site/glossa-symbol-badge.svg`);
+  const badge = await readFile(join(repositoryRoot, "site", "glossa-icon.svg"), "utf8");
+  assert.equal(source, badge, `${label} must match site/glossa-icon.svg`);
 }
 await validateIcon(ui.logo, "interface.logo");
 await validateIcon(ui.composerIcon, "interface.composerIcon");

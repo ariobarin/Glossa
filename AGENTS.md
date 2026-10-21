@@ -31,7 +31,7 @@ Read `docs/architecture.md` and `docs/security.md` before changing trust boundar
 
 ## Website builds
 
-Edit Markdown sources, not generated HTML. `npm run docs:build` generates the seven documentation pages, and `npm run site:check` validates them. Only the handwritten `site/index.html` stays tracked. CI and Vercel regenerate documentation before validation or deployment.
+Edit Markdown sources, not generated HTML. `npm run docs:build` generates the eight documentation pages, and `npm run site:check` validates them. Only the handwritten `site/index.html` stays tracked. CI and Vercel regenerate documentation before validation or deployment.
 
 Keep Vercel's Root Directory set to `site` and enable **Include source files outside of the Root Directory in the Build Step**. The commands in `site/vercel.json` use npm's project-root discovery to find the shared generator and Markdown sources.
 

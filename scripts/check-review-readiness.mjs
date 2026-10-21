@@ -173,8 +173,7 @@ await requiredText("README.md", [
 ]);
 await requiredText("site/docs/quickstart.md", [
   "Glossa starts with `workspace` access",
-  "`system` access is optional and unsandboxed",
-  "commands inherit the account's environment, credentials, filesystem permissions, and network access",
+  "`system` access runs commands as your account and is unsandboxed",
   "[Review security](/security)",
   "Review permissions and requested actions.",
 ]);
@@ -238,7 +237,7 @@ const submissionPacket = await requiredText("docs/app-submission-packet.md", [
   "app_configuration_excluded",
   "Registered connection",
   "plugin_asdk_app_",
-  "site/glossa-symbol-badge.svg",
+  "site/glossa-icon.svg",
   "Hosted reviewer worker",
   "## Reviewer notes",
   "Does OpenAI consider this user-selected local-workspace architecture compatible",

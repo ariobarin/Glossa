@@ -1,8 +1,16 @@
-# Connect ChatGPT to a local workspace
+# Connect ChatGPT to your project
 
-Install Glossa, add it to ChatGPT from the plugin directory, then pair the computer that will expose your project.
+Add Glossa to ChatGPT, install the CLI, then start it in your project folder.
 
-## 1. Install
+## 1. Add Glossa to ChatGPT
+
+<p class="docs-action-row"><a class="primary-action" href="https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11">Open Glossa in ChatGPT</a></p>
+
+Select **Install plugin** and sign in. Review permissions and requested actions.
+
+Can't install it from the plugin directory? [Add Glossa in developer mode](/docs/developer-mode) instead.
+
+## 2. Install the CLI
 
 Requires Node.js 22.9 or newer.
 
@@ -10,24 +18,7 @@ Requires Node.js 22.9 or newer.
 npm install --global @ariobarin/glossa
 ```
 
-## 2. Add Glossa to ChatGPT
-
-Open [Glossa in the ChatGPT plugin directory](https://chatgpt.com/plugins/plugin_asdk_app_6ad2768d567c8191a369d9f6e6c79d11), select **Install plugin**, and complete authorization.
-
-Review permissions and requested actions.
-
-If the plugin directory isn't available for your account or workspace, add Glossa as a custom app instead:
-
-1. In ChatGPT web, use [Developer Mode](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) to create a custom MCP app.
-2. Name it **Glossa** and use this MCP server URL:
-
-```text
-https://mcp.glossa.sh/mcp
-```
-
-3. Choose **OAuth**, then **Scan Tools**. Complete authorization, wait for the scan, then **Create**.
-
-## 3. Start and pair a workspace
+## 3. Start Glossa in your project
 
 Open a terminal in your project folder and run:
 
@@ -35,20 +26,14 @@ Open a terminal in your project folder and run:
 glossa
 ```
 
-The first time a computer runs Glossa, it shows a short pairing code. Enter it on the Glossa control panel and sign in to the account that should own the computer. On a headless or SSH-only machine, redeem the printed code from any other device. Glossa then stores only the computer's revocable device credential. It does not retain your Google or Auth0 refresh token.
+The first time, enter the pairing code it shows on the [Glossa control panel](https://mcp.glossa.sh/panel). Keep the terminal open while you work.
 
-Keep the terminal open after pairing. Later `glossa` runs on that computer reuse the device pairing without user sign-in. Run `glossa unpair` to revoke the computer before pairing it with another Glossa account.
+> Glossa starts with `workspace` access: ChatGPT can read and edit this folder but cannot run commands. `system` access runs commands as your account and is unsandboxed. [Review security](/security) before turning it on.
 
-> Glossa starts with `workspace` access: ChatGPT can read and edit the selected project, but cannot run commands. `system` access is optional and unsandboxed; commands inherit the account's environment, credentials, filesystem permissions, and network access. [Review security](/security) before enabling it.
+## 4. Try it
 
-## 4. Test it
+<p class="docs-action-row"><a class="primary-action" href="https://chatgpt.com/?prompt=%40Glossa%20List%20my%20connected%20workspaces%20and%20their%20access.">Try it in ChatGPT</a></p>
 
-Select Glossa in a new chat and send:
-
-```text
-Use Glossa to list my connected workspaces and report each access profile.
-```
-
-If your workspace appears, you're connected.
+This opens a new chat with the prompt filled in. If your workspace appears in the answer, you're connected.
 
 Having trouble? Visit [support](/support).
