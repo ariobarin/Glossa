@@ -47,6 +47,10 @@ test("detects recognizable authentication secrets", () => {
 test("does not block credential names or explicit placeholders", () => {
   for (const value of [
     "process.env.OPENAI_API_KEY",
+    "api_" + "key = os." + 'environ["OPENROUTER_API_KEY"]',
+    "api_" + "key = os." + 'environ.get("OPENROUTER_API_KEY")',
+    "api_" + "key = os." + 'getenv("OPENROUTER_API_KEY")',
+    "api_" + "key = " + 'getenv("OPENROUTER_API_KEY")',
     "OPENAI_API_KEY=<redacted>",
     "password: placeholder-value",
     "AUTH_TOKEN=replace-me",
