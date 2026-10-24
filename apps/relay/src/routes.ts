@@ -925,6 +925,17 @@ export function buildRoutes(
     ["/", "/mcp"],
     authFactory(config, config.GLOSSA_MCP_REQUIRED_SCOPE),
     async (request: AuthenticatedRequest, response: Response) => {
+      // The stateless transport has no server-initiated messages, so a GET
+      // event stream would sit open until the hosting deadline. Clients such
+      // as Gemini wait on that stream before calling tools.
+      if (request.method !== "POST") {
+        response.set("Allow", "POST").status(405).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Method not allowed." },
+          id: null,
+        });
+        return;
+      }
       const accountId = await activeAccountId(request, response, store);
       if (!accountId) return;
       if (rejectRateLimit(response, mcpRateLimiter, accountId)) return;

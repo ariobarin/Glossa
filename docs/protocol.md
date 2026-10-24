@@ -96,6 +96,8 @@ OAuth required. The token's account can route only to devices owned by that acco
 
 The origin route `POST /` serves the same authenticated transport for MCP clients that use their configured transport URL as the OAuth resource. This keeps the OAuth resource equal to the protected resource identifier `https://mcp.glossa.sh/`. The canonical protocol endpoint remains `https://mcp.glossa.sh/mcp`.
 
+The transport is stateless and sends no server-initiated messages. Authenticated `GET` and `DELETE` requests on either route return `405` with `Allow: POST` instead of opening an event stream, so clients that probe for one, such as Gemini, continue with plain POST requests.
+
 MCP initialization advertises public tool-contract version `3.2.0` and a short description of workspace access, relative paths, and local command authority. Tool descriptions explain capabilities and concrete limits; the client chooses the workflow. Copy-only metadata changes need a connector rescan, but not a version bump. Bump `MCP_SERVER_VERSION` when a public name, input/output shape, annotation, permission field, or result contract changes.
 
 Contract `3.2.0` restores complete JSON text mirroring for bounded structured results, including results above 16 KiB. Tool names, argument shapes, annotations, permissions, authentication, and worker wire formats remain unchanged. Product copy and fixed error messages are shorter. A timeout or disconnect can leave an operation completed without a response. Refresh the connector scan after deployment.
