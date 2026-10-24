@@ -286,6 +286,7 @@ ${copyPageButton}
     <meta name="theme-color" content="#111016" />
     <title>${escapeHtml(pageConfig.tabTitle)} | Glossa</title>
     <link rel="icon" href="/glossa-symbol.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-192.png" type="image/png" sizes="192x192" />
     <link rel="stylesheet" href="/styles.css?v=43" />
     <script type="module" src="/copy.js?v=7"></script>
   </head>

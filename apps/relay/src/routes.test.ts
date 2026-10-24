@@ -42,6 +42,34 @@ const unusedStore: RelayStore = {
   redeemPairing: unused,
 };
 
+test("rejects MCP event streams instead of holding them open", async (context) => {
+  const config = loadConfig({
+    NODE_ENV: "test",
+    DATABASE_URL: "postgres://localhost/glossa",
+    GLOSSA_PUBLIC_ORIGIN: "https://relay.glossa.test",
+    GLOSSA_AUTH0_ISSUER: "https://identity.glossa.test/",
+    GLOSSA_AUTH0_AUDIENCE: "https://relay.glossa.test/",
+  });
+  const app = express();
+  app.use(buildRoutes(config, unusedStore, new RouterState(), {
+    authFactory: () => (_request, _response, next) => next(),
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address() as AddressInfo;
+
+  for (const method of ["GET", "DELETE"]) {
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method,
+      headers: { accept: "text/event-stream" },
+      signal: AbortSignal.timeout(2_000),
+    });
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "POST");
+  }
+});
+
 test("publishes protected-resource documentation for MCP OAuth clients", async (context) => {
   const config = loadConfig({
     NODE_ENV: "test",
