@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -66,7 +66,13 @@ try {
     return stderr;
   };
   const notice = `Glossa ${available} is available. Run glossa update after disconnecting.`;
+  const runtime = path.join(config, "runtime");
+  await mkdir(runtime);
+  await writeFile(path.join(runtime, `${process.pid}-reused.update`), JSON.stringify({
+    pid: process.pid, startedAt: new Date(0).toISOString(),
+  }));
   const first = await startup();
+  assert.deepEqual(await readdir(runtime), [], "Startup retained a reused PID lease");
   assert.ok(first.includes(notice), first);
   assert.ok((await startup()).includes(notice), "Cached startup lost the update notice");
   assert.equal(checks, 1, "Cached startup fetched again");

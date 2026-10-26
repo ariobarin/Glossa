@@ -1,10 +1,14 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { configDirectory } from "./secure-store.js";
 
 const UPDATE_SUFFIX = ".update";
 const SESSION_SUFFIX = ".session";
+const execFileAsync = promisify(execFile);
+const ownProcessStartedAt = Date.now() - process.uptime() * 1000;
 
 export function updateRuntimeDirectory(): string {
   return path.join(configDirectory(), "runtime");
@@ -28,6 +32,40 @@ function leasePid(name: string, suffix: string): number | null {
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
+async function leasePredatesProcess(file: string, pid: number): Promise<boolean> {
+  try {
+    const lease = JSON.parse(await readFile(file, "utf8")) as { startedAt?: unknown };
+    if (typeof lease.startedAt !== "string") return false;
+    const leaseStartedAt = Date.parse(lease.startedAt);
+    if (!Number.isFinite(leaseStartedAt)) return false;
+    if (pid === process.pid) return ownProcessStartedAt > leaseStartedAt;
+
+    const windows = process.platform === "win32";
+    const executable = windows
+      ? path.join(
+        process.env.SystemRoot ?? "C:\\Windows",
+        "System32", "WindowsPowerShell", "v1.0", "powershell.exe",
+      )
+      : "ps";
+    const args = windows
+      ? [
+        "-NoProfile", "-NonInteractive", "-Command",
+        `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`,
+      ]
+      : ["-o", "lstart=", "-p", String(pid)];
+    const { stdout } = await execFileAsync(executable, args, {
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 4096,
+      env: { ...process.env, LC_ALL: "C" },
+    });
+    return Date.parse(stdout.trim()) > leaseStartedAt;
+  } catch {
+    // Keep the lease if its owner cannot be verified.
+    return false;
+  }
+}
+
 async function activeLeaseFiles(
   directory: string,
   suffix: string,
@@ -45,8 +83,11 @@ async function activeLeaseFiles(
     if (!entry.isFile() || !entry.name.endsWith(suffix)) continue;
     const pid = leasePid(entry.name, suffix);
     const file = path.join(directory, entry.name);
-    if (pid !== null && processIsAlive(pid)) active.push(file);
-    else await rm(file, { force: true });
+    if (pid !== null && processIsAlive(pid) && !(await leasePredatesProcess(file, pid))) {
+      active.push(file);
+    } else {
+      await rm(file, { force: true });
+    }
   }
   return active;
 }
