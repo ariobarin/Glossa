@@ -37,6 +37,8 @@ A `system` command has the full operating-system authority of the account that s
 
 The terminal displays the selected root and access profile. Keep it open while using Glossa. Press `q` or Ctrl+C to disconnect.
 
+Glossa's MCP instructions tell ChatGPT to wait for an explicit local-workspace request before using the connected tools. If you do not want local files available in a chat, disconnect the Glossa app; use `glossa --access read-only` when inspection is acceptable but changes are not.
+
 ## Keep a Windows workspace awake
 
 `glossa --keep-awake` prevents idle sleep during sessions, including between tool calls. It defaults off; quitting or crashes release the request. Displays can turn off.

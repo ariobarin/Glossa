@@ -14,6 +14,8 @@ Each worker exposes one canonical local directory and one access profile:
 
 The selected profile is visible in the local terminal and returned by `list_workspaces` as both a profile and exact permission booleans. The relay rejects an operation outside that profile before queueing it. The local worker independently performs the same check before reading, writing, or starting a process. This defense in depth protects against relay mistakes, stale clients, protocol skew, and attempted bypasses through direct worker traffic.
 
+The MCP contract also instructs the connected client to call Glossa only after the user's current message explicitly requests a local-workspace action. That instruction reduces unsolicited inspection, edits, and commands, but the MCP protocol does not expose an `@Glossa` mention or user-intent signal to the relay. Use `read-only` or disconnect the MCP app when local access should not be available at all.
+
 ## Warning about system access
 
 `system` access is explicit remote command authority for the operating-system account that launched Glossa. A command inherits that process's complete environment, credentials, filesystem permissions, and network access. It starts in the exposed root but is not confined there. File-tool containment does not sandbox commands, and command filtering is not presented as a security boundary.
