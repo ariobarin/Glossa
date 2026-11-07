@@ -8,20 +8,6 @@ The npm package supports Windows, macOS, and Linux and requires Node.js 22.9 or 
 npm install --global @ariobarin/glossa
 ```
 
-Self-contained installers verify the selected native release checksum.
-
-Windows:
-
-```powershell
-irm https://glossa.sh/install | iex
-```
-
-macOS or Linux:
-
-```shell
-curl -fsSL https://glossa.sh/install.sh | sh
-```
-
 ## Select a project and access profile
 
 Run Glossa from a narrow project directory, not a home directory or filesystem root:

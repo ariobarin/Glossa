@@ -22,7 +22,7 @@ glossa
 
 The first time a computer runs Glossa, it shows a short pairing code. Enter it on the Glossa control panel from any browser to enroll the computer; a headless or SSH-only machine needs no local browser. The CLI stores only its revocable device credential, not a Google or Auth0 refresh token.
 
-Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete connection flow. Self-contained installers are covered in the [operations guide](docs/operations.md).
+Follow the [quickstart](https://glossa.sh/docs/quickstart) for the complete connection flow.
 
 ## Choose access
 

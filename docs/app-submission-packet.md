@@ -349,7 +349,7 @@ Release notes import from `publication.release_notes` in `plugin/glossa/plugin.j
 
 Do not submit until all of the following are true:
 
-- the stable `@ariobarin/glossa` package and native release are published and installable without a prerelease tag;
+- the stable `@ariobarin/glossa` package and GitHub release are published and installable without a prerelease tag;
 - the submission is created in an OpenAI project with global data residency and the submitter has Apps Management write access;
 - the production relay serves MCP contract `3.2.0` and the scan matches all 16 tools, schemas, descriptions, output contracts, top-level security schemes, and annotations in this packet;
 - the submission ZIP and the local-testing package have been built from `plugin/glossa` with the registered `plugin_asdk_app...` connection ID, and the local package has been installed and tested on supported ChatGPT and Codex surfaces;

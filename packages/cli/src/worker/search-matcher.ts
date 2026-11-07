@@ -1,8 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import path from "node:path";
 import { WorkerError } from "./errors.js";
 
 type LineMatch = [line: number, index: number, length: number];
@@ -18,7 +15,7 @@ type MatcherInput =
   | { type: "path"; path: string }
   | { type: "lines"; lines: string[]; limit: number };
 
-// Fixed source keeps the matcher inside both the npm bundle and standalone binary.
+// Inline source keeps the matcher inside the single-file npm bundle.
 const source = `
   const path = require("node:path");
   let options;
@@ -61,16 +58,10 @@ export class SearchMatcher {
   } | undefined;
   readonly #kill = (): void => { this.#child.kill("SIGKILL"); };
 
-  private constructor(private readonly configPath: string | undefined) {
-    const args = process.versions.bun
-      ? ["--no-env-file", `--config=${configPath}`, "--eval", source]
-      : ["--eval", source];
-    this.#child = spawn(process.execPath, args, {
+  private constructor() {
+    this.#child = spawn(process.execPath, ["--eval", source], {
       cwd: tmpdir(),
-      env: {
-        BUN_BE_BUN: "1",
-        ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      },
+      env: process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {},
       stdio: ["ignore", "ignore", "ignore", "ipc"],
       windowsHide: true,
     });
@@ -94,24 +85,12 @@ export class SearchMatcher {
   }
 
   static async create(options: MatcherOptions, timeoutMs: number): Promise<SearchMatcher> {
-    const started = performance.now();
-    const configPath = process.versions.bun
-      ? path.join(tmpdir(), `glossa-matcher-${randomUUID()}.toml`)
-      : undefined;
-    let search: SearchMatcher | undefined;
-    let configCreated = false;
+    const search = new SearchMatcher();
     try {
-      if (configPath) {
-        const config = await open(configPath, "wx", 0o600);
-        configCreated = true;
-        await config.close();
-      }
-      search = new SearchMatcher(configPath);
-      await search.#receive({ type: "init", ...options }, timeoutMs - (performance.now() - started));
+      await search.#receive({ type: "init", ...options }, timeoutMs);
       return search;
     } catch (error) {
-      if (search) await search.close();
-      else if (configCreated) await rm(configPath!, { force: true }).catch(() => {});
+      await search.close();
       throw error;
     }
   }
@@ -152,6 +131,5 @@ export class SearchMatcher {
   async close(): Promise<void> {
     this.#kill();
     await this.#closed;
-    if (this.configPath) await rm(this.configPath, { force: true }).catch(() => {});
   }
 }
